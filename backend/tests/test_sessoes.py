@@ -10,13 +10,13 @@ Os testes de inatividade batem direto no módulo `app.sessoes`, injetando o
 instante "agora": é lá que mora a regra, e testá-la por HTTP exigiria congelar
 o relógio do processo inteiro.
 """
-from datetime import timedelta
+from datetime import datetime, timedelta
 
 import pytest
 from sqlmodel import Session, select
 
 from app import sessoes
-from app.models import Aluno, SessaoEstudo
+from app.models import Aluno
 from app.tempo import agora_utc, como_utc
 
 PAYLOAD_ALUNO = {"nome": "Ana Souza", "email": "ana@exemplo.com", "senha": "senhaSegura123"}
@@ -186,10 +186,11 @@ class TestEncerramentoAutomaticoPorInatividade:
         ultima_atividade = agora_utc() + timedelta(minutes=5)
         sessoes.registrar_atividade(session, sessao_id, aluno.id, agora=ultima_atividade)
 
-        sessoes.encerrar_inativas(session, agora=ultima_atividade + timedelta(hours=5))
+        encerradas = sessoes.encerrar_inativas(
+            session, agora=ultima_atividade + timedelta(hours=5)
+        )
 
-        sessao = session.get(SessaoEstudo, sessao_id)
-        assert como_utc(sessao.fim) == ultima_atividade
+        assert [como_utc(s.fim) for s in encerradas] == [ultima_atividade]
 
     def test_sessao_dentro_do_limite_permanece_aberta(self, client, cabecalhos, aluno, session):
         client.post("/sessoes", headers=cabecalhos)
@@ -206,31 +207,47 @@ class TestEncerramentoAutomaticoPorInatividade:
         nova = sessoes.iniciar(session, aluno.id, agora=muito_depois)
 
         assert nova.id != antiga_id
-        assert session.get(SessaoEstudo, antiga_id).fim is not None
+        # A antiga saiu de cena: a única em andamento agora é a nova.
+        assert sessoes.buscar_ativa(session, aluno.id, agora=muito_depois).id == nova.id
 
     def test_nao_mexe_em_sessoes_ja_encerradas(self, client, cabecalhos, aluno, session):
         sessao_id = client.post("/sessoes", headers=cabecalhos).json()["id"]
         client.post(f"/sessoes/{sessao_id}/encerrar", headers=cabecalhos)
-        fim_original = session.get(SessaoEstudo, sessao_id).fim
 
-        sessoes.encerrar_inativas(session, agora=agora_utc() + timedelta(days=1))
+        encerradas = sessoes.encerrar_inativas(session, agora=agora_utc() + timedelta(days=1))
 
-        assert session.get(SessaoEstudo, sessao_id).fim == fim_original
+        assert encerradas == []
+
+    def test_varredura_encerra_sessoes_de_alunos_diferentes_de_uma_vez(
+        self, client, cabecalhos, cabecalhos_outro_aluno, session
+    ):
+        client.post("/sessoes", headers=cabecalhos)
+        client.post("/sessoes", headers=cabecalhos_outro_aluno)
+        muito_depois = agora_utc() + sessoes.limite_inatividade() + timedelta(minutes=1)
+
+        encerradas = sessoes.encerrar_inativas(session, agora=muito_depois)
+
+        assert len(encerradas) == 2
+
+    def test_sessao_exatamente_no_limite_e_encerrada(self, client, cabecalhos, aluno, session):
+        # O limite é inclusivo: parado há exatamente 10 minutos já conta como
+        # ausente. Fixar isso evita que um ajuste no corte passe despercebido.
+        client.post("/sessoes", headers=cabecalhos)
+        no_limite = agora_utc() + sessoes.limite_inatividade()
+
+        assert sessoes.buscar_ativa(session, aluno.id, agora=no_limite) is None
 
 
 class TestPersistencia:
-    def test_tabela_se_chama_sessao_estudo_com_as_colunas_do_spec(self):
-        assert SessaoEstudo.__tablename__ == "sessao_estudo"
-        colunas = SessaoEstudo.__table__.columns.keys()
-        assert {"id", "id_aluno", "inicio", "fim"} <= set(colunas)
-
-    def test_datetimes_fazem_round_trip_em_utc(self, client, cabecalhos, session):
+    def test_o_inicio_gravado_e_o_instante_real_da_chamada(self, client, cabecalhos):
+        # Round-trip pelo banco: o SQLite devolve datetime sem fuso, então um
+        # deslize na normalização apareceria como um instante fora da janela.
         antes = agora_utc()
 
-        sessao_id = client.post("/sessoes", headers=cabecalhos).json()["id"]
+        corpo = client.post("/sessoes", headers=cabecalhos).json()
 
-        session.expire_all()
-        inicio = como_utc(session.get(SessaoEstudo, sessao_id).inicio)
+        # fromisoformat só entende o sufixo "Z" a partir do Python 3.11.
+        inicio = datetime.fromisoformat(corpo["inicio"].replace("Z", "+00:00"))
         assert antes <= inicio <= agora_utc()
 
     def test_resposta_serializa_o_inicio_com_fuso_explicito(self, client, cabecalhos):
