@@ -1,0 +1,31 @@
+<main class="tela-auth">
+  <h1>Criar conta</h1>
+  <form [formGroup]="formulario" (ngSubmit)="cadastrar()" novalidate>
+    <label for="nome">Nome</label>
+    <input id="nome" type="text" formControlName="nome" autocomplete="name" />
+    @if (formulario.get('nome')?.invalid && formulario.get('nome')?.touched) {
+      <p class="campo-erro">Informe seu nome.</p>
+    }
+
+    <label for="email">E-mail</label>
+    <input id="email" type="email" formControlName="email" autocomplete="email" />
+    @if (formulario.get('email')?.invalid && formulario.get('email')?.touched) {
+      <p class="campo-erro">Informe um e-mail válido.</p>
+    }
+
+    <label for="senha">Senha</label>
+    <input id="senha" type="password" formControlName="senha" autocomplete="new-password" />
+    @if (formulario.get('senha')?.invalid && formulario.get('senha')?.touched) {
+      <p class="campo-erro">A senha precisa ter pelo menos 8 caracteres.</p>
+    }
+
+    @if (erro) {
+      <p class="erro-geral" role="alert">{{ erro }}</p>
+    }
+
+    <button type="submit" [disabled]="enviando">
+      {{ enviando ? 'Cadastrando…' : 'Cadastrar' }}
+    </button>
+  </form>
+  <p>Já tem conta? <a routerLink="/login">Entrar</a></p>
+</main>
