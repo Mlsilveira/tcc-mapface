@@ -2,6 +2,7 @@ import { Injectable, NgZone, OnDestroy } from '@angular/core';
 import { Router } from '@angular/router';
 
 import { AuthService } from './auth.service';
+import { SessaoService } from './sessao.service';
 
 const EVENTOS_DE_ATIVIDADE = ['mousemove', 'keydown', 'click', 'scroll', 'touchstart'];
 
@@ -16,6 +17,7 @@ export class InactivityService implements OnDestroy {
 
   constructor(
     private readonly authService: AuthService,
+    private readonly sessaoService: SessaoService,
     private readonly router: Router,
     private readonly zone: NgZone,
   ) {}
@@ -63,6 +65,7 @@ export class InactivityService implements OnDestroy {
   private encerrarPorInatividade(): void {
     this.zone.run(() => {
       this.pararMonitoramento();
+      this.sessaoService.esquecerSessao();
       this.authService.logout();
       this.router.navigate(['/login'], { queryParams: { motivo: 'inatividade' } });
     });
