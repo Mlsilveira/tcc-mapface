@@ -1,29 +1,36 @@
-import { fakeAsync, TestBed, tick } from '@angular/core/testing';
+import { provideHttpClient } from '@angular/common/http';
+import { HttpTestingController, provideHttpClientTesting } from '@angular/common/http/testing';
+import { discardPeriodicTasks, fakeAsync, TestBed, tick } from '@angular/core/testing';
 import { Router } from '@angular/router';
 
 import { AuthService } from './auth.service';
 import { InactivityService, TEMPO_LIMITE_INATIVIDADE_MS } from './inactivity.service';
 import { SessaoService } from './sessao.service';
 
+const API = 'http://localhost:8000';
+
 describe('InactivityService', () => {
   let service: InactivityService;
   let authServiceSpy: jasmine.SpyObj<AuthService>;
-  let sessaoServiceSpy: jasmine.SpyObj<SessaoService>;
+  let sessaoService: SessaoService;
+  let httpMock: HttpTestingController;
   let routerSpy: jasmine.SpyObj<Router>;
 
   beforeEach(() => {
     authServiceSpy = jasmine.createSpyObj('AuthService', ['logout']);
-    sessaoServiceSpy = jasmine.createSpyObj('SessaoService', ['esquecerSessao']);
     routerSpy = jasmine.createSpyObj('Router', ['navigate']);
 
     TestBed.configureTestingModule({
       providers: [
+        provideHttpClient(),
+        provideHttpClientTesting(),
         { provide: AuthService, useValue: authServiceSpy },
-        { provide: SessaoService, useValue: sessaoServiceSpy },
         { provide: Router, useValue: routerSpy },
       ],
     });
     service = TestBed.inject(InactivityService);
+    sessaoService = TestBed.inject(SessaoService);
+    httpMock = TestBed.inject(HttpTestingController);
   });
 
   afterEach(() => service.pararMonitoramento());
@@ -41,11 +48,19 @@ describe('InactivityService', () => {
 
   it('esquece a sessão de estudo ao deslogar por inatividade', fakeAsync(() => {
     // Sem isso o heartbeat seguiria batendo no backend depois do logout.
+    sessaoService.iniciar().subscribe();
+    httpMock
+      .expectOne({ method: 'POST', url: `${API}/sessoes` })
+      .flush({ id: 7, id_aluno: 1, inicio: '2026-08-13T12:00:00Z', fim: null });
     service.iniciarMonitoramento();
 
     tick(TEMPO_LIMITE_INATIVIDADE_MS);
 
-    expect(sessaoServiceSpy.esquecerSessao).toHaveBeenCalled();
+    expect(sessaoService.sessaoAtiva()).toBeNull();
+    // Drena os heartbeats disparados antes do logout — nenhum deles reanima a
+    // sessão, porque só o caminho de erro mexe no estado.
+    httpMock.match((r) => r.url.includes('/atividade')).forEach((r) => r.flush({}));
+    discardPeriodicTasks();
   }));
 
   it('reinicia o temporizador quando há atividade do usuário, adiando o logout', fakeAsync(() => {
