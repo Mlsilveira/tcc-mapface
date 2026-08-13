@@ -1,1 +1,22 @@
 .DS_Store
+
+# Dependências e artefatos de build
+node_modules/
+frontend/dist/
+backend/.venv/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+
+# Configuração local e segredos — nunca versionar
+.env
+backend/.env
+*.db
+
+# Ferramentas locais
+.claude/
+.specify/
+
+# Diretório .git de trabalho paralelo, não é conteúdo do projeto
+.git-ticket3/
+probe_local_new.txt
