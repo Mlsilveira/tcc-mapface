@@ -1,0 +1,25 @@
+<main class="tela-auth">
+  <h1>Entrar</h1>
+  <form [formGroup]="formulario" (ngSubmit)="entrar()" novalidate>
+    <label for="email">E-mail</label>
+    <input id="email" type="email" formControlName="email" autocomplete="email" />
+    @if (formulario.get('email')?.invalid && formulario.get('email')?.touched) {
+      <p class="campo-erro">Informe um e-mail válido.</p>
+    }
+
+    <label for="senha">Senha</label>
+    <input id="senha" type="password" formControlName="senha" autocomplete="current-password" />
+    @if (formulario.get('senha')?.invalid && formulario.get('senha')?.touched) {
+      <p class="campo-erro">Informe sua senha.</p>
+    }
+
+    @if (erro) {
+      <p class="erro-geral" role="alert">{{ erro }}</p>
+    }
+
+    <button type="submit" [disabled]="enviando">
+      {{ enviando ? 'Entrando…' : 'Entrar' }}
+    </button>
+  </form>
+  <p>Não tem conta? <a routerLink="/registro">Cadastre-se</a></p>
+</main>
