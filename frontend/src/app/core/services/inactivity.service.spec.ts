@@ -3,19 +3,23 @@ import { Router } from '@angular/router';
 
 import { AuthService } from './auth.service';
 import { InactivityService, TEMPO_LIMITE_INATIVIDADE_MS } from './inactivity.service';
+import { SessaoService } from './sessao.service';
 
 describe('InactivityService', () => {
   let service: InactivityService;
   let authServiceSpy: jasmine.SpyObj<AuthService>;
+  let sessaoServiceSpy: jasmine.SpyObj<SessaoService>;
   let routerSpy: jasmine.SpyObj<Router>;
 
   beforeEach(() => {
     authServiceSpy = jasmine.createSpyObj('AuthService', ['logout']);
+    sessaoServiceSpy = jasmine.createSpyObj('SessaoService', ['esquecerSessao']);
     routerSpy = jasmine.createSpyObj('Router', ['navigate']);
 
     TestBed.configureTestingModule({
       providers: [
         { provide: AuthService, useValue: authServiceSpy },
+        { provide: SessaoService, useValue: sessaoServiceSpy },
         { provide: Router, useValue: routerSpy },
       ],
     });
@@ -33,6 +37,15 @@ describe('InactivityService', () => {
     expect(routerSpy.navigate).toHaveBeenCalledWith(['/login'], {
       queryParams: { motivo: 'inatividade' },
     });
+  }));
+
+  it('esquece a sessão de estudo ao deslogar por inatividade', fakeAsync(() => {
+    // Sem isso o heartbeat seguiria batendo no backend depois do logout.
+    service.iniciarMonitoramento();
+
+    tick(TEMPO_LIMITE_INATIVIDADE_MS);
+
+    expect(sessaoServiceSpy.esquecerSessao).toHaveBeenCalled();
   }));
 
   it('reinicia o temporizador quando há atividade do usuário, adiando o logout', fakeAsync(() => {

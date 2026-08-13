@@ -2,6 +2,8 @@ import { HttpClient } from '@angular/common/http';
 import { Injectable, signal } from '@angular/core';
 import { Observable, tap } from 'rxjs';
 
+import { API_URL } from '../api';
+
 export interface AlunoRegistroPayload {
   nome: string;
   email: string;
@@ -19,7 +21,6 @@ export interface TokenResponse {
 }
 
 const CHAVE_TOKEN = 'iee_access_token';
-const API_URL = 'http://localhost:8000';
 
 @Injectable({ providedIn: 'root' })
 export class AuthService {
