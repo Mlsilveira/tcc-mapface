@@ -48,9 +48,19 @@ export class SessaoService implements OnDestroy {
       return throwError(() => new Error('Não há sessão de estudo em andamento.'));
     }
 
-    return this.http
-      .post<Sessao>(`${API_URL}/sessoes/${sessao.id}/encerrar`, {})
-      .pipe(tap(() => this.assumir(null)));
+    return this.http.post<Sessao>(`${API_URL}/sessoes/${sessao.id}/encerrar`, {}).pipe(
+      tap({
+        next: () => this.assumir(null),
+        // A sessão pode ter expirado entre o último heartbeat e o clique. Se o
+        // servidor já a encerrou, esquecê-la aqui também — senão o aluno fica
+        // preso num botão de encerrar que nunca funciona.
+        error: (falha: { status?: number }) => {
+          if (this.servidorJaEncerrou(falha)) {
+            this.assumir(null);
+          }
+        },
+      }),
+    );
   }
 
   /**
@@ -60,6 +70,15 @@ export class SessaoService implements OnDestroy {
    */
   esquecerSessao(): void {
     this.assumir(null);
+  }
+
+  /**
+   * Respostas que significam "esta sessão não está mais viva no servidor":
+   * 404/409 quando ele já a encerrou por inatividade, 401 quando o JWT expirou
+   * e nenhum sinal nosso vai mais chegar.
+   */
+  private servidorJaEncerrou(falha: { status?: number }): boolean {
+    return falha?.status === 401 || falha?.status === 404 || falha?.status === 409;
   }
 
   private assumir(sessao: Sessao | null): void {
@@ -98,7 +117,7 @@ export class SessaoService implements OnDestroy {
       // encerrar a sessão sozinho. Em todos os casos, continuar mostrando
       // "em andamento" seria mentir para o aluno sobre o monitoramento.
       error: (erro: { status?: number }) => {
-        if (erro?.status === 401 || erro?.status === 404 || erro?.status === 409) {
+        if (this.servidorJaEncerrou(erro)) {
           this.assumir(null);
         }
       },
