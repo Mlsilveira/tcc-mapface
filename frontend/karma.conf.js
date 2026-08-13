@@ -1,3 +1,13 @@
+// Usa o Chromium que vem com o puppeteer para a suíte não depender de um
+// navegador instalado na máquina (nem localmente, nem em CI).
+// computeExecutablePath é síncrono; puppeteer.executablePath() devolve uma
+// Promise, que o karma não sabe esperar.
+process.env.CHROME_BIN = require('@puppeteer/browsers').computeExecutablePath({
+  browser: 'chrome',
+  buildId: require('puppeteer').PUPPETEER_REVISIONS.chrome,
+  cacheDir: require('path').join(require('os').homedir(), '.cache', 'puppeteer'),
+});
+
 module.exports = function (config) {
   config.set({
     basePath: '',
