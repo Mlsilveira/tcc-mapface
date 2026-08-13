@@ -72,6 +72,27 @@ describe('SessaoService', () => {
     expect(service.sessaoAtiva()).toBeNull();
   });
 
+  it('limpa o estado local quando o backend diz que a sessão já estava encerrada', fakeAsync(() => {
+    // A sessão pode ter expirado por inatividade entre o último heartbeat e o
+    // clique em "Encerrar". Insistir em mostrá-la em andamento deixaria o aluno
+    // preso num botão de encerrar que falha para sempre.
+    iniciarSessao();
+
+    service.encerrar().subscribe({ error: () => undefined });
+    httpMock
+      .expectOne(`${API}/sessoes/${SESSAO_EM_ANDAMENTO.id}/encerrar`)
+      .flush({ detail: 'Esta sessão de estudo já foi encerrada' }, {
+        status: 409,
+        statusText: 'Conflict',
+      });
+
+    expect(service.sessaoAtiva()).toBeNull();
+
+    tick(INTERVALO_ATIVIDADE_MS * 2);
+    httpMock.expectNone(`${API}/sessoes/${SESSAO_EM_ANDAMENTO.id}/atividade`);
+    discardPeriodicTasks();
+  }));
+
   it('falha ao encerrar quando não há sessão em andamento, sem chamar o backend', () => {
     let erro: unknown = null;
     service.encerrar().subscribe({ error: (e) => (erro = e) });
