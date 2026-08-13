@@ -1,20 +1,25 @@
 from datetime import datetime, timedelta, timezone
 from typing import Optional
 
+import bcrypt
 from jose import JWTError, jwt
-from passlib.context import CryptContext
 
 from app.config import settings
-
-_pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
+from app.schemas import LIMITE_SENHA_BYTES
 
 
 def hash_senha(senha: str) -> str:
-    return _pwd_context.hash(senha)
+    return bcrypt.hashpw(senha.encode("utf-8"), bcrypt.gensalt()).decode("utf-8")
 
 
 def verificar_senha(senha: str, senha_hash: str) -> bool:
-    return _pwd_context.verify(senha, senha_hash)
+    senha_bytes = senha.encode("utf-8")
+    # O registro rejeita senhas acima do limite, então nenhum hash armazenado
+    # pode corresponder a uma. Sem esta guarda o bcrypt levanta ValueError e o
+    # login vira 500 em vez de 401.
+    if len(senha_bytes) > LIMITE_SENHA_BYTES:
+        return False
+    return bcrypt.checkpw(senha_bytes, senha_hash.encode("utf-8"))
 
 
 def criar_token_acesso(email: str) -> str:
