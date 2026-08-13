@@ -4,7 +4,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from app.database import criar_tabelas
-from app.routers import auth
+from app.routers import auth, sessoes
 
 
 @asynccontextmanager
@@ -24,6 +24,7 @@ app.add_middleware(
 )
 
 app.include_router(auth.router)
+app.include_router(sessoes.router)
 
 
 @app.get("/health")

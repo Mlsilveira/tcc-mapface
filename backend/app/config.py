@@ -14,6 +14,9 @@ class Settings(BaseSettings):
     secret_key: str = "troque-esta-chave-por-um-valor-aleatorio-e-secreto"
     algorithm: str = "HS256"
     access_token_expire_minutes: int = 30
+    # Tempo sem sinal de atividade após o qual a sessão de estudo é encerrada
+    # sozinha, para não registrar sessões "fantasma" (spec, história 28).
+    sessao_inatividade_minutos: int = 10
 
     model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8")
 

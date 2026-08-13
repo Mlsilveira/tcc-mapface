@@ -1,5 +1,37 @@
 <main>
   <h1>Área do estudante</h1>
-  <p>Esta é uma rota protegida — só é acessível para quem está autenticado.</p>
-  <button type="button" (click)="sair()">Sair</button>
+
+  <section class="sessao">
+    <h2>Sessão de estudo</h2>
+
+    @if (sessaoAtiva(); as sessao) {
+      <p data-teste="sessao-em-andamento">
+        Sessão em andamento desde {{ sessao.inicio | date: 'shortTime' }}.
+      </p>
+      <button
+        type="button"
+        data-teste="encerrar-sessao"
+        [disabled]="aguardando"
+        (click)="encerrarSessao()"
+      >
+        {{ aguardando ? 'Encerrando…' : 'Encerrar sessão' }}
+      </button>
+    } @else {
+      <p>Nenhuma sessão em andamento.</p>
+      <button
+        type="button"
+        data-teste="iniciar-sessao"
+        [disabled]="aguardando"
+        (click)="iniciarSessao()"
+      >
+        {{ aguardando ? 'Iniciando…' : 'Iniciar sessão' }}
+      </button>
+    }
+
+    @if (erro) {
+      <p class="erro-geral" role="alert">{{ erro }}</p>
+    }
+  </section>
+
+  <button type="button" data-teste="sair" (click)="sair()">Sair</button>
 </main>
