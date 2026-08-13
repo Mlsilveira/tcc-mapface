@@ -60,6 +60,26 @@ class TestRegistro:
 
         assert resposta.status_code == 422
 
+    def test_rejeita_senha_acima_do_limite_do_bcrypt(self, client):
+        # bcrypt rejeita segredos acima de 72 bytes. Sem um limite explícito no
+        # schema, a senha vaza para o hash e derruba o endpoint com 500.
+        resposta = registrar(client, {**PAYLOAD_PADRAO, "senha": "a" * 73})
+
+        assert resposta.status_code == 422
+
+    def test_limite_da_senha_e_medido_em_bytes_e_nao_em_caracteres(self, client):
+        # 40 caracteres, mas 80 bytes em UTF-8: um limite por caractere deixaria
+        # passar e o bcrypt estouraria. Cenário realista em português.
+        senha = "çã" * 20
+
+        assert len(senha) == 40 and len(senha.encode("utf-8")) == 80
+        assert registrar(client, {**PAYLOAD_PADRAO, "senha": senha}).status_code == 422
+
+    def test_aceita_senha_exatamente_no_limite_de_72_bytes(self, client):
+        resposta = registrar(client, {**PAYLOAD_PADRAO, "senha": "a" * 72})
+
+        assert resposta.status_code == 201
+
 
 class TestLogin:
     def test_credenciais_corretas_retornam_jwt(self, client):
@@ -81,6 +101,15 @@ class TestLogin:
 
     def test_email_inexistente_retorna_401(self, client):
         resposta = login(client, email="naoexiste@exemplo.com")
+
+        assert resposta.status_code == 401
+
+    def test_senha_absurdamente_longa_nao_derruba_o_endpoint(self, client):
+        # Alcançável sem autenticação: se a senha chegar crua no bcrypt, um
+        # request anônimo vira 500 em vez de 401.
+        registrar(client)
+
+        resposta = login(client, senha="a" * 500)
 
         assert resposta.status_code == 401
 
