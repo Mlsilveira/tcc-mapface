@@ -20,3 +20,7 @@ backend/.env
 # Diretório .git de trabalho paralelo, não é conteúdo do projeto
 .git-ticket3/
 probe_local_new.txt
+
+Plano_de_Sprints_TCC.pdf
+TCC_EM_ABNT*.pdf
+*.pdf
