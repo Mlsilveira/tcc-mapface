@@ -1,0 +1,8 @@
+mediapipe==0.10.14
+opencv-python==4.10.0.84
+numpy==1.26.4
+pandas==2.2.3
+scikit-learn==1.5.2
+joblib==1.4.2
+pyarrow==17.0.0
+pytest==8.3.3
