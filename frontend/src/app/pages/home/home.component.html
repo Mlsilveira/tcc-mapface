@@ -8,6 +8,47 @@
       <p data-teste="sessao-em-andamento">
         Sessão em andamento desde {{ sessao.inicio | date: 'shortTime' }}.
       </p>
+
+      <!-- O preview existe para o aluno confirmar que a webcam está funcionando.
+           Nenhum frame sai daqui: o vídeo só é pintado na tela dele. -->
+      <video
+        #preview
+        data-teste="preview-webcam"
+        autoplay
+        playsinline
+        muted
+        aria-label="Preview da sua webcam"
+      ></video>
+
+      <section class="metricas" data-teste="metricas">
+        <h3>Captura</h3>
+
+        <p data-teste="fps">{{ fps() }} FPS</p>
+        @if (fps() > 0 && fps() < FPS_MINIMO) {
+          <p class="aviso" role="status" data-teste="fps-baixo">
+            A captura está abaixo de {{ FPS_MINIMO }} FPS. Fechar outras abas costuma ajudar.
+          </p>
+        }
+
+        @if (metricas(); as leitura) {
+          <dl>
+            <dt>EAR (abertura dos olhos)</dt>
+            <dd data-teste="ear">{{ leitura.ear | number: '1.3-3' }}</dd>
+
+            <dt>MAR (abertura da boca)</dt>
+            <dd data-teste="mar">{{ leitura.mar | number: '1.3-3' }}</dd>
+
+            <dt>Cabeça (yaw / pitch)</dt>
+            <dd data-teste="head-pose">
+              {{ leitura.cabeca.yaw | number: '1.1-1' }}° /
+              {{ leitura.cabeca.pitch | number: '1.1-1' }}°
+            </dd>
+          </dl>
+        } @else {
+          <p data-teste="sem-rosto">Rosto não detectado no momento.</p>
+        }
+      </section>
+
       <button
         type="button"
         data-teste="encerrar-sessao"
