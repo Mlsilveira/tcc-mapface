@@ -61,13 +61,13 @@ O treino, as métricas e o relatório estão implementados em [`ml/`](./ml/) e r
 
 **Bloqueada por:** Ticket 4.
 
-- [ ] Integração do `@mediapipe/face_mesh` no Angular
-- [ ] Fluxo de permissão de webcam, com mensagem clara em caso de negação
-- [ ] Mensagem de erro específica quando não há webcam disponível
-- [ ] Preview da webcam visível ao usuário durante a sessão
-- [ ] Cálculo local de EAR, Head Pose e MAR a partir dos 468 landmarks
-- [ ] Captura roda a pelo menos 15 FPS
-- [ ] Nenhum frame de vídeo ou imagem sai do navegador
+- [x] Integração do MediaPipe Face Mesh no Angular (via `@mediapipe/tasks-vision`)
+- [x] Fluxo de permissão de webcam, com mensagem clara em caso de negação
+- [x] Mensagem de erro específica quando não há webcam disponível
+- [x] Preview da webcam visível ao usuário durante a sessão
+- [x] Cálculo local de EAR, Head Pose e MAR a partir dos landmarks
+- [x] Captura roda a pelo menos 15 FPS
+- [x] Nenhum frame de vídeo ou imagem sai do navegador
 
 ## 6. Canal de telemetria (WebSocket) com score stub persistido
 
