@@ -3,6 +3,8 @@
 # Dependências e artefatos de build
 node_modules/
 frontend/dist/
+# Modelo do MediaPipe: binário de ~3 MB, baixado no setup (ver README)
+frontend/src/assets/mediapipe/*.task
 backend/.venv/
 __pycache__/
 *.py[cod]
