@@ -75,11 +75,11 @@ O treino, as métricas e o relatório estão implementados em [`ml/`](./ml/) e r
 
 **Bloqueada por:** Ticket 5.
 
-- [ ] `WebSocketManager` no FastAPI recebendo payloads JSON de EAR/HP/MAR
-- [ ] Reconexão automática do WebSocket em caso de queda de conexão
-- [ ] Score provisório calculado a cada payload recebido
-- [ ] Log persistido em `log_engajamento` (horario_registro, score, id_sessao)
-- [ ] Nenhum campo de imagem/vídeo bruto presente no schema
+- [x] `WebSocketManager` no FastAPI recebendo payloads JSON de EAR/HP/MAR
+- [x] Reconexão automática do WebSocket em caso de queda de conexão
+- [x] Score provisório calculado a cada payload recebido
+- [x] Log persistido em `log_engajamento` (horario_registro, score, id_sessao)
+- [x] Nenhum campo de imagem/vídeo bruto presente no schema
 
 ## 7. Fórmula real do IEE com calibração de baseline
 
