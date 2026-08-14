@@ -93,7 +93,10 @@ def test_agregacoes_ignoram_frames_sem_rosto() -> None:
     assert linha["ear_mediana"] == pytest.approx(0.20)
     assert linha["ear_min"] == pytest.approx(0.10)
     assert linha["ear_max"] == pytest.approx(0.30)
-    assert linha["ear_desvio"] == pytest.approx(np.std([0.10, 0.30], ddof=1))
+    # Literal, e não `np.std(..., ddof=1)`: recomputar com numpy o que o pandas
+    # calculou só afirma que as duas bibliotecas concordam, e codifica o `ddof`
+    # que é justamente a decisão sob teste. sqrt(((0.10-0.20)² + (0.30-0.20)²)/1).
+    assert linha["ear_desvio"] == pytest.approx(0.1414213562)
 
 
 def test_desvio_de_um_unico_frame_valido_fica_nan() -> None:
