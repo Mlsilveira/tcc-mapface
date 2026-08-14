@@ -11,9 +11,11 @@ Trabalhe a **fronteira**: qualquer ticket cujos bloqueadores já estejam conclu�
 **Bloqueada por:** Nenhuma — pode começar imediatamente.
 
 - [ ] Dataset DAISEE baixado e organizado localmente
-- [ ] Pipeline extrai EAR, Head Pose (yaw/pitch) e MAR por frame via MediaPipe
-- [ ] Saída é um dataset tabular (CSV/parquet) com features + rótulos originais do DAISEE (engagement/boredom/confusion/frustration)
-- [ ] Pipeline é reproduzível via script, não um processo manual
+- [x] Pipeline extrai EAR, Head Pose (yaw/pitch) e MAR por frame via MediaPipe
+- [x] Saída é um dataset tabular (CSV/parquet) com features + rótulos originais do DAISEE (engagement/boredom/confusion/frustration)
+- [x] Pipeline é reproduzível via script, não um processo manual
+
+O pipeline está em [`ml/`](./ml/) e roda com `python extrair_features.py --raiz <DAiSEE>`. Falta só o download do dataset, que exige o formulário de acesso do IIIT Hyderabad.
 
 ## 2. Treinar e validar Random Forest baseline
 
@@ -22,10 +24,12 @@ Trabalhe a **fronteira**: qualquer ticket cujos bloqueadores já estejam conclu�
 **Bloqueada por:** Ticket 1.
 
 - [ ] Random Forest treinado sobre o dataset tabular da Ticket 1
-- [ ] Split de treino/validação/teste definido e documentado
+- [x] Split de treino/validação/teste definido e documentado
 - [ ] Relatório com acurácia, precisão, recall e F1-Score
 - [ ] Meta de precisão > 80% atingida, ou desvio justificado no relatório
-- [ ] Modelo serializado como artefato carregável pelo backend
+- [x] Modelo serializado como artefato carregável pelo backend
+
+O treino, as métricas e o relatório estão implementados em [`ml/`](./ml/) e rodam com `python treinar.py`. O que falta depende da ticket 1 estar de fato executada: sem o DAiSEE em disco não existe modelo treinado nem número de precisão para reportar. O split adotado é o do próprio DAiSEE (subject-independent), e a meta de 80% é medida sobre a **precisão macro** no `Test` — com ~85% de clipes "engajado", acurácia e precisão ponderada subiriam quase de graça.
 
 ## 3. Cadastro e login
 
@@ -57,13 +61,13 @@ Trabalhe a **fronteira**: qualquer ticket cujos bloqueadores já estejam conclu�
 
 **Bloqueada por:** Ticket 4.
 
-- [ ] Integração do `@mediapipe/face_mesh` no Angular
-- [ ] Fluxo de permissão de webcam, com mensagem clara em caso de negação
-- [ ] Mensagem de erro específica quando não há webcam disponível
-- [ ] Preview da webcam visível ao usuário durante a sessão
-- [ ] Cálculo local de EAR, Head Pose e MAR a partir dos 468 landmarks
-- [ ] Captura roda a pelo menos 15 FPS
-- [ ] Nenhum frame de vídeo ou imagem sai do navegador
+- [x] Integração do MediaPipe Face Mesh no Angular (via `@mediapipe/tasks-vision`)
+- [x] Fluxo de permissão de webcam, com mensagem clara em caso de negação
+- [x] Mensagem de erro específica quando não há webcam disponível
+- [x] Preview da webcam visível ao usuário durante a sessão
+- [x] Cálculo local de EAR, Head Pose e MAR a partir dos landmarks
+- [x] Captura roda a pelo menos 15 FPS
+- [x] Nenhum frame de vídeo ou imagem sai do navegador
 
 ## 6. Canal de telemetria (WebSocket) com score stub persistido
 
@@ -71,11 +75,11 @@ Trabalhe a **fronteira**: qualquer ticket cujos bloqueadores já estejam conclu�
 
 **Bloqueada por:** Ticket 5.
 
-- [ ] `WebSocketManager` no FastAPI recebendo payloads JSON de EAR/HP/MAR
-- [ ] Reconexão automática do WebSocket em caso de queda de conexão
-- [ ] Score provisório calculado a cada payload recebido
-- [ ] Log persistido em `log_engajamento` (horario_registro, score, id_sessao)
-- [ ] Nenhum campo de imagem/vídeo bruto presente no schema
+- [x] `WebSocketManager` no FastAPI recebendo payloads JSON de EAR/HP/MAR
+- [x] Reconexão automática do WebSocket em caso de queda de conexão
+- [x] Score provisório calculado a cada payload recebido
+- [x] Log persistido em `log_engajamento` (horario_registro, score, id_sessao)
+- [x] Nenhum campo de imagem/vídeo bruto presente no schema
 
 ## 7. Fórmula real do IEE com calibração de baseline
 

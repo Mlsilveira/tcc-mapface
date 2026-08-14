@@ -29,3 +29,24 @@ class SessaoEstudo(SQLModel, table=True):
     inicio: datetime = Field(default_factory=agora_utc)
     fim: Optional[datetime] = Field(default=None)
     ultima_atividade: datetime = Field(default_factory=agora_utc)
+
+
+class LogEngajamento(SQLModel, table=True):
+    """Um registro de score de engajamento dentro de uma sessão (ticket 6).
+
+    Não existe — e não pode passar a existir — nenhuma coluna de imagem, vídeo
+    ou landmark bruto aqui. Os landmarks são calculados e descartados no
+    navegador; o que chega ao banco é o score derivado deles. Há um teste que
+    trava a lista de colunas exatamente para forçar essa conversa quando alguém
+    quiser adicionar campo novo.
+
+    As colunas de fadiga e alerta previstas no spec entram na ticket 8, junto
+    com o modelo que as produz.
+    """
+
+    __tablename__ = "log_engajamento"
+
+    id: Optional[int] = Field(default=None, primary_key=True)
+    id_sessao: int = Field(foreign_key="sessao_estudo.id")
+    horario_registro: datetime = Field(default_factory=agora_utc)
+    score: float
