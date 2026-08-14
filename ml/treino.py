@@ -36,19 +36,25 @@ decisão de produto: `corte=3` significa exigir engajamento "muito alto".
 na floresta e por isso `relatorio.py` reporta tudo por classe e em macro-average.
 
 **NaN.** O extrator produz NaN nas features de clipes em que nenhum rosto foi
-detectado (e em `*_desvio` de clipes de um frame só), e o `RandomForestClassifier`
-não aceita NaN. Duas saídas: descartar esses clipes ou imputar. Descartar é o
-pior negócio possível aqui — clipe sem rosto detectado é justamente o clipe do
+detectado (e em `*_desvio` de clipes de um frame só). Descartar esses clipes
+seria o pior negócio possível — clipe sem rosto detectado é justamente o clipe do
 aluno que saiu da frente da câmera, o caso mais informativo de desengajamento; o
-modelo ficaria cego para ele. Então imputamos pela mediana **do treino**
-(`SimpleImputer` dentro do `Pipeline`, para a mediana ser aprendida só no
-`Train` e não vazar), aceitando o custo de inventar um valor plausível para um
-clipe que não tem rosto nenhum. O custo é contornável porque
-`prop_frames_com_rosto` nunca é NaN (vale 0 nesses clipes): a floresta consegue
-aprender "quando essa coluna é 0, ignore as features imputadas". `SimpleImputer`
-roda com `keep_empty_features=True` para que uma coluna inteiramente NaN no
-treino não seja *removida* — a contagem de features precisa ser sempre a mesma
-que o backend vai mandar na ticket 8.
+modelo ficaria cego para ele. Então eles ficam, e as features ausentes passam por
+um `SimpleImputer` de mediana **do treino**, dentro do `Pipeline` para a mediana
+ser aprendida só no `Train` e não vazar. `keep_empty_features=True` impede que
+uma coluna inteiramente NaN no treino seja removida.
+
+Uma ressalva que vale para quem for mexer nisto: **a imputação não é obrigatória
+nesta versão**. Desde o scikit-learn 1.4 os modelos baseados em árvore tratam
+valores ausentes nativamente, e o `RandomForestClassifier` da 1.5.2 fixada no
+`requirements.txt` treina e prevê com NaN sem imputador nenhum — verificado. Há
+inclusive um argumento de que o tratamento nativo seria *melhor* aqui: a árvore
+aprende para que lado mandar a amostra ausente, enquanto a mediana finge que o
+clipe teve EAR típico, que é exatamente o sinal que se queria preservar. O que
+segura a decisão em pé hoje é robustez, não necessidade: com o imputador o
+artefato continua funcionando se alguém trocar a floresta por um classificador
+que não tolere NaN. Trocar de estratégia muda o modelo treinado, então é decisão
+de quem tocar a ticket 2, não mudança silenciosa.
 """
 import warnings
 from dataclasses import dataclass

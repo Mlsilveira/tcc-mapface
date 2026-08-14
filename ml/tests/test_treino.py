@@ -252,22 +252,63 @@ def test_nan_nas_features_nao_quebra_o_treino() -> None:
     assert len(resultado.estimador.predict(teste[colunas_features()])) == len(teste)
 
 
-def test_coluna_inteiramente_nan_no_treino_preserva_a_ordem_das_features(
-    clipes: pd.DataFrame,
+def test_coluna_inteiramente_nan_no_treino_preserva_o_contrato_de_features(
+    clipes: pd.DataFrame, tmp_path
 ) -> None:
-    """A imputação não pode *sumir* com uma coluna: o backend manda 39 sempre."""
+    """Uma coluna toda-NaN no treino não altera o contrato de entrada do artefato.
+
+    O que está sob teste é a coerência entre o que o `.joblib` **anuncia**
+    (`colunas`) e o que o estimador dentro dele **aceita**. Se as duas contagens
+    divergirem, a ticket 8 quebra na predição — não no treino, onde alguém
+    estaria olhando. Verificado por mutação: treinar com `features[:-1]` mantendo
+    o artefato anunciando 39 faz este teste falhar.
+
+    Note que trocar `keep_empty_features` **não** quebra isto, e é o certo: a
+    imputação descarta a coluna no treino e na predição, então o pipeline segue
+    coerente e o contrato de 39 colunas na entrada continua valendo. Era isso que
+    a versão anterior deste teste afirmava, espiando `named_steps[...].n_features_in_`
+    — um invariante interno sem sintoma observável pela interface.
+    """
     com_buraco = clipes.copy()
     com_buraco["roll_desvio"] = np.nan
 
     resultado = treino.treina(com_buraco)
+    modelo = treino.carrega_modelo(
+        treino.salva_modelo(resultado, tmp_path / "modelo.joblib")
+    )
 
-    assert resultado.colunas == colunas_features()
-    assert resultado.estimador.named_steps["floresta"].n_features_in_ == len(colunas_features())
+    assert modelo.colunas == colunas_features()
+    teste = com_buraco[com_buraco[COLUNA_SPLIT] == "Test"]
+    assert len(modelo.preve(teste)) == len(teste)
 
 
-def test_imputacao_vive_dentro_do_pipeline(resultado: "treino.ResultadoTreino") -> None:
-    """O backend recebe o pipeline inteiro; não pode ser obrigado a saber imputar."""
-    assert list(resultado.estimador.named_steps) == ["imputacao", "floresta"]
+def test_modelo_carregado_preve_com_nan_sem_o_chamador_imputar(
+    resultado: "treino.ResultadoTreino", tmp_path
+) -> None:
+    """O contrato da ticket 8: o backend manda o que tem, NaN inclusive.
+
+    O que está sob teste é a **tolerância a NaN do artefato que vai para
+    produção**, não a imputação. Como a tolerância é obtida — `SimpleImputer` no
+    pipeline ou o suporte nativo a valores ausentes que as árvores do sklearn têm
+    desde a 1.4 — é detalhe de implementação, e um teste que amarrasse isso
+    quebraria em toda troca de estratégia sem nada ter mudado para quem chama.
+
+    Verificado por mutação: trocar a floresta por um `LogisticRegression` sem
+    imputação faz este teste falhar. Ele *não* falha ao remover só o
+    `SimpleImputer`, e isso é informação, não fraqueza — ver a nota sobre NaN na
+    docstring de `treino.py`.
+    """
+    modelo = treino.carrega_modelo(
+        treino.salva_modelo(resultado, tmp_path / "modelo.joblib")
+    )
+
+    clipe_sem_rosto = pd.DataFrame([{coluna: np.nan for coluna in colunas_features()}])
+    clipe_sem_rosto["prop_frames_com_rosto"] = 0.0
+
+    previsoes = modelo.preve(clipe_sem_rosto)
+
+    assert len(previsoes) == 1
+    assert previsoes[0] in modelo.rotulos
 
 
 # --- validação de entrada --------------------------------------------------
