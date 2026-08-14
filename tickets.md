@@ -152,6 +152,23 @@ O treino, as métricas e o relatório estão implementados em [`ml/`](./ml/) e r
 - [ ] Logs granulares (segundo a segundo) sumarizados em médias após o encerramento da sessão
 - [ ] Indexação/particionamento temporal em `horario_registro`
 
+## 17. Design da tela de sessão
+
+**O que construir:** o acabamento visual da área do estudante, uma vez que ela já tenha todos os elementos que precisa exibir.
+
+**Bloqueada por:** Ticket 9 e Ticket 10.
+
+Deliberadamente posicionada depois da 9 e da 10, e não junto da 5: a tela ainda vai receber o gráfico do IEE em tempo real e o alerta de "Incerteza de Captura". Desenhar antes disso significaria desenhar duas vezes, e o layout que faz sentido com EAR/MAR/FPS crus não é o que faz sentido com um gráfico e um score em destaque.
+
+As telas de login e cadastro não estão aqui: elas são estáveis desde a ticket 3 e já foram desenhadas.
+
+- [ ] Score do IEE como elemento principal da tela, com o gráfico em apoio
+- [ ] Preview da webcam presente mas discreto — serve para conferir enquadramento, não é o foco
+- [ ] Métricas cruas (EAR/MAR/FPS) recolhidas em área de diagnóstico, não competindo com o score
+- [ ] Alerta de incerteza de captura visualmente distinto de erro
+- [ ] Contraste mínimo AA em todos os textos e estados
+- [ ] Layout legível em projetor, para a apresentação da banca
+
 ## 14. Infraestrutura como código (Terraform)
 
 **O que construir:** toda a infraestrutura AWS provisionável com um comando, sem passos manuais.

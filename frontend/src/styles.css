@@ -1,3 +1,34 @@
+/*
+ * Estilos globais.
+ *
+ * A direção visual é deliberadamente calma: tons quentes, cantos arredondados e
+ * bastante respiro. O sistema mede comportamento de estudo e devolve isso ao
+ * próprio aluno — não avalia nem julga —, então a interface não deve ter cara
+ * de painel de vigilância ou de prova.
+ *
+ * As telas de sessão (tickets 9, 10 e a ticket de design que vem depois delas)
+ * ainda não foram desenhadas: os estilos abaixo cobrem autenticação e o mínimo
+ * compartilhado.
+ */
+
+:root {
+  --fundo: #f7f3ed;
+  --superficie: #fffdfa;
+  --borda: #e6dfd4;
+
+  --texto: #2c2a26;
+  --texto-suave: #6b655c;
+
+  --acento: #4f7d63;
+  --acento-escuro: #3f6650;
+  --acento-suave: #eaf1ec;
+
+  --erro: #a33b2f;
+
+  --raio: 16px;
+  --raio-campo: 10px;
+}
+
 * {
   box-sizing: border-box;
 }
@@ -5,32 +36,153 @@
 body {
   margin: 0;
   font-family: system-ui, -apple-system, sans-serif;
-  background: #f5f6f8;
-  color: #1c1e21;
+  background: var(--fundo);
+  color: var(--texto);
+  line-height: 1.5;
 }
 
+/* --- Telas de autenticação ------------------------------------------------ */
+
 .tela-auth {
-  max-width: 360px;
-  margin: 10vh auto;
-  padding: 2rem;
-  background: #fff;
-  border-radius: 8px;
-  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+  max-width: 420px;
+  margin: 8vh auto;
+  padding: 2.5rem 2.25rem;
+  background: var(--superficie);
+  border: 1px solid var(--borda);
+  /* Sombra difusa e baixa em vez de sombra dura: o card deve parecer pousado,
+     não recortado. */
+  border-radius: var(--raio);
+  box-shadow: 0 12px 32px rgba(64, 54, 40, 0.07);
+}
+
+/* Em telas estreitas o card precisa de margem lateral própria: sem ela ele
+   encosta nas bordas e os cantos arredondados são cortados pela viewport. */
+@media (max-width: 480px) {
+  .tela-auth {
+    margin: 4vh 1rem;
+    padding: 2rem 1.5rem;
+  }
+}
+
+.tela-auth h1 {
+  margin: 0 0 0.35rem;
+  font-size: 1.6rem;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+}
+
+.tela-auth__intro {
+  margin: 0 0 2rem;
+  color: var(--texto-suave);
+  font-size: 0.95rem;
 }
 
 .tela-auth form {
   display: flex;
   flex-direction: column;
-  gap: 0.75rem;
+  gap: 0.4rem;
 }
 
+.tela-auth label {
+  margin-top: 1rem;
+  font-size: 0.875rem;
+  font-weight: 500;
+  color: var(--texto);
+}
+
+.tela-auth input {
+  padding: 0.7rem 0.85rem;
+  font: inherit;
+  color: var(--texto);
+  background: var(--fundo);
+  border: 1px solid var(--borda);
+  border-radius: var(--raio-campo);
+  transition:
+    border-color 0.15s ease,
+    box-shadow 0.15s ease;
+}
+
+.tela-auth input:hover {
+  border-color: #d5ccbe;
+}
+
+/* Foco visível é requisito de acessibilidade, não enfeite: quem navega por
+   teclado precisa saber onde está. O anel usa o acento em vez do outline
+   padrão do navegador, que sumiria contra o fundo quente. */
+.tela-auth input:focus-visible {
+  outline: none;
+  border-color: var(--acento);
+  box-shadow: 0 0 0 3px var(--acento-suave);
+}
+
+.tela-auth button[type='submit'] {
+  margin-top: 1.75rem;
+  padding: 0.8rem 1rem;
+  font: inherit;
+  font-weight: 600;
+  color: #fff;
+  background: var(--acento);
+  border: none;
+  border-radius: var(--raio-campo);
+  cursor: pointer;
+  transition: background-color 0.15s ease;
+}
+
+.tela-auth button[type='submit']:hover:not(:disabled) {
+  background: var(--acento-escuro);
+}
+
+.tela-auth button[type='submit']:focus-visible {
+  outline: 2px solid var(--acento-escuro);
+  outline-offset: 2px;
+}
+
+.tela-auth button[type='submit']:disabled {
+  opacity: 0.6;
+  cursor: default;
+}
+
+.tela-auth__rodape {
+  margin: 1.5rem 0 0;
+  font-size: 0.9rem;
+  color: var(--texto-suave);
+  text-align: center;
+}
+
+.tela-auth a {
+  color: var(--acento-escuro);
+  font-weight: 500;
+}
+
+/* A promessa central do projeto, dita no momento em que o aluno decide entrar:
+   é aqui que ela pesa na decisão dele. */
+.tela-auth__privacidade {
+  margin: 2rem 0 0;
+  padding-top: 1.25rem;
+  border-top: 1px solid var(--borda);
+  font-size: 0.8rem;
+  color: var(--texto-suave);
+}
+
+/* --- Mensagens ------------------------------------------------------------ */
+
 .campo-erro {
-  color: #c0392b;
+  margin: 0.35rem 0 0;
+  color: var(--erro);
   font-size: 0.85rem;
-  margin: 0;
 }
 
 .erro-geral {
-  color: #c0392b;
+  margin: 1rem 0 0;
+  padding: 0.7rem 0.85rem;
+  color: var(--erro);
+  background: #fbeeec;
+  border-radius: var(--raio-campo);
   font-size: 0.9rem;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  * {
+    transition: none !important;
+  }
 }
