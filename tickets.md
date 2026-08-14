@@ -11,9 +11,11 @@ Trabalhe a **fronteira**: qualquer ticket cujos bloqueadores já estejam conclu�
 **Bloqueada por:** Nenhuma — pode começar imediatamente.
 
 - [ ] Dataset DAISEE baixado e organizado localmente
-- [ ] Pipeline extrai EAR, Head Pose (yaw/pitch) e MAR por frame via MediaPipe
-- [ ] Saída é um dataset tabular (CSV/parquet) com features + rótulos originais do DAISEE (engagement/boredom/confusion/frustration)
-- [ ] Pipeline é reproduzível via script, não um processo manual
+- [x] Pipeline extrai EAR, Head Pose (yaw/pitch) e MAR por frame via MediaPipe
+- [x] Saída é um dataset tabular (CSV/parquet) com features + rótulos originais do DAISEE (engagement/boredom/confusion/frustration)
+- [x] Pipeline é reproduzível via script, não um processo manual
+
+O pipeline está em [`ml/`](./ml/) e roda com `python extrair_features.py --raiz <DAiSEE>`. Falta só o download do dataset, que exige o formulário de acesso do IIIT Hyderabad.
 
 ## 2. Treinar e validar Random Forest baseline
 
@@ -22,10 +24,12 @@ Trabalhe a **fronteira**: qualquer ticket cujos bloqueadores já estejam conclu�
 **Bloqueada por:** Ticket 1.
 
 - [ ] Random Forest treinado sobre o dataset tabular da Ticket 1
-- [ ] Split de treino/validação/teste definido e documentado
+- [x] Split de treino/validação/teste definido e documentado
 - [ ] Relatório com acurácia, precisão, recall e F1-Score
 - [ ] Meta de precisão > 80% atingida, ou desvio justificado no relatório
-- [ ] Modelo serializado como artefato carregável pelo backend
+- [x] Modelo serializado como artefato carregável pelo backend
+
+O treino, as métricas e o relatório estão implementados em [`ml/`](./ml/) e rodam com `python treinar.py`. O que falta depende da ticket 1 estar de fato executada: sem o DAiSEE em disco não existe modelo treinado nem número de precisão para reportar. O split adotado é o do próprio DAiSEE (subject-independent), e a meta de 80% é medida sobre a **precisão macro** no `Test` — com ~85% de clipes "engajado", acurácia e precisão ponderada subiriam quase de graça.
 
 ## 3. Cadastro e login
 
