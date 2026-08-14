@@ -20,6 +20,7 @@ import {
 } from '../../core/services/camera.service';
 import { InactivityService } from '../../core/services/inactivity.service';
 import { SessaoService } from '../../core/services/sessao.service';
+import { TelemetriaService } from '../../core/telemetria/telemetria.service';
 import { LandmarksService } from '../../core/visao/landmarks.service';
 
 @Component({
@@ -34,6 +35,7 @@ export class HomeComponent implements OnInit, OnDestroy {
   private readonly inactivityService = inject(InactivityService);
   private readonly landmarksService = inject(LandmarksService);
   private readonly sessaoService = inject(SessaoService);
+  private readonly telemetriaService = inject(TelemetriaService);
   private readonly router = inject(Router);
 
   private readonly preview = viewChild<ElementRef<HTMLVideoElement>>('preview');
@@ -42,6 +44,8 @@ export class HomeComponent implements OnInit, OnDestroy {
   readonly streamDaWebcam = this.cameraService.stream;
   readonly metricas = this.landmarksService.metricas;
   readonly fps = this.landmarksService.fps;
+  readonly score = this.telemetriaService.score;
+  readonly telemetriaConectada = this.telemetriaService.conectado;
 
   /** Piso de FPS exigido pela ticket 5. Abaixo disso a interface avisa o aluno. */
   readonly FPS_MINIMO = 15;
@@ -67,6 +71,7 @@ export class HomeComponent implements OnInit, OnDestroy {
       () => {
         if (this.sessaoAtiva() === null) {
           untracked(() => {
+            this.telemetriaService.parar();
             this.landmarksService.parar();
             this.cameraService.encerrar();
           });
@@ -177,6 +182,13 @@ export class HomeComponent implements OnInit, OnDestroy {
   private async analisar(video: HTMLVideoElement): Promise<void> {
     try {
       await this.landmarksService.iniciar(video);
+
+      // A telemetria só faz sentido depois que há o que medir. O token vai na
+      // primeira mensagem do WebSocket, nunca na URL.
+      const token = this.authService.getToken();
+      if (token !== null) {
+        this.telemetriaService.iniciar(token, () => this.landmarksService.metricas());
+      }
     } catch {
       this.erro =
         'A webcam está funcionando, mas não foi possível carregar o modelo de análise facial. A sessão segue sendo registrada, sem métricas de engajamento.';
@@ -192,6 +204,7 @@ export class HomeComponent implements OnInit, OnDestroy {
 
   sair(): void {
     this.inactivityService.pararMonitoramento();
+    this.telemetriaService.parar();
     this.landmarksService.parar();
     this.cameraService.encerrar();
     this.sessaoService.esquecerSessao();
@@ -217,6 +230,7 @@ export class HomeComponent implements OnInit, OnDestroy {
    * sem desligar a webcam deixaria a captura rodando em segundo plano.
    */
   ngOnDestroy(): void {
+    this.telemetriaService.parar();
     this.landmarksService.parar();
     this.cameraService.encerrar();
   }
