@@ -28,6 +28,7 @@ Implementado:
 
 - **Ticket 3 — Cadastro e login.** Registro com hashing bcrypt, login com JWT, rotas protegidas no Angular e expiração por inatividade.
 - **Ticket 4 — Ciclo de vida da sessão de estudo.** Iniciar e encerrar sessão, associada ao aluno autenticado, com encerramento automático por inatividade prolongada.
+- **Ticket 5 — Captura client-side.** Permissão de webcam com mensagem por tipo de falha, preview durante a sessão, extração de landmarks via MediaPipe e cálculo local de EAR, MAR e Head Pose, com FPS medido na tela.
 
 O plano completo, com as 16 fatias verticais e suas dependências, está em [`tickets.md`](./tickets.md). O problema, as histórias de usuário e as decisões de arquitetura estão em [`spec-poc-iee.md`](./spec-poc-iee.md).
 
@@ -59,6 +60,18 @@ npm start
 
 A aplicação sobe em `http://localhost:4200` e espera o backend em `http://localhost:8000`.
 
+#### Modelo do MediaPipe
+
+Os binários WASM vêm no pacote npm e são copiados pelo build. O arquivo do modelo, não — ele precisa ser baixado uma vez para `frontend/src/assets/mediapipe/`:
+
+```bash
+mkdir -p frontend/src/assets/mediapipe && curl -L -o frontend/src/assets/mediapipe/face_landmarker.task https://storage.googleapis.com/mediapipe-models/face_landmarker/face_landmarker/float16/1/face_landmarker.task
+```
+
+Sem ele a sessão ainda inicia e é registrada, mas sem métricas de engajamento — a interface avisa. O arquivo tem ~3 MB e não é versionado.
+
+A webcam só é liberada pelo navegador em contexto seguro: `localhost` funciona, mas um IP na rede local, não.
+
 ## Testes
 
 ```bash
@@ -84,13 +97,16 @@ backend/
   tests/
 frontend/src/app/
   core/
-    services/        auth, sessão de estudo, inatividade
+    services/        auth, sessão de estudo, inatividade, webcam
+    visao/           metricas.ts (EAR/MAR/Head Pose) e a ponte com o MediaPipe
     guards/          bloqueio de rotas protegidas
     interceptors/    anexa o JWT às requisições
   pages/             login, registro, área do estudante
 ```
 
 As regras de negócio ficam fora do FastAPI de propósito — `app/sessoes.py` não conhece HTTP, banco de requisição nem UI, e é onde os testes de comportamento batem. O mesmo vale para o `AnalistaEngajamento`, que entra nas tickets 7 e 8.
+
+No frontend a divisão é a mesma: `core/visao/metricas.ts` é aritmética pura sobre pontos e não importa o MediaPipe. Só `landmarks.service.ts` conhece a biblioteca de visão computacional, então trocá-la mexe num arquivo só.
 
 ## Equipe
 

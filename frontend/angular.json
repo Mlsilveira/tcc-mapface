@@ -16,17 +16,40 @@
             "outputPath": "dist/frontend",
             "index": "src/index.html",
             "browser": "src/main.ts",
-            "polyfills": ["zone.js"],
+            "polyfills": [
+              "zone.js"
+            ],
             "tsConfig": "tsconfig.app.json",
-            "assets": [{ "glob": "**/*", "input": "src/assets", "output": "assets" }],
-            "styles": ["src/styles.css"],
+            "assets": [
+              {
+                "glob": "**/*",
+                "input": "src/assets",
+                "output": "assets"
+              },
+              {
+                "glob": "**/*",
+                "input": "node_modules/@mediapipe/tasks-vision/wasm",
+                "output": "assets/mediapipe/wasm"
+              }
+            ],
+            "styles": [
+              "src/styles.css"
+            ],
             "scripts": []
           },
           "configurations": {
             "production": {
               "budgets": [
-                { "type": "initial", "maximumWarning": "500kb", "maximumError": "1mb" },
-                { "type": "anyComponentStyle", "maximumWarning": "4kb", "maximumError": "8kb" }
+                {
+                  "type": "initial",
+                  "maximumWarning": "500kb",
+                  "maximumError": "1mb"
+                },
+                {
+                  "type": "anyComponentStyle",
+                  "maximumWarning": "4kb",
+                  "maximumError": "8kb"
+                }
               ],
               "outputHashing": "all"
             },
@@ -42,18 +65,38 @@
         "serve": {
           "builder": "@angular-devkit/build-angular:dev-server",
           "configurations": {
-            "production": { "buildTarget": "frontend:build:production" },
-            "development": { "buildTarget": "frontend:build:development" }
+            "production": {
+              "buildTarget": "frontend:build:production"
+            },
+            "development": {
+              "buildTarget": "frontend:build:development"
+            }
           },
           "defaultConfiguration": "development"
         },
         "test": {
           "builder": "@angular-devkit/build-angular:karma",
           "options": {
-            "polyfills": ["zone.js", "zone.js/testing"],
+            "polyfills": [
+              "zone.js",
+              "zone.js/testing"
+            ],
             "tsConfig": "tsconfig.spec.json",
-            "assets": [{ "glob": "**/*", "input": "src/assets", "output": "assets" }],
-            "styles": ["src/styles.css"],
+            "assets": [
+              {
+                "glob": "**/*",
+                "input": "src/assets",
+                "output": "assets"
+              },
+              {
+                "glob": "**/*",
+                "input": "node_modules/@mediapipe/tasks-vision/wasm",
+                "output": "assets/mediapipe/wasm"
+              }
+            ],
+            "styles": [
+              "src/styles.css"
+            ],
             "scripts": [],
             "karmaConfig": "karma.conf.js"
           }
