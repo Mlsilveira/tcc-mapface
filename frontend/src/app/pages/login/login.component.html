@@ -1,5 +1,6 @@
 <main class="tela-auth">
   <h1>Entrar</h1>
+  <p class="tela-auth__intro">Entenda seus próprios padrões de estudo.</p>
   <form [formGroup]="formulario" (ngSubmit)="entrar()" novalidate>
     <label for="email">E-mail</label>
     <input id="email" type="email" formControlName="email" autocomplete="email" />
@@ -21,5 +22,10 @@
       {{ enviando ? 'Entrando…' : 'Entrar' }}
     </button>
   </form>
-  <p>Não tem conta? <a routerLink="/registro">Cadastre-se</a></p>
+  <p class="tela-auth__rodape">Não tem conta? <a routerLink="/registro">Cadastre-se</a></p>
+
+  <p class="tela-auth__privacidade">
+    Sua webcam é analisada no próprio navegador. Nenhuma imagem ou vídeo seu é
+    enviado ou armazenado — e seus dados são visíveis apenas para você.
+  </p>
 </main>
