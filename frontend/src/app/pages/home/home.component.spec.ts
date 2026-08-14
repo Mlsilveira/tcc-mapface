@@ -14,6 +14,7 @@ import { signal } from '@angular/core';
 
 import { AuthService } from '../../core/services/auth.service';
 import { INTERVALO_ATIVIDADE_MS, Sessao } from '../../core/services/sessao.service';
+import { TelemetriaService } from '../../core/telemetria/telemetria.service';
 import { LandmarksService } from '../../core/visao/landmarks.service';
 import { MetricasFaciais } from '../../core/visao/metricas';
 import { HomeComponent } from './home.component';
@@ -60,6 +61,15 @@ class LandmarksServiceFalso {
   });
 }
 
+/** Dublê do canal de telemetria: WebSocket é boundary, como o HTTP. */
+class TelemetriaServiceFalso {
+  readonly score = signal<number | null>(null);
+  readonly conectado = signal(false);
+
+  readonly iniciar = jasmine.createSpy('iniciar');
+  readonly parar = jasmine.createSpy('parar');
+}
+
 const LEITURA: MetricasFaciais = {
   ear: 0.284,
   mar: 0.052,
@@ -79,6 +89,7 @@ describe('HomeComponent', () => {
   let navegar: jasmine.Spy;
   let getUserMedia: jasmine.Spy;
   let landmarks: LandmarksServiceFalso;
+  let telemetria: TelemetriaServiceFalso;
 
   const mediaDevicesOriginal = Object.getOwnPropertyDescriptor(navigator, 'mediaDevices');
   const streamsCriados: MediaStream[] = [];
@@ -155,12 +166,14 @@ describe('HomeComponent', () => {
         provideHttpClientTesting(),
         provideRouter([]),
         { provide: LandmarksService, useClass: LandmarksServiceFalso },
+        { provide: TelemetriaService, useClass: TelemetriaServiceFalso },
       ],
     }).compileComponents();
 
     httpMock = TestBed.inject(HttpTestingController);
     authService = TestBed.inject(AuthService);
     landmarks = TestBed.inject(LandmarksService) as unknown as LandmarksServiceFalso;
+    telemetria = TestBed.inject(TelemetriaService) as unknown as TelemetriaServiceFalso;
     navegar = spyOn(TestBed.inject(Router), 'navigate').and.resolveTo(true);
 
     getUserMedia = jasmine.createSpy('getUserMedia').and.callFake(() =>
@@ -542,11 +555,13 @@ describe('HomeComponent', () => {
 
   describe('privacidade', () => {
     it('não deixa nenhum dado facial sair do navegador durante a sessão', fakeAsync(() => {
-      // O critério final da ticket 5, e a promessa central do projeto. Até a
-      // ticket 6 nada de telemetria trafega; e mesmo depois, o que sobe são
-      // métricas agregadas, nunca imagem. Este teste trava a régua: durante uma
-      // sessão ativa, as únicas requisições são de ciclo de vida da sessão, e
-      // nenhuma delas carrega corpo.
+      // O critério final da ticket 5, e a promessa central do projeto.
+      //
+      // ESCOPO: só o canal HTTP. O WebSocket da ticket 6 não passa pelo
+      // HttpClient, então o httpMock é cego para ele — o que sobe por lá é
+      // travado em `telemetria.service.spec.ts` ("nunca envia landmarks") e em
+      // `agregacao.spec.ts`. Sem esta nota, o teste daria uma garantia mais
+      // ampla do que realmente tem.
       abrirTela(SESSAO_EM_ANDAMENTO);
       flushMicrotasks();
       fixture.detectChanges();
@@ -590,6 +605,61 @@ describe('HomeComponent', () => {
 
       discardPeriodicTasks();
     }));
+  });
+
+  describe('telemetria', () => {
+    async function comSessaoAtiva(): Promise<void> {
+      abrirTela(null);
+      await clicarEAguardar('iniciar-sessao');
+      httpMock.expectOne({ method: 'POST', url: `${API}/sessoes` }).flush(SESSAO_EM_ANDAMENTO);
+      fixture.detectChanges();
+      await fixture.whenStable();
+      fixture.detectChanges();
+    }
+
+    it('abre o canal com o token do aluno ao iniciar a sessão', async () => {
+      await comSessaoAtiva();
+
+      expect(telemetria.iniciar).toHaveBeenCalled();
+      expect(telemetria.iniciar.calls.mostRecent().args[0]).toBe('token-fake');
+    });
+
+    it('alimenta a telemetria com as métricas da captura, não com landmarks', async () => {
+      // O segundo argumento é a única porta de entrada de dados no canal: se um
+      // dia alguém passar a malha crua por aqui, é neste ponto que aparece.
+      await comSessaoAtiva();
+
+      const lerMetricas = telemetria.iniciar.calls.mostRecent().args[1] as () => unknown;
+      landmarks.metricas.set(LEITURA);
+
+      expect(lerMetricas()).toBe(LEITURA);
+    });
+
+    it('não abre canal nenhum sem sessão em andamento', () => {
+      abrirTela(null);
+
+      expect(telemetria.iniciar).not.toHaveBeenCalled();
+    });
+
+    it('fecha o canal ao encerrar a sessão', async () => {
+      await comSessaoAtiva();
+
+      clicar('encerrar-sessao');
+      httpMock
+        .expectOne(`${API}/sessoes/${SESSAO_EM_ANDAMENTO.id}/encerrar`)
+        .flush(SESSAO_ENCERRADA);
+      fixture.detectChanges();
+
+      expect(telemetria.parar).toHaveBeenCalled();
+    });
+
+    it('fecha o canal ao sair', async () => {
+      await comSessaoAtiva();
+
+      clicar('sair');
+
+      expect(telemetria.parar).toHaveBeenCalled();
+    });
   });
 
   describe('logout', () => {
