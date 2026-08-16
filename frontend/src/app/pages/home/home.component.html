@@ -1,78 +1,118 @@
-<main>
-  <h1>Área do estudante</h1>
+<div class="app">
+  <header class="app__topo">
+    <span class="app__marca">MapFace</span>
+    <button type="button" class="botao-texto" data-teste="sair" (click)="sair()">Sair</button>
+  </header>
 
-  <section class="sessao">
-    <h2>Sessão de estudo</h2>
-
+  <main class="app__conteudo">
     @if (sessaoAtiva(); as sessao) {
-      <p data-teste="sessao-em-andamento">
-        Sessão em andamento desde {{ sessao.inicio | date: 'shortTime' }}.
-      </p>
+      <!--
+        Estado em sessão: acabamento deliberadamente mínimo. A ticket 17 desenha
+        esta tela depois que a 9 trouxer o gráfico do IEE e a 10 o alerta de
+        incerteza de captura — desenhar antes seria desenhar duas vezes.
+      -->
+      <section class="cartao sessao-ativa">
+        <p class="sessao-ativa__estado" data-teste="sessao-em-andamento">
+          Sessão em andamento desde {{ sessao.inicio | date: 'shortTime' }}.
+        </p>
 
-      <!-- O preview existe para o aluno confirmar que a webcam está funcionando.
-           Nenhum frame sai daqui: o vídeo só é pintado na tela dele. -->
-      <video
-        #preview
-        data-teste="preview-webcam"
-        autoplay
-        playsinline
-        muted
-        aria-label="Preview da sua webcam"
-      ></video>
+        <!-- O preview existe para o aluno conferir o enquadramento. Nenhum frame
+             sai daqui: o vídeo só é pintado na tela dele. -->
+        <video
+          #preview
+          class="sessao-ativa__preview"
+          data-teste="preview-webcam"
+          autoplay
+          playsinline
+          muted
+          aria-label="Preview da sua webcam"
+        ></video>
 
-      <section class="metricas" data-teste="metricas">
-        <h3>Captura</h3>
+        <section class="diagnostico" data-teste="metricas">
+          <h2 class="diagnostico__titulo">Captura</h2>
 
-        <p data-teste="fps">{{ fps() }} FPS</p>
-        @if (fps() > 0 && fps() < FPS_MINIMO) {
-          <p class="aviso" role="status" data-teste="fps-baixo">
-            A captura está abaixo de {{ FPS_MINIMO }} FPS. Fechar outras abas costuma ajudar.
-          </p>
-        }
+          <p class="diagnostico__fps" data-teste="fps">{{ fps() }} FPS</p>
+          @if (fps() > 0 && fps() < FPS_MINIMO) {
+            <p class="aviso" role="status" data-teste="fps-baixo">
+              A captura está abaixo de {{ FPS_MINIMO }} FPS. Fechar outras abas costuma ajudar.
+            </p>
+          }
 
-        @if (metricas(); as leitura) {
-          <dl>
-            <dt>EAR (abertura dos olhos)</dt>
-            <dd data-teste="ear">{{ leitura.ear | number: '1.3-3' }}</dd>
+          @if (metricas(); as leitura) {
+            <dl class="diagnostico__lista">
+              <div>
+                <dt>EAR</dt>
+                <dd data-teste="ear">{{ leitura.ear | number: '1.3-3' }}</dd>
+              </div>
+              <div>
+                <dt>MAR</dt>
+                <dd data-teste="mar">{{ leitura.mar | number: '1.3-3' }}</dd>
+              </div>
+              <div>
+                <dt>Cabeça</dt>
+                <dd data-teste="head-pose">
+                  {{ leitura.cabeca.yaw | number: '1.1-1' }}° /
+                  {{ leitura.cabeca.pitch | number: '1.1-1' }}°
+                </dd>
+              </div>
+            </dl>
+          } @else {
+            <p class="diagnostico__vazio" data-teste="sem-rosto">Rosto não detectado no momento.</p>
+          }
+        </section>
 
-            <dt>MAR (abertura da boca)</dt>
-            <dd data-teste="mar">{{ leitura.mar | number: '1.3-3' }}</dd>
-
-            <dt>Cabeça (yaw / pitch)</dt>
-            <dd data-teste="head-pose">
-              {{ leitura.cabeca.yaw | number: '1.1-1' }}° /
-              {{ leitura.cabeca.pitch | number: '1.1-1' }}°
-            </dd>
-          </dl>
-        } @else {
-          <p data-teste="sem-rosto">Rosto não detectado no momento.</p>
-        }
+        <button
+          type="button"
+          class="botao-secundario"
+          data-teste="encerrar-sessao"
+          [disabled]="aguardando"
+          (click)="encerrarSessao()"
+        >
+          {{ aguardando ? 'Encerrando…' : 'Encerrar sessão' }}
+        </button>
       </section>
-
-      <button
-        type="button"
-        data-teste="encerrar-sessao"
-        [disabled]="aguardando"
-        (click)="encerrarSessao()"
-      >
-        {{ aguardando ? 'Encerrando…' : 'Encerrar sessão' }}
-      </button>
     } @else {
-      <p>Nenhuma sessão em andamento.</p>
-      <button
-        type="button"
-        data-teste="iniciar-sessao"
-        [disabled]="aguardando"
-        (click)="iniciarSessao()"
-      >
-        {{ aguardando ? 'Iniciando…' : 'Iniciar sessão' }}
-      </button>
+      <section class="cartao inicio">
+        <h1 class="inicio__titulo">Pronto para estudar?</h1>
+        <p class="inicio__intro">
+          Durante a sessão, o MapFace observa sinais do seu comportamento — abertura dos olhos,
+          orientação da cabeça — e devolve isso a você no fim.
+        </p>
+
+        <ol class="passos">
+          <li class="passos__item">
+            <span class="passos__numero" aria-hidden="true">1</span>
+            <span>O navegador vai pedir permissão para usar sua webcam.</span>
+          </li>
+          <li class="passos__item">
+            <span class="passos__numero" aria-hidden="true">2</span>
+            <span>Você vê sua própria imagem enquanto estuda, para conferir o enquadramento.</span>
+          </li>
+          <li class="passos__item">
+            <span class="passos__numero" aria-hidden="true">3</span>
+            <span>Encerre quando quiser. O controle é seu, do começo ao fim.</span>
+          </li>
+        </ol>
+
+        <button
+          type="button"
+          class="botao-primario"
+          data-teste="iniciar-sessao"
+          [disabled]="aguardando"
+          (click)="iniciarSessao()"
+        >
+          {{ aguardando ? 'Iniciando…' : 'Iniciar sessão' }}
+        </button>
+
+        <p class="nota-privacidade">
+          Sua webcam é analisada no próprio navegador. Nenhuma imagem ou vídeo seu é enviado ou
+          armazenado — só números derivados deles.
+        </p>
+      </section>
     }
 
     @if (erro) {
       <p class="erro-geral" role="alert">{{ erro }}</p>
     }
-  </section>
-
-  <button type="button" data-teste="sair" (click)="sair()">Sair</button>
-</main>
+  </main>
+</div>
