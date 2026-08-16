@@ -186,3 +186,236 @@ body {
     transition: none !important;
   }
 }
+
+/* --- Área do estudante ---------------------------------------------------- */
+
+.app__topo {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  padding: 1rem 1.5rem;
+  background: var(--superficie);
+  border-bottom: 1px solid var(--borda);
+}
+
+.app__marca {
+  font-weight: 600;
+  letter-spacing: -0.01em;
+}
+
+.app__conteudo {
+  max-width: 560px;
+  margin: 3rem auto;
+  padding: 0 1rem;
+}
+
+.cartao {
+  padding: 2.5rem 2.25rem;
+  background: var(--superficie);
+  border: 1px solid var(--borda);
+  border-radius: var(--raio);
+  box-shadow: 0 12px 32px rgba(64, 54, 40, 0.07);
+}
+
+/* --- Estado inicial: antes de a sessão começar ---------------------------- */
+
+.inicio__titulo {
+  margin: 0 0 0.5rem;
+  font-size: 1.6rem;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+}
+
+.inicio__intro {
+  margin: 0 0 2rem;
+  color: var(--texto-suave);
+}
+
+/* Dizer de antemão o que vai acontecer é parte do consentimento: o aluno decide
+   com a informação na mão, em vez de ser surpreendido pelo prompt do navegador. */
+.passos {
+  margin: 0 0 2rem;
+  padding: 0;
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 0.9rem;
+}
+
+.passos__item {
+  display: flex;
+  align-items: baseline;
+  gap: 0.75rem;
+  font-size: 0.95rem;
+  color: var(--texto-suave);
+}
+
+.passos__numero {
+  flex: 0 0 1.5rem;
+  height: 1.5rem;
+  display: grid;
+  place-items: center;
+  font-size: 0.8rem;
+  font-weight: 600;
+  color: var(--acento-escuro);
+  background: var(--acento-suave);
+  border-radius: 50%;
+}
+
+.nota-privacidade {
+  margin: 2rem 0 0;
+  padding-top: 1.25rem;
+  border-top: 1px solid var(--borda);
+  font-size: 0.8rem;
+  color: var(--texto-suave);
+}
+
+/* --- Botões --------------------------------------------------------------- */
+
+.botao-primario,
+.botao-secundario {
+  width: 100%;
+  padding: 0.8rem 1rem;
+  font: inherit;
+  font-weight: 600;
+  border-radius: var(--raio-campo);
+  cursor: pointer;
+  transition:
+    background-color 0.15s ease,
+    border-color 0.15s ease;
+}
+
+.botao-primario {
+  color: #fff;
+  background: var(--acento);
+  border: none;
+}
+
+.botao-primario:hover:not(:disabled) {
+  background: var(--acento-escuro);
+}
+
+.botao-secundario {
+  color: var(--texto);
+  background: transparent;
+  border: 1px solid var(--borda);
+}
+
+.botao-secundario:hover:not(:disabled) {
+  border-color: var(--texto-suave);
+}
+
+.botao-primario:disabled,
+.botao-secundario:disabled,
+.botao-texto:disabled {
+  opacity: 0.6;
+  cursor: default;
+}
+
+.botao-texto {
+  padding: 0.4rem 0.6rem;
+  font: inherit;
+  font-size: 0.9rem;
+  color: var(--texto-suave);
+  background: none;
+  border: none;
+  border-radius: var(--raio-campo);
+  cursor: pointer;
+}
+
+.botao-texto:hover {
+  color: var(--texto);
+  background: var(--fundo);
+}
+
+.botao-primario:focus-visible,
+.botao-secundario:focus-visible,
+.botao-texto:focus-visible {
+  outline: 2px solid var(--acento-escuro);
+  outline-offset: 2px;
+}
+
+/* --- Estado em sessão: mínimo coerente até a ticket 17 -------------------- */
+
+.sessao-ativa__estado {
+  margin: 0 0 1.25rem;
+  font-weight: 500;
+}
+
+.sessao-ativa__preview {
+  display: block;
+  width: 100%;
+  aspect-ratio: 4 / 3;
+  background: #2c2a26;
+  border-radius: var(--raio-campo);
+  /* Espelhado: o aluno espera se ver como num espelho, não invertido. */
+  transform: scaleX(-1);
+  object-fit: cover;
+}
+
+.diagnostico {
+  margin: 1.5rem 0;
+  padding: 1rem 1.25rem;
+  background: var(--fundo);
+  border-radius: var(--raio-campo);
+}
+
+.diagnostico__titulo {
+  margin: 0 0 0.5rem;
+  font-size: 0.8rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--texto-suave);
+}
+
+.diagnostico__fps {
+  margin: 0;
+  font-size: 0.95rem;
+  font-variant-numeric: tabular-nums;
+}
+
+.diagnostico__lista {
+  margin: 0.75rem 0 0;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 1.5rem;
+}
+
+.diagnostico__lista dt {
+  font-size: 0.75rem;
+  color: var(--texto-suave);
+}
+
+.diagnostico__lista dd {
+  margin: 0.15rem 0 0;
+  font-size: 0.95rem;
+  /* Números tabulares para os valores não dançarem a cada atualização. */
+  font-variant-numeric: tabular-nums;
+}
+
+.diagnostico__vazio {
+  margin: 0.75rem 0 0;
+  font-size: 0.9rem;
+  color: var(--texto-suave);
+}
+
+.aviso {
+  margin: 0.75rem 0 0;
+  padding: 0.6rem 0.75rem;
+  font-size: 0.85rem;
+  color: #7a5106;
+  background: #fdf3dd;
+  border-radius: var(--raio-campo);
+}
+
+@media (max-width: 480px) {
+  .app__conteudo {
+    margin: 1.5rem auto;
+  }
+
+  .cartao {
+    padding: 2rem 1.5rem;
+  }
+}
