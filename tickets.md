@@ -37,11 +37,11 @@ O treino, as métricas e o relatório estão implementados em [`ml/`](./ml/) e r
 
 **Bloqueada por:** Nenhuma — pode começar imediatamente.
 
-- [ ] Endpoint de registro (nome, e-mail, senha) com hashing bcrypt
-- [ ] Endpoint de login retornando JWT
-- [ ] Telas de cadastro e login em Angular
-- [ ] Rotas protegidas redirecionam para login se o usuário não estiver autenticado
-- [ ] Sessão de autenticação expira após período de inatividade
+- [x] Endpoint de registro (nome, e-mail, senha) com hashing bcrypt
+- [x] Endpoint de login retornando JWT
+- [x] Telas de cadastro e login em Angular
+- [x] Rotas protegidas redirecionam para login se o usuário não estiver autenticado
+- [x] Sessão de autenticação expira após período de inatividade
 
 ## 4. Ciclo de vida da sessão de estudo
 
