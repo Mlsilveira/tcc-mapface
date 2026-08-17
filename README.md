@@ -2,7 +2,7 @@
 
 Prova de conceito de uma aplicação web que ajuda o estudante a **perceber quando perdeu o foco** durante uma sessão de estudo solitária.
 
-O estudante inicia uma sessão, autoriza a webcam, e seus sinais visuais comportamentais — abertura dos olhos (EAR), orientação da cabeça (Head Pose) e indícios de bocejo (MAR) — são extraídos **inteiramente no navegador** via MediaPipe Face Mesh. O backend calcula o Índice de Engajamento no Estudo, uma métrica de 0 a 100 calibrada individualmente, e ao final entrega um relatório de autopercepção.
+O estudante inicia uma sessão, autoriza a webcam, e seus sinais visuais comportamentais — abertura dos olhos (EAR), orientação da cabeça (Head Pose) e indícios de bocejo (MAR) — são extraídos **inteiramente no navegador** via MediaPipe Face Landmarker. O backend calcula o Índice de Engajamento no Estudo, uma métrica de 0 a 100 calibrada individualmente, e ao final entrega um relatório de autopercepção.
 
 O sistema **não diagnostica, não avalia e não julga**. Ele mede proxies comportamentais visuais e devolve isso ao próprio estudante.
 
@@ -18,7 +18,8 @@ Nenhuma imagem ou vídeo sai do navegador — apenas coordenadas numéricas traf
 | Backend | FastAPI + SQLModel |
 | Banco | SQLite na PoC; PostgreSQL previsto para o deploy |
 | Autenticação | JWT (python-jose) + bcrypt |
-| Visão computacional | MediaPipe Face Mesh (client-side) |
+| Visão computacional | `@mediapipe/tasks-vision` (FaceLandmarker), client-side |
+| Telemetria | WebSocket (FastAPI) |
 | ML | Random Forest treinado com o dataset DAISEE |
 | Infra | AWS (S3, ECR, ECS Fargate, RDS) via Terraform |
 
@@ -29,8 +30,11 @@ Implementado:
 - **Ticket 3 — Cadastro e login.** Registro com hashing bcrypt, login com JWT, rotas protegidas no Angular e expiração por inatividade.
 - **Ticket 4 — Ciclo de vida da sessão de estudo.** Iniciar e encerrar sessão, associada ao aluno autenticado, com encerramento automático por inatividade prolongada.
 - **Ticket 5 — Captura client-side.** Permissão de webcam com mensagem por tipo de falha, preview durante a sessão, extração de landmarks via MediaPipe e cálculo local de EAR, MAR e Head Pose, com FPS medido na tela.
+- **Ticket 6 — Canal de telemetria.** WebSocket autenticado pela primeira mensagem (nunca por query param), score provisório calculado a cada payload, log persistido em `log_engajamento`, agregação client-side a 1 Hz e reconexão automática com backoff exponencial.
 
-O plano completo, com as 16 fatias verticais e suas dependências, está em [`tickets.md`](./tickets.md). O problema, as histórias de usuário e as decisões de arquitetura estão em [`spec-poc-iee.md`](./spec-poc-iee.md).
+Também já tem design próprio, à frente do cronograma de tickets: as telas de login/cadastro e o estado inicial da área do estudante (antes de a sessão começar). O estado *durante* a sessão segue com acabamento mínimo de propósito — ele muda com as tickets 9 e 10, e ganha o design definitivo na ticket 17.
+
+O plano completo, com as 17 fatias verticais e suas dependências, está em [`tickets.md`](./tickets.md). O problema, as histórias de usuário e as decisões de arquitetura estão em [`spec-poc-iee.md`](./spec-poc-iee.md).
 
 ## Rodando localmente
 
@@ -89,24 +93,26 @@ A suíte do Angular usa o Chromium que vem com o puppeteer, então não depende 
 ```
 backend/
   app/
-    sessoes.py       regras do ciclo de vida da sessão, sem depender de HTTP
-    security.py      hashing de senha e emissão/validação de JWT
-    tempo.py         normalização de datetimes para UTC
-    models.py        tabelas aluno e sessao_estudo
-    routers/         endpoints de autenticação e de sessão
+    sessoes.py      regras do ciclo de vida da sessão, sem depender de HTTP
+    telemetria.py   score provisório e persistência do log de engajamento
+    security.py     hashing de senha e emissão/validação de JWT
+    tempo.py        normalização de datetimes para UTC
+    models.py       tabelas aluno, sessao_estudo e log_engajamento
+    routers/        endpoints de autenticação, sessão e o WebSocket de telemetria
   tests/
 frontend/src/app/
   core/
-    services/        auth, sessão de estudo, inatividade, webcam
-    visao/           metricas.ts (EAR/MAR/Head Pose) e a ponte com o MediaPipe
-    guards/          bloqueio de rotas protegidas
-    interceptors/    anexa o JWT às requisições
-  pages/             login, registro, área do estudante
+    services/       auth, sessão de estudo, inatividade, webcam
+    visao/          metricas.ts (EAR/MAR/Head Pose) e a ponte com o MediaPipe
+    telemetria/     agregação a 1 Hz e o canal WebSocket com reconexão
+    guards/         bloqueio de rotas protegidas
+    interceptors/   anexa o JWT às requisições
+  pages/            login, registro, área do estudante
 ```
 
-As regras de negócio ficam fora do FastAPI de propósito — `app/sessoes.py` não conhece HTTP, banco de requisição nem UI, e é onde os testes de comportamento batem. O mesmo vale para o `AnalistaEngajamento`, que entra nas tickets 7 e 8.
+As regras de negócio ficam fora do FastAPI de propósito — `app/sessoes.py` não conhece HTTP, banco de requisição nem UI, e é onde os testes de comportamento batem. O mesmo vale para `app/telemetria.py`, que já está desenhado para a ticket 7 trocar as constantes fixas do score provisório pela baseline calibrada de cada aluno sem mudar o formato, e para o `AnalistaEngajamento`, que entra nas tickets 7 e 8.
 
-No frontend a divisão é a mesma: `core/visao/metricas.ts` é aritmética pura sobre pontos e não importa o MediaPipe. Só `landmarks.service.ts` conhece a biblioteca de visão computacional, então trocá-la mexe num arquivo só.
+No frontend a divisão é a mesma: `core/visao/metricas.ts` e `core/telemetria/agregacao.ts` são funções puras e não importam o MediaPipe nem o WebSocket. Só `landmarks.service.ts` conhece a biblioteca de visão computacional, e só `telemetria.service.ts` conhece o WebSocket — trocar qualquer um dos dois mexe num arquivo só.
 
 ## Equipe
 
