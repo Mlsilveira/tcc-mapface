@@ -1,8 +1,8 @@
 import { MetricasFaciais } from '../visao/metricas';
 import { agregar } from './agregacao';
 
-function leitura(ear: number, yaw: number): MetricasFaciais {
-  return { ear, mar: 0.05, cabeca: { yaw, pitch: 0, roll: 0 } };
+function leitura(ear: number, yaw: number, pitch = 0): MetricasFaciais {
+  return { ear, mar: 0.05, cabeca: { yaw, pitch, roll: 0 } };
 }
 
 describe('agregar', () => {
@@ -17,12 +17,25 @@ describe('agregar', () => {
     expect(payload!.rosto_detectado).toBeTrue();
   });
 
+  it('tira a média do pitch junto com a do yaw', () => {
+    // Head Pose é yaw *e* pitch: cabeça baixa lendo é engajamento, cabeça
+    // virada para o lado não é — e só com yaw os dois são indistinguíveis.
+    // Média de -10° e -20° = -15°.
+    const payload = agregar([leitura(0.3, 0, -10), leitura(0.3, 0, -20)]);
+
+    expect(payload!.pitch).toBeCloseTo(-15, 10);
+  });
+
   it('ignora os quadros sem rosto ao calcular a média', () => {
     // Contar ausência como zero puxaria o EAR para baixo e viraria "sonolência"
     // no score — quando o aluno só passou meio segundo fora do enquadramento.
-    const payload = agregar([leitura(0.3, 0), null, leitura(0.3, 0), null]);
+    // No pitch o estrago seria o mesmo: metade dos quadros valendo 0° faria a
+    // cabeça baixa de quem lê parecer cabeça erguida.
+    const payload = agregar([leitura(0.3, 10, -20), null, leitura(0.3, 10, -20), null]);
 
     expect(payload!.ear).toBeCloseTo(0.3, 10);
+    expect(payload!.yaw).toBeCloseTo(10, 10);
+    expect(payload!.pitch).toBeCloseTo(-20, 10);
     expect(payload!.rosto_detectado).toBeTrue();
   });
 
@@ -32,6 +45,7 @@ describe('agregar', () => {
     expect(payload!.rosto_detectado).toBeFalse();
     expect(payload!.ear).toBe(0);
     expect(payload!.yaw).toBe(0);
+    expect(payload!.pitch).toBe(0);
   });
 
   it('não produz payload quando a janela não teve quadro nenhum', () => {
@@ -48,11 +62,11 @@ describe('agregar', () => {
     expect(payload!.yaw).toBeCloseTo(0, 10);
   });
 
-  it('leva apenas ear, yaw e presença de rosto — nunca landmarks', () => {
+  it('leva apenas ear, yaw, pitch e presença de rosto — nunca landmarks', () => {
     // O contrato do payload é a fronteira de privacidade: o que não estiver
-    // aqui não sai do navegador.
+    // aqui não sai do navegador. Nem `roll`, nem `mar`.
     const payload = agregar([leitura(0.3, 0)]);
 
-    expect(Object.keys(payload!).sort()).toEqual(['ear', 'rosto_detectado', 'yaw']);
+    expect(Object.keys(payload!).sort()).toEqual(['ear', 'pitch', 'rosto_detectado', 'yaw']);
   });
 });

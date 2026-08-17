@@ -51,9 +51,9 @@ export const CRIADOR_DE_CANAL = new InjectionToken<CriadorDeCanal>('CriadorDeCan
  * Leva as métricas faciais ao backend e recebe o score de volta (ticket 6).
  *
  * Amostra a captura ao longo de um segundo, resume a janela num payload e
- * envia. O que sai daqui são três números — `ear`, `yaw` e presença de rosto.
- * Nenhum landmark, nenhum frame: a agregação é a última fronteira antes da
- * rede, e `PayloadDeTelemetria` é o contrato que define o que pode atravessá-la.
+ * envia. O que sai daqui são três números — `ear`, `yaw`, `pitch` — e a presença
+ * de rosto. Nenhum landmark, nenhum frame: a agregação é a última fronteira
+ * antes da rede, e `PayloadDeTelemetria` é o contrato do que pode atravessá-la.
  */
 @Injectable({ providedIn: 'root' })
 export class TelemetriaService implements OnDestroy {
