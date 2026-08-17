@@ -195,12 +195,20 @@ class TestUmaCalibracaoPorSessao:
             session.commit()
         session.rollback()
 
-    def test_payload_que_perdeu_a_corrida_atualiza_em_vez_de_estourar(self, session):
+    def test_payload_que_perdeu_a_corrida_atualiza_em_vez_de_estourar(
+        self, session, monkeypatch
+    ):
         # A corrida real: dois payloads quase simultâneos da mesma sessão, ambos
         # lendo "ainda não existe" antes de qualquer um commitar. O segundo
         # INSERT bate na unicidade — e tem que virar UPDATE, não erro na cara do
-        # aluno. A cegueira é injetada porque é a única forma determinística de
-        # reproduzir a janela; o que se afirma abaixo é só comportamento público.
+        # aluno.
+        #
+        # A cegueira é injetada num nome privado, o que acopla este teste à
+        # estrutura interna do módulo, e é uma dívida assumida: `salvar_estado`
+        # lê e grava dentro de uma chamada só, então não há como interpor a
+        # janela por fora sem mudar o código de produção para ser testável. O
+        # `monkeypatch` do pytest desfaz sozinho, inclusive se a asserção
+        # estourar. O que se afirma abaixo é só comportamento público.
         sessao = _sessao_de_teste(session)
         _acumular(session, sessao.id, amostras=1)
 
@@ -213,14 +221,12 @@ class TestUmaCalibracaoPorSessao:
                 return None
             return original(db, id_sessao)
 
-        calibracao._buscar = cego_na_primeira
-        try:
-            vencedor = calibracao.EstadoCalibracao(
-                inicio=INICIO, soma_ear=0.61, soma_yaw=1.0, soma_pitch=0.5, amostras=2
-            )
-            calibracao.salvar_estado(session, sessao.id, vencedor)
-        finally:
-            calibracao._buscar = original
+        monkeypatch.setattr(calibracao, "_buscar", cego_na_primeira)
+
+        vencedor = calibracao.EstadoCalibracao(
+            inicio=INICIO, soma_ear=0.61, soma_yaw=1.0, soma_pitch=0.5, amostras=2
+        )
+        calibracao.salvar_estado(session, sessao.id, vencedor)
 
         assert _quantas_linhas(session, sessao.id) == 1
         assert calibracao.carregar(session, sessao.id).estado == vencedor

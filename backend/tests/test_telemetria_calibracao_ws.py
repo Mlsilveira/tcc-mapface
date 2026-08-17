@@ -329,10 +329,6 @@ def test_linha_da_baseline_fica_internamente_coerente(
     somas, a linha ficaria uma amostra atrasada, e o relatório da ticket 11 leria
     as somas como evidência de uma baseline que elas não produzem.
     """
-    from sqlmodel import select
-
-    from app.models import Calibracao
-
     id_sessao = _id_da_sessao_ativa(client, com_sessao_ativa)
 
     with client.websocket_connect("/telemetria") as ws:
@@ -342,12 +338,21 @@ def test_linha_da_baseline_fica_internamente_coerente(
             _enviar(ws, ear=0.20)
             relogio.avancar(1)
 
-    linha = session.exec(select(Calibracao).where(Calibracao.id_sessao == id_sessao)).first()
+    # Pela interface, não por `select` na tabela: `carregar` devolve a baseline
+    # e o acumulador que a sustenta, e é entre esses dois que a coerência precisa
+    # valer — quem for ler isso na ticket 11 vai passar por aqui, não pelo SQL.
+    leitura = calibracao.carregar(session, id_sessao)
 
-    assert linha.concluida_em is not None
-    assert linha.soma_ear / linha.amostras == pytest.approx(linha.ear_neutro)
-    assert linha.soma_yaw / linha.amostras == pytest.approx(linha.yaw_neutro)
-    assert linha.soma_pitch / linha.amostras == pytest.approx(linha.pitch_neutro)
+    assert leitura.concluida
+    assert leitura.estado.soma_ear / leitura.estado.amostras == pytest.approx(
+        leitura.baseline.ear_neutro
+    )
+    assert leitura.estado.soma_yaw / leitura.estado.amostras == pytest.approx(
+        leitura.baseline.yaw_neutro
+    )
+    assert leitura.estado.soma_pitch / leitura.estado.amostras == pytest.approx(
+        leitura.baseline.pitch_neutro
+    )
 
 
 def test_calibracao_concluida_por_outra_conexao_nao_derruba_esta(
