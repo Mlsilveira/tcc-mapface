@@ -380,6 +380,35 @@ class TestConclusaoDaBaseline:
         assert estado.amostras == 59
         assert estado.soma_ear == pytest.approx(0.29 * 59)
 
+    def test_conclusao_com_uma_amostra_a_mais_que_o_acumulado_fica_coerente(
+        self, session
+    ):
+        # O caso real, e o único em que a incoerência aparece: o payload que
+        # fecha a janela entra na média da baseline mas nunca chega a ser
+        # acumulado — o analista devolve `estado=None` justamente porque acabou
+        # de fechar. Os outros testes desta classe usam contagens que já batem, e
+        # por isso passariam mesmo com as somas herdadas sem ajuste.
+        #
+        # Se `soma / amostras` deixar de bater com o neutro, o relatório da
+        # ticket 11 mostra como evidência um acumulador que não produz a baseline
+        # que está ao lado dele.
+        sessao = _sessao_de_teste(session)
+        _acumular(session, sessao.id, amostras=60, ear=0.29)
+
+        calibracao.salvar_baseline(
+            session,
+            sessao.id,
+            calibracao.Baseline(
+                ear_neutro=0.29, yaw_neutro=0.0, pitch_neutro=0.0, amostras=61
+            ),
+        )
+
+        leitura = calibracao.carregar(session, sessao.id)
+        assert leitura.estado.amostras == 61
+        assert leitura.estado.soma_ear / leitura.estado.amostras == pytest.approx(
+            leitura.baseline.ear_neutro
+        )
+
     def test_baseline_atipica_de_quem_usa_oculos_nao_e_ajustada(self, session):
         # Uma armação pode deprimir o EAR neutro para perto de 0,18. É o valor
         # certo para essa pessoa: se a persistência o "corrigisse" para uma faixa
