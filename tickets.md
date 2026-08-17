@@ -87,11 +87,13 @@ O treino, as métricas e o relatório estão implementados em [`ml/`](./ml/) e r
 
 **Bloqueada por:** Ticket 6.
 
-- [ ] Calibração silenciosa nos primeiros 60s (EAR e Head Pose neutros do aluno)
-- [ ] Recalibração automática se o aluno se ausentar durante os 60s de calibração
-- [ ] Fórmula `IEE(t) = P(t) × [(0.6 × EAR_norm) + (0.4 × HP_norm)] − F` implementada em `AnalistaEngajamento`
-- [ ] `P(t) = 0` zera o score quando o rosto não é detectado
-- [ ] Testes unitários cobrindo baseline normal e atípica (ex: uso de óculos)
+- [x] Calibração silenciosa nos primeiros 60s (EAR e Head Pose neutros do aluno)
+- [x] Recalibração automática se o aluno se ausentar durante os 60s de calibração
+- [x] Fórmula `IEE(t) = P(t) × [(0.6 × EAR_norm) + (0.4 × HP_norm)] − F` implementada em `AnalistaEngajamento`
+- [x] `P(t) = 0` zera o score quando o rosto não é detectado
+- [x] Testes unitários cobrindo baseline normal e atípica (ex: uso de óculos)
+
+A regra vive em [`backend/app/analista.py`](./backend/app/analista.py), sem conhecer HTTP nem banco — é o seam principal do spec. O acumulador da calibração é **persistido** a cada payload (`backend/app/calibracao.py`), e não guardado na conexão: o WebSocket da ticket 6 reconecta sozinho, e um acumulador em memória reiniciaria os 60s a cada queda. O payload ganhou `pitch`, porque Head Pose é yaw *e* pitch — só com yaw, cabeça baixa e cabeça virada ficam indistinguíveis. `F` já tem encaixe na fórmula, valendo 0 até a ticket 8.
 
 ## 8. Fator de fadiga via Random Forest
 

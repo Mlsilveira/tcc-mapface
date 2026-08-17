@@ -5,7 +5,7 @@ import { MetricasFaciais } from '../visao/metricas';
  *
  * Este tipo é a fronteira de privacidade do projeto: o que não estiver aqui não
  * sai do navegador. Landmarks, frames e qualquer coisa derivada de imagem ficam
- * do lado de cá — o backend recebe três números e nada mais.
+ * do lado de cá — o backend recebe três números, um booleano e nada mais.
  *
  * Os nomes são snake_case porque atravessam a rede para o Python; é o único
  * lugar do frontend onde isso acontece.
@@ -13,6 +13,12 @@ import { MetricasFaciais } from '../visao/metricas';
 export interface PayloadDeTelemetria {
   ear: number;
   yaw: number;
+  /**
+   * O Head Pose que o IEE calibra é yaw **e** pitch: um aluno de cabeça baixa
+   * lendo e um de cabeça virada para o lado são engajamentos opostos, e só com
+   * o yaw os dois ficam indistinguíveis.
+   */
+  pitch: number;
   rosto_detectado: boolean;
 }
 
@@ -38,7 +44,7 @@ export function agregar(
   const comRosto = leituras.filter((leitura): leitura is MetricasFaciais => leitura !== null);
 
   if (comRosto.length === 0) {
-    return { ear: 0, yaw: 0, rosto_detectado: false };
+    return { ear: 0, yaw: 0, pitch: 0, rosto_detectado: false };
   }
 
   // Os quadros sem rosto ficam fora da média de propósito: contá-los como zero
@@ -50,6 +56,7 @@ export function agregar(
   return {
     ear: media(comRosto.map((leitura) => leitura.ear)),
     yaw: media(comRosto.map((leitura) => leitura.cabeca.yaw)),
+    pitch: media(comRosto.map((leitura) => leitura.cabeca.pitch)),
     rosto_detectado: true,
   };
 }

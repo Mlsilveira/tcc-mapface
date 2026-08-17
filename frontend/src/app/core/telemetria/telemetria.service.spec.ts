@@ -267,14 +267,14 @@ describe('TelemetriaService', () => {
     discardPeriodicTasks();
   }));
 
-  it('nunca envia landmarks — só ear, yaw e presença de rosto', fakeAsync(() => {
+  it('nunca envia landmarks — só ear, yaw, pitch e presença de rosto', fakeAsync(() => {
     // A fronteira de privacidade, afirmada no ponto exato onde os dados saem
     // do navegador.
     conectarEAutenticar();
     tick(INTERVALO_DE_ENVIO_MS * 2);
 
     for (const payload of canal().payloads.slice(1)) {
-      expect(Object.keys(payload).sort()).toEqual(['ear', 'rosto_detectado', 'yaw']);
+      expect(Object.keys(payload).sort()).toEqual(['ear', 'pitch', 'rosto_detectado', 'yaw']);
     }
 
     service.parar();

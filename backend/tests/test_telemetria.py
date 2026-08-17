@@ -1,62 +1,16 @@
-"""Testes da regra de telemetria (ticket 6).
+"""Testes da persistência da série de engajamento (tickets 6 e 7).
 
-O score desta ticket é deliberadamente provisório: serve para provar o pipeline
-ponta a ponta antes da fórmula real do IEE entrar na ticket 7. A estrutura de
-pesos, porém, já é a definitiva — 0,6 para abertura ocular e 0,4 para orientação
-da cabeça — trocando apenas a baseline individual do aluno por constantes fixas.
+Os testes do `calcular_score` provisório saíram junto com a função: a ticket 7
+substituiu aquela fórmula pelo `AnalistaEngajamento`, e a regra do IEE agora é
+exercitada em `test_analista.py`, contra a baseline individual do aluno. Mantê-los
+aqui seria manter verde uma fórmula que não roda mais em lugar nenhum.
 
-Os valores esperados abaixo foram calculados à mão a partir da fórmula acordada,
-não extraídos do código:
-
-    score = 100 × (0,6 × min(EAR/0,3, 1) + 0,4 × max(0, 1 − |yaw|/45))
+O que sobrou é o seam de persistência, que a ticket 7 não mudou.
 """
 import pytest
 
 from app import telemetria
 
-
-def test_score_maximo_com_olhos_abertos_e_cabeca_de_frente():
-    # 100 × (0,6 × 1 + 0,4 × 1) = 100
-    assert telemetria.calcular_score(ear=0.30, yaw=0.0) == pytest.approx(100.0)
-
-
-def test_olhos_semicerrados_derrubam_a_parcela_ocular():
-    # EAR 0,15 → 0,15/0,3 = 0,5 → 100 × (0,6 × 0,5 + 0,4 × 1) = 70
-    assert telemetria.calcular_score(ear=0.15, yaw=0.0) == pytest.approx(70.0)
-
-
-def test_cabeca_totalmente_virada_zera_a_parcela_de_orientacao():
-    # yaw 45° → 1 − 45/45 = 0 → 100 × (0,6 × 1 + 0,4 × 0) = 60
-    assert telemetria.calcular_score(ear=0.30, yaw=45.0) == pytest.approx(60.0)
-
-
-def test_olhos_fechados_e_cabeca_virada_zeram_o_score():
-    assert telemetria.calcular_score(ear=0.0, yaw=45.0) == pytest.approx(0.0)
-
-
-def test_score_nao_passa_de_100_com_olhos_muito_abertos():
-    # Arregalar os olhos não é "mais engajado" que o teto: sem o limite, um EAR
-    # atípico geraria score acima de 100 e quebraria a escala de 0 a 100.
-    assert telemetria.calcular_score(ear=0.90, yaw=0.0) == pytest.approx(100.0)
-
-
-def test_score_nao_fica_negativo_com_cabeca_alem_do_limite():
-    # yaw 90° passaria de 1 na normalização; sem o piso, a parcela viraria
-    # negativa e roubaria pontos da parcela ocular.
-    assert telemetria.calcular_score(ear=0.30, yaw=90.0) == pytest.approx(60.0)
-
-
-def test_yaw_e_simetrico_entre_esquerda_e_direita():
-    # Virar para um lado ou para o outro dispersa igual.
-    assert telemetria.calcular_score(ear=0.30, yaw=-30.0) == pytest.approx(
-        telemetria.calcular_score(ear=0.30, yaw=30.0)
-    )
-
-
-def test_sem_rosto_o_score_e_zero():
-    # É o P(t) = 0 do spec, antecipado: sem rosto não há comportamento
-    # observável, e qualquer score seria invenção.
-    assert telemetria.calcular_score(ear=0.30, yaw=0.0, rosto_detectado=False) == 0.0
 
 
 # --- Persistência do log de engajamento (seam C) ---------------------------
