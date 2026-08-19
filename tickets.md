@@ -10,12 +10,12 @@ Trabalhe a **fronteira**: qualquer ticket cujos bloqueadores já estejam conclu�
 
 **Bloqueada por:** Nenhuma — pode começar imediatamente.
 
-- [ ] Dataset DAISEE baixado e organizado localmente
+- [x] Dataset DAISEE baixado e organizado localmente
 - [x] Pipeline extrai EAR, Head Pose (yaw/pitch) e MAR por frame via MediaPipe
 - [x] Saída é um dataset tabular (CSV/parquet) com features + rótulos originais do DAISEE (engagement/boredom/confusion/frustration)
 - [x] Pipeline é reproduzível via script, não um processo manual
 
-O pipeline está em [`ml/`](./ml/) e roda com `python extrair_features.py --raiz <DAiSEE>`. Falta só o download do dataset, que exige o formulário de acesso do IIIT Hyderabad.
+O pipeline está em [`ml/`](./ml/) e roda com `python extrair_features.py --raiz <DAiSEE>`. O dataset está em disco em `database/DAiSEE` (fora do versionamento) e pareou **8570 clipes** com rótulo — 497 vídeos do disco não têm linha de rótulo e 1 rótulo não tem vídeo, descasamento normal do DAiSEE e contabilizado por `daisee.descasamento`.
 
 ## 2. Treinar e validar Random Forest baseline
 
@@ -87,11 +87,15 @@ O treino, as métricas e o relatório estão implementados em [`ml/`](./ml/) e r
 
 **Bloqueada por:** Ticket 6.
 
-- [ ] Calibração silenciosa nos primeiros 60s (EAR e Head Pose neutros do aluno)
-- [ ] Recalibração automática se o aluno se ausentar durante os 60s de calibração
-- [ ] Fórmula `IEE(t) = P(t) × [(0.6 × EAR_norm) + (0.4 × HP_norm)] − F` implementada em `AnalistaEngajamento`
-- [ ] `P(t) = 0` zera o score quando o rosto não é detectado
-- [ ] Testes unitários cobrindo baseline normal e atípica (ex: uso de óculos)
+- [x] Calibração silenciosa nos primeiros 60s (EAR e Head Pose neutros do aluno)
+- [x] Recalibração automática se o aluno se ausentar durante os 60s de calibração
+- [x] Fórmula `IEE(t) = P(t) × [(0.6 × EAR_norm) + (0.4 × HP_norm)] − F` implementada em `AnalistaEngajamento`
+- [x] `P(t) = 0` zera o score quando o rosto não é detectado
+- [x] Testes unitários cobrindo baseline normal e atípica (ex: uso de óculos)
+
+Implementado em [`backend/app/analista.py`](./backend/app/analista.py), com o cálculo saindo de `telemetria.py` — que ficou só com a persistência. `F` entra como parâmetro da fórmula e vale 0 até a ticket 8 ligar o Random Forest.
+
+Duas decisões que valem a defesa: a baseline usa a **mediana** das amostras, não a média, porque as piscadas do minuto de calibração puxariam o EAR neutro para baixo e inflariam o score da sessão inteira; e um `RegistroDeAnalistas` mantém o analista por sessão entre conexões, para que a reconexão automática da ticket 6 não jogue a calibração fora a cada oscilação de rede.
 
 ## 8. Fator de fadiga via Random Forest
 
