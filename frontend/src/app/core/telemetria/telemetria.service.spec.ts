@@ -180,6 +180,33 @@ describe('TelemetriaService', () => {
     discardPeriodicTasks();
   }));
 
+  it('marca o score do primeiro minuto como calibrando (ticket 7)', fakeAsync(() => {
+    const aberto = conectarEAutenticar();
+
+    aberto.receber({ tipo: 'score', score: 76, calibrando: true });
+    expect(service.calibrando()).toBeTrue();
+
+    // Fechada a baseline, o aviso tem que sair sozinho.
+    aberto.receber({ tipo: 'score', score: 100, calibrando: false });
+    expect(service.calibrando()).toBeFalse();
+
+    service.parar();
+    discardPeriodicTasks();
+  }));
+
+  it('trata score sem o campo calibrando como já calibrado', fakeAsync(() => {
+    // Backend anterior à ticket 7: assumir calibração eterna deixaria o aviso
+    // preso na tela pelo resto da sessão.
+    const aberto = conectarEAutenticar();
+
+    aberto.receber({ tipo: 'score', score: 82.5 });
+
+    expect(service.calibrando()).toBeFalse();
+
+    service.parar();
+    discardPeriodicTasks();
+  }));
+
   it('reconecta sozinho quando a conexão cai', fakeAsync(() => {
     // Critério da ticket 6: uma instabilidade momentânea de rede não pode
     // interromper a sessão de estudo inteira.

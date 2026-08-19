@@ -137,6 +137,57 @@ def test_payload_invalido_nao_derruba_a_conexao(client, com_sessao_ativa, sessio
     assert len(telemetria.buscar_logs(session, id_sessao=id_sessao)) == 1
 
 
+def test_score_do_primeiro_minuto_vem_marcado_como_calibrando(client, com_sessao_ativa):
+    """A calibração da ticket 7 é silenciosa, mas não é invisível.
+
+    O canal continua devolvendo um score por segundo desde o primeiro payload —
+    só que medido contra a referência genérica. Quem consome precisa conseguir
+    distinguir esse score do que vem depois da baseline fechar.
+    """
+    with client.websocket_connect("/telemetria") as ws:
+        ws.send_json({"token": com_sessao_ativa})
+        ws.receive_json()
+
+        ws.send_json({"ear": 0.30, "yaw": 0.0, "rosto_detectado": True})
+        resposta = ws.receive_json()
+
+    assert resposta["calibrando"] is True
+
+
+def test_reconexao_reencontra_a_baseline_ja_calibrada(client, com_sessao_ativa):
+    """Ticket 7 sobre a reconexão automática da ticket 6.
+
+    Uma queda de rede não pode custar a calibração: sem o registro por sessão, o
+    aluno voltaria a ser medido contra o rosto médio a cada oscilação — e em rede
+    ruim isso é a sessão inteira.
+    """
+    from datetime import datetime, timedelta, timezone
+
+    from app import analista
+
+    id_sessao = _id_da_sessao_ativa(client, com_sessao_ativa)
+
+    # Um minuto de aluno de EAR neutro 0,18 (o caso dos óculos), como se a
+    # conexão anterior já tivesse calibrado.
+    t0 = datetime(2026, 8, 18, 12, 0, 0, tzinfo=timezone.utc)
+    engajamento = analista.registro.obter(id_sessao)
+    for segundo in range(61):
+        engajamento.observar(ear=0.18, yaw=0.0, agora=t0 + timedelta(seconds=segundo))
+    assert engajamento.calibrando is False
+
+    with client.websocket_connect("/telemetria") as ws:
+        ws.send_json({"token": com_sessao_ativa})
+        ws.receive_json()
+
+        ws.send_json({"ear": 0.18, "yaw": 0.0, "rosto_detectado": True})
+        resposta = ws.receive_json()
+
+    # Contra a baseline dele, 0,18 é o olho plenamente aberto: 100. Contra a
+    # referência genérica de 0,30 seriam 76 — a calibração teria sido perdida.
+    assert resposta["calibrando"] is False
+    assert resposta["score"] == pytest.approx(100.0)
+
+
 def test_telemetria_conta_como_atividade_da_sessao(client, com_sessao_ativa, session):
     from app.models import SessaoEstudo
 

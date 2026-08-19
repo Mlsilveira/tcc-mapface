@@ -13,7 +13,7 @@ from typing import Optional, Tuple
 from fastapi import APIRouter, Depends, WebSocket, WebSocketDisconnect
 from sqlmodel import Session, select
 
-from app import sessoes, telemetria
+from app import analista, sessoes, telemetria
 from app.database import get_session
 from app.models import Aluno
 from app.security import decodificar_token
@@ -95,6 +95,11 @@ async def telemetria_ws(
 
     await websocket.send_json({"tipo": "autenticado"})
 
+    # Vem do registro, e não é criado aqui, porque a reconexão automática da
+    # ticket 6 abre uma conexão nova para a mesma sessão: um analista por
+    # conexão faria o aluno recalibrar a cada oscilação de rede.
+    engajamento = analista.registro.obter(sessao.id)
+
     while True:
         try:
             payload = await websocket.receive_json()
@@ -109,12 +114,17 @@ async def telemetria_ws(
             continue
 
         ear, yaw, rosto_detectado = metricas
-        score = telemetria.calcular_score(ear=ear, yaw=yaw, rosto_detectado=rosto_detectado)
+        resultado = engajamento.observar(ear=ear, yaw=yaw, rosto_detectado=rosto_detectado)
 
-        telemetria.registrar_log(db, id_sessao=sessao.id, score=score)
+        telemetria.registrar_log(db, id_sessao=sessao.id, score=resultado.score)
 
         # Quem manda telemetria está estudando. Sem isto, uma sessão silenciosa
         # seria encerrada por "inatividade" justamente enquanto era medida.
         sessoes.registrar_atividade(db, id_sessao=sessao.id, id_aluno=aluno.id)
 
-        await websocket.send_json({"tipo": "score", "score": score})
+        # `calibrando` acompanha o score porque o primeiro minuto é medido
+        # contra uma referência genérica: o dashboard da ticket 9 precisa poder
+        # dizer isso em vez de apresentar os dois como equivalentes.
+        await websocket.send_json(
+            {"tipo": "score", "score": resultado.score, "calibrando": resultado.calibrando}
+        )
