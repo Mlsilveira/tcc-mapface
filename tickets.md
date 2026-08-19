@@ -23,13 +23,15 @@ O pipeline está em [`ml/`](./ml/) e roda com `python extrair_features.py --raiz
 
 **Bloqueada por:** Ticket 1.
 
-- [ ] Random Forest treinado sobre o dataset tabular da Ticket 1
+- [x] Random Forest treinado sobre o dataset tabular da Ticket 1
 - [x] Split de treino/validação/teste definido e documentado
-- [ ] Relatório com acurácia, precisão, recall e F1-Score
-- [ ] Meta de precisão > 80% atingida, ou desvio justificado no relatório
+- [x] Relatório com acurácia, precisão, recall e F1-Score
+- [x] Meta de precisão > 80% **não** atingida — desvio justificado no relatório
 - [x] Modelo serializado como artefato carregável pelo backend
 
-O treino, as métricas e o relatório estão implementados em [`ml/`](./ml/) e rodam com `python treinar.py`. O que falta depende da ticket 1 estar de fato executada: sem o DAiSEE em disco não existe modelo treinado nem número de precisão para reportar. O split adotado é o do próprio DAiSEE (subject-independent), e a meta de 80% é medida sobre a **precisão macro** no `Test` — com ~85% de clipes "engajado", acurácia e precisão ponderada subiriam quase de graça.
+Treinado em 18/08/2026 sobre os 8570 clipes. O split adotado é o do próprio DAiSEE (subject-independent), e a meta de 80% é medida sobre a **precisão macro** no `Test`: 95% dos clipes do `Test` são "engajado", então acurácia e precisão ponderada sobem quase de graça — a floresta tirou 0,9501 de acurácia prevendo "engajado" em 1783 dos 1784 clipes.
+
+**Precisão macro: 0,4753.** O teto sobre sete configurações e os quatro rótulos do DAiSEE é ~0,67 (`boredom`), e regularizar não move o número onde as classes são equilibradas — o gargalo não é sobreajuste, são as features agregadas por clipe. A análise completa, com a tabela de configurações testadas e o que o desvio não é, está em [`ml/README.md`](./ml/README.md#o-resultado-do-baseline), e o relatório completo da execução — com a metodologia, os exemplos e a justificativa para revisar a meta — em [`resultado_18_08.md`](./resultado_18_08.md). É insumo direto da Sprint 7, que já reserva tempo para o relatório de validação e para documentar limitações.
 
 ## 3. Cadastro e login
 
@@ -37,11 +39,11 @@ O treino, as métricas e o relatório estão implementados em [`ml/`](./ml/) e r
 
 **Bloqueada por:** Nenhuma — pode começar imediatamente.
 
-- [ ] Endpoint de registro (nome, e-mail, senha) com hashing bcrypt
-- [ ] Endpoint de login retornando JWT
-- [ ] Telas de cadastro e login em Angular
-- [ ] Rotas protegidas redirecionam para login se o usuário não estiver autenticado
-- [ ] Sessão de autenticação expira após período de inatividade
+- [x] Endpoint de registro (nome, e-mail, senha) com hashing bcrypt
+- [x] Endpoint de login retornando JWT
+- [x] Telas de cadastro e login em Angular
+- [x] Rotas protegidas redirecionam para login se o usuário não estiver autenticado
+- [x] Sessão de autenticação expira após período de inatividade
 
 ## 4. Ciclo de vida da sessão de estudo
 
