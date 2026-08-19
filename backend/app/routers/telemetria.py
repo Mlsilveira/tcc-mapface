@@ -34,11 +34,16 @@ def _autenticar(db: Session, mensagem: dict) -> Optional[Aluno]:
     return db.exec(select(Aluno).where(Aluno.email == email)).first()
 
 
-def _ler_metricas(payload: object) -> Optional[Tuple[float, float, bool]]:
-    """Extrai (ear, yaw, rosto_detectado) do payload, ou `None` se estiver torto.
+def _ler_metricas(payload: object) -> Optional[Tuple[float, float, bool, Optional[float]]]:
+    """Extrai (ear, yaw, rosto_detectado, mar) do payload, ou `None` se torto.
 
     Booleano não é aceito como número apesar de `bool` ser subclasse de `int`
     em Python: `{"ear": true}` é payload quebrado, não um EAR de 1,0.
+
+    `mar` entrou na ticket 8, para a detecção de bocejo, e é **opcional**: um
+    cliente anterior a ela continua sendo aceito, só sem o sinal de bocejo. Vale
+    a leniência porque a alternativa é derrubar a sessão de quem está com a aba
+    aberta desde antes do deploy — e a fadiga tem outros dois sinais.
     """
     if not isinstance(payload, dict):
         return None
@@ -58,7 +63,10 @@ def _ler_metricas(payload: object) -> Optional[Tuple[float, float, bool]]:
     if not isinstance(rosto_detectado, bool):
         return None
 
-    return ear, yaw, rosto_detectado
+    # `mar` malformado é tratado como ausente, e não como payload inválido: a
+    # medição de bocejo se degrada sozinha sem custar a leitura de EAR e yaw,
+    # que são o que sustenta o score.
+    return ear, yaw, rosto_detectado, numero("mar")
 
 
 @router.websocket("/telemetria")
@@ -113,8 +121,10 @@ async def telemetria_ws(
             await websocket.send_json({"tipo": "erro", "motivo": "payload-invalido"})
             continue
 
-        ear, yaw, rosto_detectado = metricas
-        resultado = engajamento.observar(ear=ear, yaw=yaw, rosto_detectado=rosto_detectado)
+        ear, yaw, rosto_detectado, mar = metricas
+        resultado = engajamento.observar(
+            ear=ear, yaw=yaw, rosto_detectado=rosto_detectado, mar=mar
+        )
 
         telemetria.registrar_log(db, id_sessao=sessao.id, score=resultado.score)
 
@@ -125,6 +135,17 @@ async def telemetria_ws(
         # `calibrando` acompanha o score porque o primeiro minuto é medido
         # contra uma referência genérica: o dashboard da ticket 9 precisa poder
         # dizer isso em vez de apresentar os dois como equivalentes.
+        #
+        # Os motivos da fadiga vão junto pela mesma razão: "seu score caiu 20
+        # pontos" sem "você passou 30% do último minuto de olhos fechados" é um
+        # número que o aluno não tem como usar. O relatório da ticket 11 e o
+        # dashboard da 9 consomem daqui.
         await websocket.send_json(
-            {"tipo": "score", "score": resultado.score, "calibrando": resultado.calibrando}
+            {
+                "tipo": "score",
+                "score": resultado.score,
+                "calibrando": resultado.calibrando,
+                "fadiga": resultado.fadiga.fator,
+                "motivos_fadiga": list(resultado.fadiga.motivos),
+            }
         )

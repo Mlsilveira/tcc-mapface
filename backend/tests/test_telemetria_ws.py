@@ -188,6 +188,61 @@ def test_reconexao_reencontra_a_baseline_ja_calibrada(client, com_sessao_ativa):
     assert resposta["score"] == pytest.approx(100.0)
 
 
+def test_score_vem_acompanhado_do_fator_de_fadiga(client, com_sessao_ativa):
+    """Ticket 8: o `F` e seus motivos sobem junto com o score.
+
+    O relatório da ticket 11 precisa dizer *por que* houve penalidade — "seu
+    score caiu 20 pontos" sem "você passou 30% do último minuto de olhos
+    fechados" é um número que o aluno não tem como usar.
+    """
+    with client.websocket_connect("/telemetria") as ws:
+        ws.send_json({"token": com_sessao_ativa})
+        ws.receive_json()
+
+        ws.send_json({"ear": 0.30, "yaw": 0.0, "mar": 0.02, "rosto_detectado": True})
+        resposta = ws.receive_json()
+
+    assert resposta["fadiga"] == pytest.approx(0.0)
+    assert resposta["motivos_fadiga"] == []
+
+
+def test_payload_sem_mar_continua_aceito(client, com_sessao_ativa, session):
+    """Cliente anterior à ticket 8 não pode ter a sessão derrubada.
+
+    Sem `mar` a detecção de bocejo fica inativa, mas os outros dois sinais de
+    fadiga — PERCLOS e fechamento prolongado — continuam valendo.
+    """
+    from app import telemetria
+
+    id_sessao = _id_da_sessao_ativa(client, com_sessao_ativa)
+
+    with client.websocket_connect("/telemetria") as ws:
+        ws.send_json({"token": com_sessao_ativa})
+        ws.receive_json()
+
+        ws.send_json({"ear": 0.30, "yaw": 0.0, "rosto_detectado": True})
+        resposta = ws.receive_json()
+
+    assert resposta["tipo"] == "score"
+    assert resposta["score"] == pytest.approx(100.0)
+    assert len(telemetria.buscar_logs(session, id_sessao=id_sessao)) == 1
+
+
+def test_mar_malformado_nao_invalida_a_leitura(client, com_sessao_ativa):
+    # O bocejo se degrada sozinho; EAR e yaw, que sustentam o score, continuam
+    # sendo lidos. Derrubar o payload inteiro por causa do campo mais periférico
+    # seria trocar um sinal ausente por um ponto perdido na série.
+    with client.websocket_connect("/telemetria") as ws:
+        ws.send_json({"token": com_sessao_ativa})
+        ws.receive_json()
+
+        ws.send_json({"ear": 0.30, "yaw": 0.0, "mar": "abacaxi", "rosto_detectado": True})
+        resposta = ws.receive_json()
+
+    assert resposta["tipo"] == "score"
+    assert resposta["score"] == pytest.approx(100.0)
+
+
 def test_telemetria_conta_como_atividade_da_sessao(client, com_sessao_ativa, session):
     from app.models import SessaoEstudo
 
