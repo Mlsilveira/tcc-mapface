@@ -25,10 +25,11 @@ spec pede calibração *silenciosa*, e ficar um minuto sem devolver nada seria
 tudo menos silencioso. O que vai junto é a marca `calibrando`, para que o
 dashboard da ticket 9 possa dizer que aquele primeiro minuto ainda é aproximado.
 """
+from collections import deque
 from dataclasses import dataclass
 from datetime import datetime, timedelta
 from statistics import median
-from typing import Dict, List, Optional
+from typing import Deque, Dict, List, Optional, Tuple
 
 from app.config import settings
 from app.tempo import agora_utc
@@ -77,6 +78,72 @@ class Baseline:
 BASELINE_PROVISORIA = Baseline(ear_neutro=0.30, yaw_neutro=0.0)
 
 
+# --- Fadiga (ticket 8) -----------------------------------------------------
+
+#: Janela deslizante sobre a qual a fadiga é avaliada. Fadiga é acúmulo: um
+#: segundo de olho fechado não diz nada, um minuto com 30% de olho fechado diz.
+JANELA_FADIGA = timedelta(seconds=60)
+
+#: Fração da abertura neutra do aluno abaixo da qual o olho conta como fechado.
+#: **Relativo, não absoluto.** O limiar clássico da literatura (EAR < 0,20)
+#: pressupõe um olho médio; quem tem abertura neutra de 0,18 estaria
+#: permanentemente "de olhos fechados" por ele. Metade da própria abertura
+#: neutra é a mesma ideia da ticket 7 aplicada à fadiga.
+FRACAO_OLHO_FECHADO = 0.5
+
+#: PERCLOS — proporção do tempo com a pálpebra fechada — é a métrica clássica de
+#: sonolência da literatura automotiva. Abaixo do limiar não há penalidade;
+#: acima da saturação a penalidade é máxima; entre os dois ela cresce linear.
+#: Piscar normalmente ocupa ~3–5% do tempo, então 15% já é pálpebra pesada.
+PERCLOS_LIMIAR = 0.15
+PERCLOS_SATURACAO = 0.40
+PENALIDADE_PERCLOS_MAX = 25.0
+
+#: Olho fechado por este tempo seguido não é piscada — é cochilo curto.
+DURACAO_MICROSSONO = timedelta(seconds=2)
+PENALIDADE_MICROSSONO = 15.0
+
+#: MAR acima disto conta como boca aberta de bocejo.
+#:
+#: **Provisório, e sabidamente mal calibrado.** O valor herdado da trilha ML
+#: (0,60) dispara em 7 clipes de 8570 do DAiSEE — bocejo nenhum seria detectado.
+#: 0,30 fica acima do p99,9 observado (0,2884) e abaixo do máximo do dataset
+#: (0,7460). A Sprint 11 do plano reserva tempo para recalibrar thresholds de
+#: fadiga com dados reais de teste; este é o primeiro da fila.
+LIMIAR_MAR_BOCEJO = 0.30
+
+#: Um bocejo precisa durar para não ser confundido com falar, rir ou beber água.
+#: Bocejos reais duram 4–6 s; dois segundos é folgado o suficiente para não
+#: perder um bocejo curto e estrito o suficiente para descartar uma sílaba.
+DURACAO_MINIMA_BOCEJO = timedelta(seconds=2)
+PENALIDADE_POR_BOCEJO = 8.0
+
+#: Teto do fator F. O IEE precisa continuar informando sobre atenção mesmo com
+#: fadiga máxima detectada — se F pudesse zerar o score sozinho, a componente de
+#: EAR e head pose viraria decoração.
+FADIGA_MAXIMA = 40.0
+
+
+@dataclass(frozen=True)
+class Fadiga:
+    """O fator `F` e as evidências que o produziram.
+
+    Os campos de evidência não são diagnóstico decorativo: o relatório da ticket
+    11 precisa dizer *por que* houve penalidade, e "seu score caiu 20 pontos"
+    sem "você passou 30% do último minuto de olhos fechados" é um número que o
+    aluno não tem como usar.
+    """
+
+    fator: float
+    perclos: float
+    maior_fechamento_s: float
+    bocejos: int
+    motivos: Tuple[str, ...] = ()
+
+
+SEM_FADIGA = Fadiga(fator=0.0, perclos=0.0, maior_fechamento_s=0.0, bocejos=0)
+
+
 @dataclass(frozen=True)
 class ResultadoIEE:
     """O score e o contexto que o produziu.
@@ -89,6 +156,7 @@ class ResultadoIEE:
     score: float
     calibrando: bool
     baseline: Baseline
+    fadiga: Fadiga = SEM_FADIGA
 
 
 def _entre_zero_e_um(valor: float) -> float:
@@ -132,6 +200,135 @@ def calcular_iee(
     return max(0.0, bruto - fadiga)
 
 
+#: Estados possíveis de uma amostra. `ausente` não é `fechado`: sem rosto não
+#: sabemos o que a pálpebra estava fazendo, e contar ausência como fechamento
+#: transformaria "saiu para pegar água" em "cochilou".
+ABERTO, FECHADO, AUSENTE = "aberto", "fechado", "ausente"
+
+
+class DetectorDeFadiga:
+    """Deriva o fator `F` de regras diretas sobre a série de EAR e MAR.
+
+    **Por que regra e não o Random Forest da ticket 2.** O modelo treinado no
+    DAiSEE prevê *engajamento*, um construto subjetivo, e no split de teste ele
+    empata com um classificador que responde sempre "engajado" — o `F` derivado
+    dele seria constante, e a penalidade de fadiga seria código morto. Fadiga,
+    ao contrário de engajamento, é um estado físico observável: "a pálpebra
+    ficou fechada por mais de dois segundos" tem resposta objetiva, verificável
+    e explicável ao aluno. Ver `resultado_18_08.md` para a medição que motivou
+    a troca.
+
+    Três sinais, somados e limitados por `FADIGA_MAXIMA`:
+
+    - **PERCLOS** — proporção do último minuto com a pálpebra fechada. É a
+      métrica clássica de sonolência, e a que captura pálpebra pesada contínua.
+    - **Microssono** — um único fechamento longo, que a proporção dilui. Trinta
+      segundos de olho fechado seguidos dão o mesmo PERCLOS que sessenta
+      piscadas espalhadas, e não significam a mesma coisa.
+    - **Bocejo** — MAR acima do limiar por tempo suficiente para não ser fala.
+
+    O detector integra sobre o **tempo real entre amostras**, não sobre contagem
+    de amostras: a telemetria chega a ~1 Hz, mas uma queda de rede ou uma aba em
+    segundo plano abre buracos, e contar amostras trataria um buraco de trinta
+    segundos como se fosse um segundo.
+    """
+
+    def __init__(self, janela: timedelta = JANELA_FADIGA) -> None:
+        self._janela = janela
+        #: (instante, estado do olho, boca aberta)
+        self._amostras: Deque[Tuple[datetime, str, bool]] = deque()
+
+    def observar(
+        self,
+        agora: datetime,
+        ear: float,
+        baseline: Baseline,
+        mar: Optional[float] = None,
+        rosto_detectado: bool = True,
+    ) -> Fadiga:
+        """Registra uma leitura e devolve o fator de fadiga da janela atual."""
+        if not rosto_detectado:
+            estado = AUSENTE
+        else:
+            limiar = FRACAO_OLHO_FECHADO * baseline.ear_neutro
+            estado = FECHADO if ear < limiar else ABERTO
+
+        # `mar` ausente não é boca fechada: é falta de informação. Trata como
+        # não-bocejo porque é o único palpite seguro, mas sem fingir medição.
+        boca_aberta = mar is not None and mar > LIMIAR_MAR_BOCEJO
+
+        self._amostras.append((agora, estado, boca_aberta))
+        self._descartar_antigas(agora)
+        return self._avaliar()
+
+    def _descartar_antigas(self, agora: datetime) -> None:
+        corte = agora - self._janela
+        while len(self._amostras) > 1 and self._amostras[0][0] < corte:
+            self._amostras.popleft()
+
+    def _intervalos(self):
+        """(duração em segundos, estado, boca aberta) entre amostras vizinhas.
+
+        A duração entre duas amostras é atribuída ao estado da **primeira**: é o
+        que sabíamos durante aquele intervalo.
+        """
+        for (t0, estado, boca), (t1, _, _) in zip(self._amostras, list(self._amostras)[1:]):
+            yield (t1 - t0).total_seconds(), estado, boca
+
+    def _avaliar(self) -> Fadiga:
+        observado = 0.0   # tempo com rosto — o denominador do PERCLOS
+        fechado = 0.0
+        maior_fechamento = 0.0
+        corrida_atual = 0.0
+        bocejos = 0
+        bocejo_atual = 0.0
+
+        for duracao, estado, boca in self._intervalos():
+            if estado != AUSENTE:
+                observado += duracao
+            if estado == FECHADO:
+                fechado += duracao
+                corrida_atual += duracao
+                maior_fechamento = max(maior_fechamento, corrida_atual)
+            else:
+                # Ausência interrompe a corrida: não dá para afirmar que a
+                # pálpebra continuou fechada enquanto o rosto sumiu.
+                corrida_atual = 0.0
+
+            if boca:
+                bocejo_atual += duracao
+                if bocejo_atual >= DURACAO_MINIMA_BOCEJO.total_seconds() > bocejo_atual - duracao:
+                    bocejos += 1
+            else:
+                bocejo_atual = 0.0
+
+        perclos = fechado / observado if observado > 0 else 0.0
+
+        motivos: List[str] = []
+        fator = 0.0
+
+        if perclos > PERCLOS_LIMIAR:
+            excedente = (perclos - PERCLOS_LIMIAR) / (PERCLOS_SATURACAO - PERCLOS_LIMIAR)
+            fator += PENALIDADE_PERCLOS_MAX * _entre_zero_e_um(excedente)
+            motivos.append("palpebras-pesadas")
+
+        if maior_fechamento >= DURACAO_MICROSSONO.total_seconds():
+            fator += PENALIDADE_MICROSSONO
+            motivos.append("olhos-fechados-prolongados")
+
+        if bocejos:
+            fator += PENALIDADE_POR_BOCEJO * bocejos
+            motivos.append("bocejos")
+
+        return Fadiga(
+            fator=min(fator, FADIGA_MAXIMA),
+            perclos=perclos,
+            maior_fechamento_s=maior_fechamento,
+            bocejos=bocejos,
+            motivos=tuple(motivos),
+        )
+
+
 class AnalistaEngajamento:
     """Acompanha uma sessão: calibra a baseline do aluno e calcula o IEE.
 
@@ -160,6 +357,8 @@ class AnalistaEngajamento:
         self._yaw: List[float] = []
         self._inicio: Optional[datetime] = None
         self._ultima_presenca: Optional[datetime] = None
+        self._fadiga = DetectorDeFadiga()
+        self._ultima_fadiga: Fadiga = SEM_FADIGA
 
     @property
     def baseline(self) -> Optional[Baseline]:
@@ -170,12 +369,22 @@ class AnalistaEngajamento:
     def calibrando(self) -> bool:
         return self._baseline is None
 
+    def validar_fadiga(self) -> Fadiga:
+        """O fator de fadiga da última leitura observada.
+
+        Nome exigido pelo spec, que prevê `AnalistaEngajamento.validar_fadiga`.
+        A lógica vive em `DetectorDeFadiga` para ser testável sozinha; aqui é só
+        o ponto de acesso.
+        """
+        return self._ultima_fadiga
+
     def observar(
         self,
         ear: float,
         yaw: float,
         rosto_detectado: bool = True,
         agora: Optional[datetime] = None,
+        mar: Optional[float] = None,
     ) -> ResultadoIEE:
         """Registra uma leitura e devolve o IEE do instante."""
         agora = agora or agora_utc()
@@ -184,12 +393,21 @@ class AnalistaEngajamento:
             self._acumular(ear, yaw, rosto_detectado, agora)
 
         baseline = self._baseline or BASELINE_PROVISORIA
+        self._ultima_fadiga = self._fadiga.observar(
+            agora=agora, ear=ear, baseline=baseline, mar=mar, rosto_detectado=rosto_detectado
+        )
+
         return ResultadoIEE(
             score=calcular_iee(
-                ear=ear, yaw=yaw, baseline=baseline, rosto_detectado=rosto_detectado
+                ear=ear,
+                yaw=yaw,
+                baseline=baseline,
+                rosto_detectado=rosto_detectado,
+                fadiga=self._ultima_fadiga.fator,
             ),
             calibrando=self._baseline is None,
             baseline=baseline,
+            fadiga=self._ultima_fadiga,
         )
 
     # --- Calibração --------------------------------------------------------
