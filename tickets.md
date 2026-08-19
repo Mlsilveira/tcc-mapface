@@ -105,10 +105,24 @@ Duas decisões que valem a defesa: a baseline usa a **mediana** das amostras, n�
 
 **Bloqueada por:** Ticket 7 e Ticket 2.
 
-- [ ] Modelo da Ticket 2 carregado pelo backend
-- [ ] `AnalistaEngajamento.validar_fadiga` classifica padrões sequenciais atípicos
-- [ ] Fator F subtraído do score do IEE quando fadiga é detectada
-- [ ] Testes unitários com sequências sintéticas de fadiga
+- [ ] ~~Modelo da Ticket 2 carregado pelo backend~~ — **substituído por regras**, ver abaixo
+- [x] `AnalistaEngajamento.validar_fadiga` classifica padrões sequenciais atípicos
+- [x] Fator F subtraído do score do IEE quando fadiga é detectada
+- [x] Testes unitários com sequências sintéticas de fadiga
+
+O `F` vem de **regras diretas** sobre a série de EAR e MAR, não do Random Forest da ticket 2. A medição que motivou a troca está em [`resultado_18_08.md`](./resultado_18_08.md): no split de teste, o modelo empata com um classificador que responde sempre "engajado" — o `F` derivado dele seria **constante**, e a penalidade de fadiga seria código morto em produção. Além disso, o modelo prevê *engajamento*, um construto subjetivo com teto de ~0,72 mesmo partindo de anotação humana, enquanto fadiga é estado físico observável: "a pálpebra ficou fechada por mais de dois segundos" tem resposta objetiva, verificável e explicável ao aluno.
+
+Implementado em `DetectorDeFadiga` ([`backend/app/analista.py`](./backend/app/analista.py)), com três sinais somados e limitados a 40 pontos:
+
+- **PERCLOS** — proporção do último minuto com a pálpebra fechada, a métrica clássica de sonolência
+- **Microssono** — um fechamento contínuo de 2 s ou mais, que a proporção dilui
+- **Bocejo** — MAR acima do limiar por 2 s, tempo suficiente para não ser fala
+
+Duas decisões que valem a defesa: o limiar de olho fechado é **metade da abertura neutra do aluno**, não o 0,20 absoluto da literatura — quem tem EAR neutro de 0,18 estaria permanentemente "de olhos fechados" por um limiar fixo, que é o mesmo problema que a ticket 7 resolveu no score. E ausência de rosto **não** conta como olho fechado nem entra no denominador do PERCLOS: sem rosto não sabemos o que a pálpebra fazia, e contar ausência como fechamento transformaria "saiu para pegar água" em "cochilou".
+
+O payload do WebSocket passou a levar `mar`, que já era calculado no navegador desde a ticket 5 mas parava lá. Os testes que travam as chaves do payload — a fronteira de privacidade — foram atualizados de propósito, em `agregacao.spec.ts` e `telemetria.service.spec.ts`.
+
+**Pendência conhecida:** `LIMIAR_MAR_BOCEJO` está em 0,30, escolhido a partir da distribuição observada no DAiSEE (p99,9 = 0,2884). O valor herdado de 0,60 disparava em 7 clipes de 8570 — bocejo nenhum. A Sprint 11 já reserva tempo para recalibrar thresholds de fadiga com dados reais de teste.
 
 ## 9. Dashboard ao vivo
 

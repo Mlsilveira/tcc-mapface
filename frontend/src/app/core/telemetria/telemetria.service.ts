@@ -74,6 +74,8 @@ export class TelemetriaService implements OnDestroy {
 
   private readonly scoreSignal = signal<number | null>(null);
   private readonly calibrandoSignal = signal(false);
+  private readonly fadigaSignal = signal(0);
+  private readonly motivosSignal = signal<readonly string[]>([]);
   private readonly conectadoSignal = signal(false);
 
   /** Último score devolvido pelo backend, ou `null`. */
@@ -87,6 +89,17 @@ export class TelemetriaService implements OnDestroy {
    * com o resto da sessão — e o gráfico da ticket 9 precisa poder dizer isso.
    */
   readonly calibrando = this.calibrandoSignal.asReadonly();
+
+  /**
+   * Quanto o fator de fadiga descontou do score, em pontos (ticket 8).
+   *
+   * Vem acompanhado de `motivosDeFadiga` porque um desconto sem explicação é um
+   * número que o aluno não tem como usar.
+   */
+  readonly fadiga = this.fadigaSignal.asReadonly();
+
+  /** Por que houve penalidade: `palpebras-pesadas`, `olhos-fechados-prolongados`, `bocejos`. */
+  readonly motivosDeFadiga = this.motivosSignal.asReadonly();
 
   readonly conectado = this.conectadoSignal.asReadonly();
 
@@ -129,6 +142,8 @@ export class TelemetriaService implements OnDestroy {
     this.janela = [];
     this.scoreSignal.set(null);
     this.calibrandoSignal.set(false);
+    this.fadigaSignal.set(0);
+    this.motivosSignal.set([]);
     this.conectadoSignal.set(false);
   }
 
@@ -149,9 +164,17 @@ export class TelemetriaService implements OnDestroy {
   }
 
   private receber(bruto: string): void {
-    let mensagem: { tipo?: string; score?: number; calibrando?: boolean };
+    type MensagemDeScore = {
+      tipo?: string;
+      score?: number;
+      calibrando?: boolean;
+      fadiga?: number;
+      motivos_fadiga?: string[];
+    };
+
+    let mensagem: MensagemDeScore;
     try {
-      mensagem = JSON.parse(bruto) as { tipo?: string; score?: number; calibrando?: boolean };
+      mensagem = JSON.parse(bruto) as MensagemDeScore;
     } catch {
       return;
     }
@@ -172,6 +195,10 @@ export class TelemetriaService implements OnDestroy {
       // ticket 7 não manda o campo, e assumir calibração eterna deixaria o aviso
       // preso na tela.
       this.calibrandoSignal.set(mensagem.calibrando === true);
+      this.fadigaSignal.set(typeof mensagem.fadiga === 'number' ? mensagem.fadiga : 0);
+      this.motivosSignal.set(
+        Array.isArray(mensagem.motivos_fadiga) ? mensagem.motivos_fadiga : [],
+      );
     }
   }
 

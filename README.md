@@ -31,6 +31,7 @@ Implementado:
 - **Ticket 5 — Captura client-side.** Permissão de webcam com mensagem por tipo de falha, preview durante a sessão, extração de landmarks via MediaPipe e cálculo local de EAR, MAR e Head Pose, com FPS medido na tela.
 - **Ticket 6 — Canal de telemetria.** WebSocket autenticado pela primeira mensagem, agregação a 1 Hz no cliente, reconexão automática com backoff e log persistido em `log_engajamento`.
 - **Ticket 7 — Fórmula real do IEE.** `AnalistaEngajamento` calibra a baseline individual do aluno nos primeiros 60 s e passa a medir EAR e Head Pose contra ela, em vez de contra constantes iguais para todo mundo.
+- **Ticket 8 — Fator de fadiga.** `DetectorDeFadiga` penaliza o IEE por pálpebra pesada (PERCLOS), fechamento prolongado e bocejo, com os limiares relativos à baseline do aluno. O fator vem de regras, e não do Random Forest — o porquê está em [`resultado_18_08.md`](./resultado_18_08.md).
 
 O plano completo, com as 16 fatias verticais e suas dependências, está em [`tickets.md`](./tickets.md). O problema, as histórias de usuário e as decisões de arquitetura estão em [`spec-poc-iee.md`](./spec-poc-iee.md).
 
@@ -98,7 +99,7 @@ cd frontend && npx puppeteer browsers install chrome
 backend/
   app/
     sessoes.py       regras do ciclo de vida da sessão, sem depender de HTTP
-    analista.py      calibração da baseline individual e fórmula do IEE
+    analista.py      calibração da baseline, fórmula do IEE e fator de fadiga
     telemetria.py    persistência da série de engajamento
     security.py      hashing de senha e emissão/validação de JWT
     tempo.py         normalização de datetimes para UTC
