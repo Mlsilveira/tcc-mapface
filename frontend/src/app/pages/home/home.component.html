@@ -1,78 +1,136 @@
-<main>
-  <h1>Área do estudante</h1>
+<div class="aplicacao">
+  <header class="topo">
+    <div class="topo__interno">
+      <app-logo />
+      <button type="button" class="botao botao--fantasma" data-teste="sair" (click)="sair()">
+        Sair
+      </button>
+    </div>
+  </header>
 
-  <section class="sessao">
-    <h2>Sessão de estudo</h2>
-
+  <main class="conteudo">
     @if (sessaoAtiva(); as sessao) {
-      <p data-teste="sessao-em-andamento">
-        Sessão em andamento desde {{ sessao.inicio | date: 'shortTime' }}.
-      </p>
+      <section class="painel">
+        <div class="sessao__cabecalho">
+          <div>
+            <span class="selo-ativo">Medindo agora</span>
+            <h1>Sessão de estudo</h1>
+            <p class="sessao__desde" data-teste="sessao-em-andamento">
+              Sessão em andamento desde {{ sessao.inicio | date: 'shortTime' }}.
+            </p>
+          </div>
 
-      <!-- O preview existe para o aluno confirmar que a webcam está funcionando.
-           Nenhum frame sai daqui: o vídeo só é pintado na tela dele. -->
-      <video
-        #preview
-        data-teste="preview-webcam"
-        autoplay
-        playsinline
-        muted
-        aria-label="Preview da sua webcam"
-      ></video>
+          <button
+            type="button"
+            class="botao botao--encerrar"
+            data-teste="encerrar-sessao"
+            [disabled]="aguardando"
+            (click)="encerrarSessao()"
+          >
+            {{ aguardando ? 'Encerrando…' : 'Encerrar sessão' }}
+          </button>
+        </div>
 
-      <section class="metricas" data-teste="metricas">
-        <h3>Captura</h3>
+        <div class="sessao__corpo">
+          <!-- O preview existe para o aluno confirmar que a webcam está funcionando.
+               Nenhum frame sai daqui: o vídeo só é pintado na tela dele. -->
+          <figure class="preview">
+            <video
+              #preview
+              data-teste="preview-webcam"
+              autoplay
+              playsinline
+              muted
+              aria-label="Preview da sua webcam"
+            ></video>
+            <figcaption>
+              <app-icone nome="cadeado" />
+              Só você vê esta imagem. Ela não é gravada nem enviada a lugar nenhum.
+            </figcaption>
+          </figure>
 
-        <p data-teste="fps">{{ fps() }} FPS</p>
-        @if (fps() > 0 && fps() < FPS_MINIMO) {
-          <p class="aviso" role="status" data-teste="fps-baixo">
-            A captura está abaixo de {{ FPS_MINIMO }} FPS. Fechar outras abas costuma ajudar.
-          </p>
-        }
+          <section class="metricas" data-teste="metricas">
+            <h2>Captura</h2>
 
-        @if (metricas(); as leitura) {
-          <dl>
-            <dt>EAR (abertura dos olhos)</dt>
-            <dd data-teste="ear">{{ leitura.ear | number: '1.3-3' }}</dd>
+            <p class="metricas__fps" data-teste="fps">{{ fps() }} FPS</p>
+            @if (fps() > 0 && fps() < FPS_MINIMO) {
+              <p class="aviso" role="status" data-teste="fps-baixo">
+                A captura está abaixo de {{ FPS_MINIMO }} FPS. Fechar outras abas costuma ajudar.
+              </p>
+            }
 
-            <dt>MAR (abertura da boca)</dt>
-            <dd data-teste="mar">{{ leitura.mar | number: '1.3-3' }}</dd>
-
-            <dt>Cabeça (yaw / pitch)</dt>
-            <dd data-teste="head-pose">
-              {{ leitura.cabeca.yaw | number: '1.1-1' }}° /
-              {{ leitura.cabeca.pitch | number: '1.1-1' }}°
-            </dd>
-          </dl>
-        } @else {
-          <p data-teste="sem-rosto">Rosto não detectado no momento.</p>
-        }
+            @if (metricas(); as leitura) {
+              <dl class="metricas__grade">
+                <div>
+                  <dt>Abertura dos olhos (EAR)</dt>
+                  <dd data-teste="ear">{{ leitura.ear | number: '1.3-3' }}</dd>
+                </div>
+                <div>
+                  <dt>Abertura da boca (MAR)</dt>
+                  <dd data-teste="mar">{{ leitura.mar | number: '1.3-3' }}</dd>
+                </div>
+                <div>
+                  <dt>Cabeça (yaw / pitch)</dt>
+                  <dd data-teste="head-pose">
+                    {{ leitura.cabeca.yaw | number: '1.1-1' }}° /
+                    {{ leitura.cabeca.pitch | number: '1.1-1' }}°
+                  </dd>
+                </div>
+              </dl>
+            } @else {
+              <p class="sem-rosto" data-teste="sem-rosto">
+                <app-icone nome="olho" />
+                Rosto não detectado no momento.
+              </p>
+            }
+          </section>
+        </div>
       </section>
-
-      <button
-        type="button"
-        data-teste="encerrar-sessao"
-        [disabled]="aguardando"
-        (click)="encerrarSessao()"
-      >
-        {{ aguardando ? 'Encerrando…' : 'Encerrar sessão' }}
-      </button>
     } @else {
-      <p>Nenhuma sessão em andamento.</p>
-      <button
-        type="button"
-        data-teste="iniciar-sessao"
-        [disabled]="aguardando"
-        (click)="iniciarSessao()"
-      >
-        {{ aguardando ? 'Iniciando…' : 'Iniciar sessão' }}
-      </button>
+      <section class="painel convite">
+        <span class="convite__marca"><app-icone nome="alvo" /></span>
+        <h1>Pronto para estudar?</h1>
+        <p class="convite__intro">
+          Ao iniciar, o MapFace acompanha seus sinais de atenção enquanto você estuda e monta um
+          retrato da sessão para você olhar depois.
+        </p>
+
+        <ol class="passos">
+          <li>
+            <strong>Autorize a webcam</strong>
+            <span>A imagem fica no seu navegador do início ao fim.</span>
+          </li>
+          <li>
+            <strong>Estude normalmente</strong>
+            <span>O primeiro minuto serve para calibrar o seu padrão neutro.</span>
+          </li>
+          <li>
+            <strong>Encerre quando quiser</strong>
+            <span>O relatório da sessão é só seu.</span>
+          </li>
+        </ol>
+
+        <button
+          type="button"
+          class="botao botao--primario botao--grande"
+          data-teste="iniciar-sessao"
+          [disabled]="aguardando"
+          (click)="iniciarSessao()"
+        >
+          {{ aguardando ? 'Iniciando…' : 'Iniciar sessão de estudo' }}
+        </button>
+
+        <p class="nota-privacidade">
+          <app-icone nome="cadeado" />
+          Nenhuma imagem ou vídeo sai do seu computador.
+        </p>
+      </section>
     }
 
     @if (erro) {
       <p class="erro-geral" role="alert">{{ erro }}</p>
     }
-  </section>
+  </main>
 
-  <button type="button" data-teste="sair" (click)="sair()">Sair</button>
-</main>
+  <p class="rodape-tela">MapFace · Índice de Engajamento no Estudo</p>
+</div>
