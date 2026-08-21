@@ -1,31 +1,102 @@
-<main class="tela-auth">
-  <h1>Criar conta</h1>
-  <form [formGroup]="formulario" (ngSubmit)="cadastrar()" novalidate>
-    <label for="nome">Nome</label>
-    <input id="nome" type="text" formControlName="nome" autocomplete="name" />
-    @if (formulario.get('nome')?.invalid && formulario.get('nome')?.touched) {
-      <p class="campo-erro">Informe seu nome.</p>
-    }
+<div class="acesso">
+  <aside class="acesso__marca">
+    <app-logo variante="claro" />
 
-    <label for="email">E-mail</label>
-    <input id="email" type="email" formControlName="email" autocomplete="email" />
-    @if (formulario.get('email')?.invalid && formulario.get('email')?.touched) {
-      <p class="campo-erro">Informe um e-mail válido.</p>
-    }
+    <div class="acesso__discurso">
+      <h2>Estude sabendo <em>como</em> você estuda.</h2>
+      <p>
+        Crie sua conta para começar a medir suas sessões. Ao final de cada uma, o MapFace devolve a
+        você — e só a você — como seu engajamento variou ao longo do tempo.
+      </p>
 
-    <label for="senha">Senha</label>
-    <input id="senha" type="password" formControlName="senha" autocomplete="new-password" />
-    @if (formulario.get('senha')?.invalid && formulario.get('senha')?.touched) {
-      <p class="campo-erro">A senha precisa ter pelo menos 8 caracteres.</p>
-    }
+      <ul class="acesso__pontos">
+        <li>
+          <span class="acesso__bolha"><app-icone nome="relogio" /></span>
+          <div>
+            <strong>Comece em um minuto</strong>
+            <span>Nome, e-mail e senha. Nenhum dado além disso é pedido.</span>
+          </div>
+        </li>
+        <li>
+          <span class="acesso__bolha"><app-icone nome="cadeado" /></span>
+          <div>
+            <strong>Sua webcam continua sua</strong>
+            <span>O navegador extrai as medidas e descarta a imagem na hora.</span>
+          </div>
+        </li>
+        <li>
+          <span class="acesso__bolha"><app-icone nome="bussola" /></span>
+          <div>
+            <strong>Um espelho, não uma prova</strong>
+            <span>A ideia é você se perceber — o sistema não avalia ninguém.</span>
+          </div>
+        </li>
+      </ul>
+    </div>
 
-    @if (erro) {
-      <p class="erro-geral" role="alert">{{ erro }}</p>
-    }
+    <p class="acesso__rodape">Índice de Engajamento no Estudo · prova de conceito acadêmica</p>
+  </aside>
 
-    <button type="submit" [disabled]="enviando">
-      {{ enviando ? 'Cadastrando…' : 'Cadastrar' }}
-    </button>
-  </form>
-  <p>Já tem conta? <a routerLink="/login">Entrar</a></p>
-</main>
+  <main class="acesso__painel">
+    <div class="cartao-acesso">
+      <h1>Criar conta</h1>
+      <p class="cartao-acesso__intro">É de graça e leva menos de um minuto.</p>
+
+      <form [formGroup]="formulario" (ngSubmit)="cadastrar()" novalidate>
+        <div class="campo">
+          <label for="nome">Nome</label>
+          <input
+            id="nome"
+            type="text"
+            formControlName="nome"
+            autocomplete="name"
+            placeholder="Como podemos te chamar?"
+          />
+          @if (formulario.get('nome')?.invalid && formulario.get('nome')?.touched) {
+            <p class="campo-erro">Informe seu nome.</p>
+          }
+        </div>
+
+        <div class="campo">
+          <label for="email">E-mail</label>
+          <input
+            id="email"
+            type="email"
+            formControlName="email"
+            autocomplete="email"
+            placeholder="voce@email.com"
+          />
+          @if (formulario.get('email')?.invalid && formulario.get('email')?.touched) {
+            <p class="campo-erro">Informe um e-mail válido.</p>
+          }
+        </div>
+
+        <div class="campo">
+          <label for="senha">Senha</label>
+          <input
+            id="senha"
+            type="password"
+            formControlName="senha"
+            autocomplete="new-password"
+            placeholder="Crie uma senha"
+          />
+          @if (formulario.get('senha')?.invalid && formulario.get('senha')?.touched) {
+            <p class="campo-erro">A senha precisa ter pelo menos 8 caracteres.</p>
+          } @else {
+            <p class="campo-dica">Use pelo menos 8 caracteres.</p>
+          }
+        </div>
+
+        @if (erro) {
+          <p class="erro-geral" role="alert">{{ erro }}</p>
+        }
+
+        <button type="submit" class="botao botao--primario botao--largo" [disabled]="enviando">
+          {{ enviando ? 'Cadastrando…' : 'Criar minha conta' }}
+        </button>
+      </form>
+
+      <p class="troca-de-tela">Já tem conta? <a routerLink="/login">Entrar</a></p>
+    </div>
+  </main>
+</div>
