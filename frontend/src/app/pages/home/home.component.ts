@@ -22,11 +22,13 @@ import { InactivityService } from '../../core/services/inactivity.service';
 import { SessaoService } from '../../core/services/sessao.service';
 import { TelemetriaService } from '../../core/telemetria/telemetria.service';
 import { LandmarksService } from '../../core/visao/landmarks.service';
+import { IconeComponent } from '../../shared/icone.component';
+import { LogoComponent } from '../../shared/logo.component';
 
 @Component({
   selector: 'app-home',
   standalone: true,
-  imports: [DatePipe, DecimalPipe],
+  imports: [DatePipe, DecimalPipe, LogoComponent, IconeComponent],
   templateUrl: './home.component.html',
 })
 export class HomeComponent implements OnInit, OnDestroy {

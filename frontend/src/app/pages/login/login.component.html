@@ -1,25 +1,86 @@
-<main class="tela-auth">
-  <h1>Entrar</h1>
-  <form [formGroup]="formulario" (ngSubmit)="entrar()" novalidate>
-    <label for="email">E-mail</label>
-    <input id="email" type="email" formControlName="email" autocomplete="email" />
-    @if (formulario.get('email')?.invalid && formulario.get('email')?.touched) {
-      <p class="campo-erro">Informe um e-mail válido.</p>
-    }
+<div class="acesso">
+  <aside class="acesso__marca">
+    <app-logo variante="claro" />
 
-    <label for="senha">Senha</label>
-    <input id="senha" type="password" formControlName="senha" autocomplete="current-password" />
-    @if (formulario.get('senha')?.invalid && formulario.get('senha')?.touched) {
-      <p class="campo-erro">Informe sua senha.</p>
-    }
+    <div class="acesso__discurso">
+      <h2>Perceba quando o <em>foco</em> escapa.</h2>
+      <p>
+        O MapFace acompanha sinais do seu rosto durante a sessão de estudo e devolve um índice de 0
+        a 100 calibrado para você. Sem nota, sem ranking, sem julgamento.
+      </p>
 
-    @if (erro) {
-      <p class="erro-geral" role="alert">{{ erro }}</p>
-    }
+      <ul class="acesso__pontos">
+        <li>
+          <span class="acesso__bolha"><app-icone nome="cadeado" /></span>
+          <div>
+            <strong>Nada de imagem sai daqui</strong>
+            <span>O vídeo é processado no seu navegador; só números viajam.</span>
+          </div>
+        </li>
+        <li>
+          <span class="acesso__bolha"><app-icone nome="alvo" /></span>
+          <div>
+            <strong>Calibrado no seu rosto</strong>
+            <span>O primeiro minuto mede o seu padrão neutro, não o de outra pessoa.</span>
+          </div>
+        </li>
+        <li>
+          <span class="acesso__bolha"><app-icone nome="grafico" /></span>
+          <div>
+            <strong>Só você vê seus dados</strong>
+            <span>Não existe professor, coordenação nem administrador do outro lado.</span>
+          </div>
+        </li>
+      </ul>
+    </div>
 
-    <button type="submit" [disabled]="enviando">
-      {{ enviando ? 'Entrando…' : 'Entrar' }}
-    </button>
-  </form>
-  <p>Não tem conta? <a routerLink="/registro">Cadastre-se</a></p>
-</main>
+    <p class="acesso__rodape">Índice de Engajamento no Estudo · prova de conceito acadêmica</p>
+  </aside>
+
+  <main class="acesso__painel">
+    <div class="cartao-acesso">
+      <h1>Entrar</h1>
+      <p class="cartao-acesso__intro">Continue de onde você parou.</p>
+
+      <form [formGroup]="formulario" (ngSubmit)="entrar()" novalidate>
+        <div class="campo">
+          <label for="email">E-mail</label>
+          <input
+            id="email"
+            type="email"
+            formControlName="email"
+            autocomplete="email"
+            placeholder="voce@email.com"
+          />
+          @if (formulario.get('email')?.invalid && formulario.get('email')?.touched) {
+            <p class="campo-erro">Informe um e-mail válido.</p>
+          }
+        </div>
+
+        <div class="campo">
+          <label for="senha">Senha</label>
+          <input
+            id="senha"
+            type="password"
+            formControlName="senha"
+            autocomplete="current-password"
+            placeholder="Sua senha"
+          />
+          @if (formulario.get('senha')?.invalid && formulario.get('senha')?.touched) {
+            <p class="campo-erro">Informe sua senha.</p>
+          }
+        </div>
+
+        @if (erro) {
+          <p class="erro-geral" role="alert">{{ erro }}</p>
+        }
+
+        <button type="submit" class="botao botao--primario botao--largo" [disabled]="enviando">
+          {{ enviando ? 'Entrando…' : 'Entrar' }}
+        </button>
+      </form>
+
+      <p class="troca-de-tela">Não tem conta? <a routerLink="/registro">Cadastre-se</a></p>
+    </div>
+  </main>
+</div>

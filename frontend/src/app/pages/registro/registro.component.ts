@@ -3,11 +3,13 @@ import { FormBuilder, ReactiveFormsModule, Validators } from '@angular/forms';
 import { Router, RouterLink } from '@angular/router';
 
 import { AuthService } from '../../core/services/auth.service';
+import { IconeComponent } from '../../shared/icone.component';
+import { LogoComponent } from '../../shared/logo.component';
 
 @Component({
   selector: 'app-registro',
   standalone: true,
-  imports: [ReactiveFormsModule, RouterLink],
+  imports: [ReactiveFormsModule, RouterLink, LogoComponent, IconeComponent],
   templateUrl: './registro.component.html',
 })
 export class RegistroComponent {
