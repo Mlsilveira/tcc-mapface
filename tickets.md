@@ -139,9 +139,15 @@ O payload do WebSocket passou a levar `mar`, que já era calculado no navegador 
 
 **Bloqueada por:** Ticket 7.
 
-- [ ] Alerta de "Incerteza de Captura" em cenários de baixa luz, óculos reflexivos ou oclusão
-- [ ] O alerta não é registrado como score corrompido no banco
-- [ ] Score zera quando o rosto fica ausente por tempo prolongado
+- [x] Alerta de "Incerteza de Captura" em cenários de baixa luz, óculos reflexivos ou oclusão
+- [x] O alerta não é registrado como score corrompido no banco
+- [x] Score zera quando o rosto fica ausente por tempo prolongado
+
+O julgamento mora no navegador ([`qualidade.ts`](./frontend/src/app/core/visao/qualidade.ts)), porque é onde a imagem existe: dos quatro números que sobem por segundo é impossível separar "aluno de olhos semicerrados" de "sala escura e detector chutando o contorno da pálpebra". O que atravessa a rede é o **veredito**, não a evidência — a luminância medida morre no cliente, e a fronteira de privacidade não se move.
+
+Três sinais, com precedência causal (pouca luz *produz* os outros dois, então vem primeiro): luminância média do quadro, taxa de detecção dentro da janela e assimetria entre os olhos. A assimetria é o que denuncia reflexo de óculos: as duas pálpebras descem juntas ao piscar, mas só uma lente reflete.
+
+Duas distinções que valem a defesa. **Ausência não é incerteza:** rosto ausente é uma medição verdadeira (o `P(t) = 0` do spec) e zera o score; incerteza é a recusa de afirmar qualquer coisa, e grava `score = NULL` com o motivo em `alerta`. E a leitura incerta **não entra em lugar nenhum** — não calibra a baseline da ticket 7, não conta como pálpebra fechada no PERCLOS da ticket 8, não vira ponto na série. Contar ausência de informação como olho fechado transformaria "a luz apagou" em "o aluno cochilou".
 
 ## 11. Relatório de autopercepção
 

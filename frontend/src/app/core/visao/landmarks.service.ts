@@ -2,6 +2,7 @@ import { Injectable, InjectionToken, NgZone, OnDestroy, inject, signal } from '@
 import { FaceLandmarker, FilesetResolver } from '@mediapipe/tasks-vision';
 
 import { MetricasFaciais, calcularMetricas } from './metricas';
+import { MotivoDeIncerteza, avaliarCaptura } from './qualidade';
 
 /** Binários WASM, copiados de `node_modules/@mediapipe/tasks-vision/wasm` pelo build. */
 export const CAMINHO_DO_WASM = 'assets/mediapipe/wasm';
@@ -100,6 +101,74 @@ export const RELOGIO = new InjectionToken<() => number>('Relogio', {
 });
 
 /**
+ * Lado do quadrado em que o quadro é reamostrado para medir luminância.
+ *
+ * A medição é uma média do quadro inteiro, então resolução não acrescenta nada:
+ * 24×24 são 576 pixels em vez de 300 mil, e o resultado é o mesmo número. O
+ * custo importa porque isso roda a 4 Hz durante a sessão toda, contra a meta de
+ * CPU ≤ 25% da ticket 16.
+ */
+export const LADO_DA_AMOSTRA_DE_LUZ = 24;
+
+/**
+ * Mede a luminância média do quadro atual, de 0 a 1 (ticket 10).
+ *
+ * Injetável porque é a única parte da medição de qualidade que toca pixels — e
+ * portanto a única que um teste não consegue exercitar com um `<video>` dublado.
+ * A aritmética do veredito fica em `qualidade.ts`, testável sem nada disso.
+ */
+export type MedidorDeLuminancia = (video: HTMLVideoElement) => number;
+
+function criarMedidorDeLuminancia(): MedidorDeLuminancia {
+  // Um canvas só, reaproveitado entre quadros: alocar 4 por segundo daria ao
+  // GC trabalho constante durante uma sessão de uma hora.
+  const canvas = document.createElement('canvas');
+  canvas.width = LADO_DA_AMOSTRA_DE_LUZ;
+  canvas.height = LADO_DA_AMOSTRA_DE_LUZ;
+
+  // `willReadFrequently` evita que o navegador mantenha o canvas na GPU, de
+  // onde cada `getImageData` custaria um round-trip.
+  const contexto = canvas.getContext('2d', { willReadFrequently: true });
+
+  return (video) => {
+    if (contexto === null || video.videoWidth === 0) {
+      // Sem contexto 2D não há como medir. Devolver 1 (claro) é o palpite
+      // seguro: a falta de medição não pode virar um alerta de "está escuro".
+      return 1;
+    }
+
+    contexto.drawImage(video, 0, 0, canvas.width, canvas.height);
+    const { data } = contexto.getImageData(0, 0, canvas.width, canvas.height);
+
+    let soma = 0;
+    for (let i = 0; i < data.length; i += 4) {
+      // Luma da Rec. 601: o olho humano não pesa os três canais igualmente, e a
+      // média aritmética acusaria de escura uma cena dominada por azul.
+      soma += 0.299 * data[i] + 0.587 * data[i + 1] + 0.114 * data[i + 2];
+    }
+
+    return soma / (data.length / 4) / 255;
+  };
+}
+
+export const MEDIDOR_DE_LUMINANCIA = new InjectionToken<MedidorDeLuminancia>(
+  'MedidorDeLuminancia',
+  { providedIn: 'root', factory: criarMedidorDeLuminancia },
+);
+
+/**
+ * O que a captura sabe num instante: a leitura e o quanto se pode confiar nela.
+ *
+ * Os dois andam juntos porque são consumidos juntos — a telemetria precisa
+ * mandar as duas coisas no mesmo payload, e separá-las abriria a janela em que
+ * a métrica de um quadro sobe com o veredito de outro.
+ */
+export interface LeituraDaCaptura {
+  metricas: MetricasFaciais | null;
+  incerteza: MotivoDeIncerteza | null;
+}
+
+/**
  * Ponte entre a webcam e o cálculo de métricas.
  *
  * Só esta classe conhece o `@mediapipe/tasks-vision`. A aritmética vive em
@@ -112,6 +181,7 @@ export class LandmarksService implements OnDestroy {
   private readonly criarDetector = inject(CRIADOR_DE_DETECTOR);
   private readonly agendarQuadro = inject(AGENDADOR_DE_QUADROS);
   private readonly agora = inject(RELOGIO);
+  private readonly medirLuminancia = inject(MEDIDOR_DE_LUMINANCIA);
 
   private detector: DetectorFacial | null = null;
   private video: HTMLVideoElement | null = null;
@@ -120,18 +190,33 @@ export class LandmarksService implements OnDestroy {
 
   private metricasDoUltimoQuadro: MetricasFaciais | null = null;
   private quadrosDesdeAPublicacao = 0;
+  private quadrosComRosto = 0;
+  private somaDaAssimetria = 0;
   private instanteDaUltimaPublicacao = 0;
   private ultimoInstanteEnviado = -1;
   private ultimoTempoDeVideo = -1;
 
   private readonly metricasSignal = signal<MetricasFaciais | null>(null);
   private readonly fpsSignal = signal(0);
+  private readonly incertezaSignal = signal<MotivoDeIncerteza | null>(null);
 
   /** Última leitura de EAR/MAR/Head Pose, ou `null` quando não há rosto no quadro. */
   readonly metricas = this.metricasSignal.asReadonly();
 
   /** Quadros processados por segundo. A ticket 5 exige pelo menos 15. */
   readonly fps = this.fpsSignal.asReadonly();
+
+  /**
+   * Por que a última janela não é confiável, ou `null` quando está tudo bem
+   * (ticket 10). É julgado por janela de publicação, e não por quadro, porque
+   * detecção intermitente só existe como fenômeno ao longo de vários quadros.
+   */
+  readonly incerteza = this.incertezaSignal.asReadonly();
+
+  /** Métricas e veredito do mesmo instante, para a telemetria mandar juntos. */
+  leitura(): LeituraDaCaptura {
+    return { metricas: this.metricasSignal(), incerteza: this.incertezaSignal() };
+  }
 
   /** Já está processando quadros? */
   get ativo(): boolean {
@@ -154,6 +239,8 @@ export class LandmarksService implements OnDestroy {
     this.video = video;
     this.processando = true;
     this.quadrosDesdeAPublicacao = 0;
+    this.quadrosComRosto = 0;
+    this.somaDaAssimetria = 0;
     this.instanteDaUltimaPublicacao = this.agora();
 
     // O loop fica fora da zona do Angular para não disparar change detection a
@@ -177,9 +264,12 @@ export class LandmarksService implements OnDestroy {
     this.ultimoInstanteEnviado = -1;
     this.ultimoTempoDeVideo = -1;
     this.quadrosDesdeAPublicacao = 0;
+    this.quadrosComRosto = 0;
+    this.somaDaAssimetria = 0;
 
     this.metricasSignal.set(null);
     this.fpsSignal.set(0);
+    this.incertezaSignal.set(null);
   }
 
   private passo(): void {
@@ -241,11 +331,16 @@ export class LandmarksService implements OnDestroy {
       return;
     }
 
-    this.metricasDoUltimoQuadro = calcularMetricas(
-      malha,
-      matriz,
-      video.videoWidth / video.videoHeight,
-    );
+    const metricas = calcularMetricas(malha, matriz, video.videoWidth / video.videoHeight);
+
+    this.quadrosComRosto += 1;
+    // Acumulada ao longo da janela, e não lida do último quadro na publicação:
+    // um quadro só decidindo por todos daria os dois erros opostos — um contorno
+    // perdido num único frame marcaria o segundo inteiro como reflexo, e um
+    // reflexo constante passaria batido sempre que o último quadro da janela
+    // saísse sem rosto.
+    this.somaDaAssimetria += metricas.assimetriaOcular;
+    this.metricasDoUltimoQuadro = metricas;
   }
 
   private publicar(): void {
@@ -253,14 +348,57 @@ export class LandmarksService implements OnDestroy {
     const segundos = (agora - this.instanteDaUltimaPublicacao) / 1000;
     const fps = segundos > 0 ? this.quadrosDesdeAPublicacao / segundos : 0;
 
-    this.quadrosDesdeAPublicacao = 0;
-    this.instanteDaUltimaPublicacao = agora;
-
     const metricas = this.metricasDoUltimoQuadro;
+    const incerteza = this.avaliarJanela();
+
+    this.quadrosDesdeAPublicacao = 0;
+    this.quadrosComRosto = 0;
+    this.somaDaAssimetria = 0;
+    this.instanteDaUltimaPublicacao = agora;
 
     this.zone.run(() => {
       this.fpsSignal.set(Math.round(fps));
       this.metricasSignal.set(metricas);
+      this.incertezaSignal.set(incerteza);
+    });
+  }
+
+  /**
+   * Julga a confiabilidade da janela que acabou de fechar (ticket 10).
+   *
+   * A luminância é medida **uma vez por janela**, e não por quadro: é uma
+   * propriedade do ambiente, que não muda em 250 ms, e ler pixels 30 vezes por
+   * segundo custaria mais que toda a extração de landmarks.
+   */
+  private avaliarJanela(): MotivoDeIncerteza | null {
+    const video = this.video;
+    if (video === null || this.quadrosDesdeAPublicacao === 0) {
+      // Nenhum quadro processado: a captura nem rodou (aba em segundo plano).
+      // Isso não é incerteza de captura — é ausência de captura, e o aviso de
+      // FPS baixo já cobre o caso sem mandar o aluno acender uma luz à toa.
+      return null;
+    }
+
+    let luminancia: number;
+    try {
+      luminancia = this.medirLuminancia(video);
+    } catch {
+      // Mesma proteção que `detectForVideo` tem em `processarQuadro`, e pelo
+      // mesmo motivo: sem ela, uma falha ao ler pixels abortaria `publicar()`
+      // antes de atualizar métricas e FPS, e a tela congelaria em silêncio na
+      // última leitura boa — com a telemetria reenviando-a indefinidamente.
+      // Assumir "claro" mantém a medição rodando; assumir escuro alertaria o
+      // aluno sobre uma lâmpada que não tem nada de errado.
+      luminancia = 1;
+    }
+
+    return avaliarCaptura({
+      luminancia,
+      presenca: this.quadrosComRosto / this.quadrosDesdeAPublicacao,
+      // Média dos quadros em que houve rosto. Sem rosto na janela não há
+      // assimetria a avaliar, e `avaliarCaptura` já ignora o campo nesse caso.
+      assimetriaOcular:
+        this.quadrosComRosto > 0 ? this.somaDaAssimetria / this.quadrosComRosto : 0,
     });
   }
 

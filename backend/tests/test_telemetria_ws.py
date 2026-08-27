@@ -243,6 +243,81 @@ def test_mar_malformado_nao_invalida_a_leitura(client, com_sessao_ativa):
     assert resposta["score"] == pytest.approx(100.0)
 
 
+def test_captura_incerta_devolve_o_motivo_e_nao_grava_score(
+    client, com_sessao_ativa, session
+):
+    """Ticket 10, ponta a ponta.
+
+    O navegador é quem tem a imagem, então é ele quem julga se dá para confiar
+    nela. O backend não discute o julgamento: ele se abstém de medir e registra
+    o motivo, para que a ausência de score no gráfico e no relatório tenha uma
+    explicação em vez de virar um buraco.
+    """
+    from app import telemetria
+
+    id_sessao = _id_da_sessao_ativa(client, com_sessao_ativa)
+
+    with client.websocket_connect("/telemetria") as ws:
+        ws.send_json({"token": com_sessao_ativa})
+        ws.receive_json()
+
+        ws.send_json(
+            {"ear": 0.30, "yaw": 0.0, "rosto_detectado": True, "incerteza": "baixa-luz"}
+        )
+        resposta = ws.receive_json()
+
+    assert resposta["score"] is None
+    assert resposta["incerteza"] == "baixa-luz"
+
+    logs = telemetria.buscar_logs(session, id_sessao=id_sessao)
+    assert len(logs) == 1
+    assert logs[0].score is None
+    assert logs[0].alerta == "baixa-luz"
+
+
+def test_motivo_de_incerteza_arbitrario_nao_chega_ao_banco(client, com_sessao_ativa, session):
+    """O rótulo é do cliente, mas a coluna é nossa.
+
+    Gravar a string crua deixaria o navegador escrever texto livre dentro de
+    `log_engajamento` — e um relatório que agrupa alertas por rótulo passaria a
+    exibir o que quer que tivesse sido mandado.
+    """
+    from app import telemetria
+
+    id_sessao = _id_da_sessao_ativa(client, com_sessao_ativa)
+
+    with client.websocket_connect("/telemetria") as ws:
+        ws.send_json({"token": com_sessao_ativa})
+        ws.receive_json()
+
+        ws.send_json(
+            {
+                "ear": 0.30,
+                "yaw": 0.0,
+                "rosto_detectado": True,
+                "incerteza": "<script>alert(1)</script>",
+            }
+        )
+        resposta = ws.receive_json()
+
+    assert resposta["score"] is None
+    assert telemetria.buscar_logs(session, id_sessao=id_sessao)[0].alerta == "desconhecida"
+
+
+def test_cliente_sem_o_campo_de_incerteza_continua_medido(client, com_sessao_ativa):
+    # Mesma leniência que valeu para `mar` na ticket 8: um cliente com a aba
+    # aberta desde antes do deploy não perde a sessão por um campo novo.
+    with client.websocket_connect("/telemetria") as ws:
+        ws.send_json({"token": com_sessao_ativa})
+        ws.receive_json()
+
+        ws.send_json({"ear": 0.30, "yaw": 0.0, "rosto_detectado": True})
+        resposta = ws.receive_json()
+
+    assert resposta["score"] == pytest.approx(100.0)
+    assert resposta["incerteza"] is None
+
+
 def test_telemetria_conta_como_atividade_da_sessao(client, com_sessao_ativa, session):
     from app.models import SessaoEstudo
 
