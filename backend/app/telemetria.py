@@ -18,12 +18,25 @@ from app.tempo import agora_utc
 
 
 def registrar_log(
-    db: Session, id_sessao: int, score: float, agora: Optional[datetime] = None
+    db: Session,
+    id_sessao: int,
+    score: Optional[float],
+    fadiga: float = 0.0,
+    alerta: Optional[str] = None,
+    agora: Optional[datetime] = None,
 ) -> LogEngajamento:
-    """Grava um ponto da série de engajamento da sessão."""
+    """Grava um ponto da série de engajamento da sessão.
+
+    `score=None` é o ponto de incerteza da ticket 10: a leitura chegou, foi
+    registrada no tempo certo, e não produziu número. O ponto existe para que o
+    relatório da ticket 11 consiga dizer "aqui não deu para medir" em vez de
+    apresentar um buraco indistinguível de uma pausa.
+    """
     log = LogEngajamento(
         id_sessao=id_sessao,
         score=score,
+        fadiga=fadiga,
+        alerta=alerta,
         horario_registro=agora or agora_utc(),
     )
     db.add(log)

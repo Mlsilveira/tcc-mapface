@@ -10,6 +10,8 @@ O sistema **não diagnostica, não avalia e não julga**. Ele mede proxies compo
 
 Nenhuma imagem ou vídeo sai do navegador — apenas coordenadas numéricas trafegam para o backend, e o schema do banco não tem campo para dados brutos de imagem. Os dados de um estudante são visíveis apenas para ele: não existe papel de professor, coordenação ou administrador.
 
+A avaliação de qualidade da captura (ticket 10) mede a luminância do quadro, e essa é a única leitura de pixels do sistema fora do MediaPipe. Ela também não atravessa: o que sobe é o veredito — um rótulo como `baixa-luz` —, nunca o número que o produziu.
+
 ## Stack
 
 | Camada | Tecnologia |
@@ -42,6 +44,7 @@ Implementado:
 - **Ticket 6 — Canal de telemetria.** WebSocket autenticado pela primeira mensagem, agregação a 1 Hz no cliente, reconexão automática com backoff e log persistido em `log_engajamento`.
 - **Ticket 7 — Fórmula real do IEE.** `AnalistaEngajamento` calibra a baseline individual do aluno nos primeiros 60 s e passa a medir EAR e Head Pose contra ela, em vez de contra constantes iguais para todo mundo.
 - **Ticket 8 — Fator de fadiga.** `DetectorDeFadiga` penaliza o IEE por pálpebra pesada (PERCLOS), fechamento prolongado e bocejo, com os limiares relativos à baseline do aluno. O fator vem de regras, e não do Random Forest — o porquê está em [`resultado_18_08.md`](./resultado_18_08.md).
+- **Ticket 10 — Incerteza de captura.** Em pouca luz, com reflexo nos óculos ou com o rosto parcialmente ocluso, o sistema se abstém de medir em vez de emitir um score enganoso: a interface diz o que ajustar e o banco grava o ponto com `score` nulo e o motivo em `alerta`.
 
 O plano completo, com as 16 fatias verticais e suas dependências, está em [`tickets.md`](./tickets.md). O problema, as histórias de usuário e as decisões de arquitetura estão em [`spec-poc-iee.md`](./spec-poc-iee.md).
 
@@ -113,13 +116,15 @@ backend/
     telemetria.py    persistência da série de engajamento
     security.py      hashing de senha e emissão/validação de JWT
     tempo.py         normalização de datetimes para UTC
-    models.py        tabelas aluno e sessao_estudo
+    models.py        tabelas aluno, sessao_estudo e log_engajamento
+    database.py      engine, criação de tabelas e migração leve de colunas
     routers/         endpoints de autenticação e de sessão
   tests/
 frontend/src/app/
   core/
     services/        auth, sessão de estudo, inatividade, webcam
-    visao/           metricas.ts (EAR/MAR/Head Pose) e a ponte com o MediaPipe
+    visao/           metricas.ts (EAR/MAR/Head Pose), qualidade.ts (incerteza)
+                     e landmarks.service.ts, a ponte com o MediaPipe
     guards/          bloqueio de rotas protegidas
     interceptors/    anexa o JWT às requisições
   pages/             login, registro, área do estudante
@@ -129,7 +134,9 @@ frontend/src/styles.css   sistema de design: tokens, botões, campos, telas
 
 As regras de negócio ficam fora do FastAPI de propósito — `app/sessoes.py` e `app/analista.py` não conhecem HTTP, banco de requisição nem UI, e é onde os testes de comportamento batem. O `AnalistaEngajamento` é o seam principal do spec: entrou na ticket 7 com a calibração e a fórmula do IEE, e recebe o fator de fadiga na ticket 8.
 
-No frontend a divisão é a mesma: `core/visao/metricas.ts` é aritmética pura sobre pontos e não importa o MediaPipe. Só `landmarks.service.ts` conhece a biblioteca de visão computacional, então trocá-la mexe num arquivo só.
+No frontend a divisão é a mesma: `core/visao/metricas.ts` e `core/visao/qualidade.ts` são aritmética pura — sobre pontos e sobre sinais de captura — e não importam o MediaPipe. Só `landmarks.service.ts` conhece a biblioteca de visão computacional, então trocá-la mexe num arquivo só.
+
+`criar_tabelas` acrescenta ao banco as colunas que os modelos ganharam desde a última execução. `SQLModel.metadata.create_all` só cria tabela nova: numa tabela existente ele não faz nada e não avisa, então uma coluna acrescentada a um modelo só apareceria no primeiro INSERT, como erro no meio da sessão de estudo de alguém. A migração é estreita de propósito — acrescenta coluna, e nada mais. Remover, renomear ou mudar tipo exige decidir o que fazer com os dados já gravados, e é aí que uma ferramenta de migração de verdade passa a valer o próprio peso; a ticket 15 é a candidata natural.
 
 ## Equipe
 

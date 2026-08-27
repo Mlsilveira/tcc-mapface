@@ -1,6 +1,8 @@
 import { TestBed, discardPeriodicTasks, fakeAsync, tick } from '@angular/core/testing';
 
+import { LeituraDaCaptura } from '../visao/landmarks.service';
 import { MetricasFaciais } from '../visao/metricas';
+import { MotivoDeIncerteza } from '../visao/qualidade';
 import {
   CRIADOR_DE_CANAL,
   CanalDeTelemetria,
@@ -12,7 +14,7 @@ import {
 const TOKEN = 'jwt-de-teste';
 
 function leitura(ear: number, yaw = 0): MetricasFaciais {
-  return { ear, mar: 0.05, cabeca: { yaw, pitch: 0, roll: 0 } };
+  return { ear, mar: 0.05, cabeca: { yaw, pitch: 0, roll: 0 }, assimetriaOcular: 0 };
 }
 
 class CanalFalso implements CanalDeTelemetria {
@@ -59,6 +61,12 @@ class CanalFalso implements CanalDeTelemetria {
 describe('TelemetriaService', () => {
   let service: TelemetriaService;
   let metricasAtuais: MetricasFaciais | null;
+  let incertezaAtual: MotivoDeIncerteza | null;
+
+  const capturaAtual = (): LeituraDaCaptura => ({
+    metricas: metricasAtuais,
+    incerteza: incertezaAtual,
+  });
 
   function canal(indice = 0): CanalFalso {
     return CanalFalso.abertos[indice];
@@ -66,7 +74,7 @@ describe('TelemetriaService', () => {
 
   /** Conecta, abre e conclui o handshake de autenticação. */
   function conectarEAutenticar(): CanalFalso {
-    service.iniciar(TOKEN, () => metricasAtuais);
+    service.iniciar(TOKEN, capturaAtual);
     canal().abrir();
     canal().receber({ tipo: 'autenticado' });
     return canal();
@@ -75,6 +83,7 @@ describe('TelemetriaService', () => {
   beforeEach(() => {
     CanalFalso.abertos = [];
     metricasAtuais = leitura(0.3);
+    incertezaAtual = null;
 
     TestBed.configureTestingModule({
       providers: [{ provide: CRIADOR_DE_CANAL, useValue: (url: string) => new CanalFalso(url) }],
@@ -86,7 +95,7 @@ describe('TelemetriaService', () => {
   it('manda o token como primeira mensagem, e nada antes disso', fakeAsync(() => {
     // Token em query string vazaria para log de servidor e proxy; a primeira
     // mensagem é o único lugar limpo num WebSocket de navegador.
-    service.iniciar(TOKEN, () => metricasAtuais);
+    service.iniciar(TOKEN, capturaAtual);
     canal().abrir();
 
     expect(canal().payloads).toEqual([{ token: TOKEN }]);
@@ -96,7 +105,7 @@ describe('TelemetriaService', () => {
   }));
 
   it('não envia telemetria enquanto o servidor não confirmar a autenticação', fakeAsync(() => {
-    service.iniciar(TOKEN, () => metricasAtuais);
+    service.iniciar(TOKEN, capturaAtual);
     canal().abrir();
 
     tick(INTERVALO_DE_ENVIO_MS * 2);
@@ -326,14 +335,74 @@ describe('TelemetriaService', () => {
     discardPeriodicTasks();
   }));
 
-  it('nunca envia landmarks — só ear, yaw, mar e presença de rosto', fakeAsync(() => {
+  it('leva o veredito de incerteza junto com a janela (ticket 10)', fakeAsync(() => {
+    conectarEAutenticar();
+
+    incertezaAtual = 'baixa-luz';
+    tick(INTERVALO_DE_ENVIO_MS);
+
+    expect(canal().payloads.at(-1)!['incerteza']).toBe('baixa-luz');
+
+    service.parar();
+    discardPeriodicTasks();
+  }));
+
+  it('aceita score nulo acompanhado do motivo da abstenção (ticket 10)', fakeAsync(() => {
+    // `score: null` não é campo faltando: é o backend dizendo que não dá para
+    // medir. Descartar a mensagem deixaria o último score bom congelado na tela,
+    // que é justamente o número enganoso que a ticket 10 evita.
+    const aberto = conectarEAutenticar();
+
+    aberto.receber({ tipo: 'score', score: 82.5 });
+    aberto.receber({ tipo: 'score', score: null, incerteza: 'baixa-luz' });
+
+    expect(service.score()).toBeNull();
+    expect(service.incerteza()).toBe('baixa-luz');
+
+    service.parar();
+    discardPeriodicTasks();
+  }));
+
+  it('tira o alerta de incerteza assim que volta a medir', fakeAsync(() => {
+    const aberto = conectarEAutenticar();
+
+    aberto.receber({ tipo: 'score', score: null, incerteza: 'oclusao' });
+    aberto.receber({ tipo: 'score', score: 91 });
+
+    expect(service.incerteza()).toBeNull();
+    expect(service.score()).toBe(91);
+
+    service.parar();
+    discardPeriodicTasks();
+  }));
+
+  it('descarta mensagem de score com tipo inesperado', fakeAsync(() => {
+    const aberto = conectarEAutenticar();
+
+    aberto.receber({ tipo: 'score', score: 70 });
+    aberto.receber({ tipo: 'score', score: 'abacaxi' });
+
+    expect(service.score()).toBe(70);
+
+    service.parar();
+    discardPeriodicTasks();
+  }));
+
+  it('nunca envia landmarks — só ear, yaw, mar, presença de rosto e incerteza', fakeAsync(() => {
     // A fronteira de privacidade, afirmada no ponto exato onde os dados saem
-    // do navegador. `mar` entrou na ticket 8 para a detecção de bocejo.
+    // do navegador. `mar` entrou na ticket 8 para a detecção de bocejo;
+    // `incerteza` na ticket 10, e é rótulo, não medida.
     conectarEAutenticar();
     tick(INTERVALO_DE_ENVIO_MS * 2);
 
     for (const payload of canal().payloads.slice(1)) {
-      expect(Object.keys(payload).sort()).toEqual(['ear', 'mar', 'rosto_detectado', 'yaw']);
+      expect(Object.keys(payload).sort()).toEqual([
+        'ear',
+        'incerteza',
+        'mar',
+        'rosto_detectado',
+        'yaw',
+      ]);
     }
 
     service.parar();

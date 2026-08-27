@@ -1,6 +1,6 @@
 import { Injectable, InjectionToken, NgZone, OnDestroy, inject, signal } from '@angular/core';
 
-import { MetricasFaciais } from '../visao/metricas';
+import { LeituraDaCaptura } from '../visao/landmarks.service';
 import { PayloadDeTelemetria, agregar } from './agregacao';
 
 /** URL do canal de telemetria. Deriva da API para não haver duas configurações. */
@@ -62,9 +62,9 @@ export class TelemetriaService implements OnDestroy {
 
   private canal: CanalDeTelemetria | null = null;
   private token: string | null = null;
-  private lerMetricas: (() => MetricasFaciais | null) | null = null;
+  private lerCaptura: (() => LeituraDaCaptura) | null = null;
 
-  private janela: Array<MetricasFaciais | null> = [];
+  private janela: LeituraDaCaptura[] = [];
   private amostrador: ReturnType<typeof setInterval> | null = null;
   private amostrasNaJanela = 0;
   private reconexao: ReturnType<typeof setTimeout> | null = null;
@@ -76,9 +76,20 @@ export class TelemetriaService implements OnDestroy {
   private readonly calibrandoSignal = signal(false);
   private readonly fadigaSignal = signal(0);
   private readonly motivosSignal = signal<readonly string[]>([]);
+  // `string`, e não `MotivoDeIncerteza`: o rótulo é o que o backend gravou, e
+  // ele inclui `desconhecida` para uma causa que o servidor ainda não conhece.
+  // Fingir aqui que só os três motivos existem faria o `Record` de mensagens
+  // devolver `undefined` sem que o compilador avisasse.
+  private readonly incertezaSignal = signal<string | null>(null);
   private readonly conectadoSignal = signal(false);
 
-  /** Último score devolvido pelo backend, ou `null`. */
+  /**
+   * Último score devolvido pelo backend, ou `null`.
+   *
+   * `null` cobre dois casos que a interface precisa distinguir: ainda não
+   * chegou nenhum score, e a última leitura foi descartada por incerteza de
+   * captura (ticket 10) — este último acompanhado de `incerteza`.
+   */
   readonly score = this.scoreSignal.asReadonly();
 
   /**
@@ -101,20 +112,30 @@ export class TelemetriaService implements OnDestroy {
   /** Por que houve penalidade: `palpebras-pesadas`, `olhos-fechados-prolongados`, `bocejos`. */
   readonly motivosDeFadiga = this.motivosSignal.asReadonly();
 
+  /**
+   * Por que o backend se absteve de medir, ou `null` (ticket 10).
+   *
+   * Vem do próprio backend, e não do `LandmarksService`, de propósito: o que a
+   * interface mostra tem que ser o que de fato aconteceu com o dado gravado. Um
+   * aviso local sobre uma leitura que subiu e virou score seria a interface
+   * contando uma história diferente da do banco.
+   */
+  readonly incerteza = this.incertezaSignal.asReadonly();
+
   readonly conectado = this.conectadoSignal.asReadonly();
 
   /**
    * Abre o canal e passa a enviar telemetria. Idempotente.
    *
-   * @param lerMetricas devolve a leitura corrente da captura, ou `null` sem rosto.
+   * @param lerCaptura devolve a leitura corrente e o veredito sobre ela.
    */
-  iniciar(token: string, lerMetricas: () => MetricasFaciais | null): void {
+  iniciar(token: string, lerCaptura: () => LeituraDaCaptura): void {
     if (this.canal !== null || this.reconexao !== null) {
       return;
     }
 
     this.token = token;
-    this.lerMetricas = lerMetricas;
+    this.lerCaptura = lerCaptura;
     this.encerrado = false;
     this.delayDeReconexao = DELAY_INICIAL_DE_RECONEXAO_MS;
 
@@ -144,6 +165,7 @@ export class TelemetriaService implements OnDestroy {
     this.calibrandoSignal.set(false);
     this.fadigaSignal.set(0);
     this.motivosSignal.set([]);
+    this.incertezaSignal.set(null);
     this.conectadoSignal.set(false);
   }
 
@@ -166,10 +188,11 @@ export class TelemetriaService implements OnDestroy {
   private receber(bruto: string): void {
     type MensagemDeScore = {
       tipo?: string;
-      score?: number;
+      score?: number | null;
       calibrando?: boolean;
       fadiga?: number;
       motivos_fadiga?: string[];
+      incerteza?: string | null;
     };
 
     let mensagem: MensagemDeScore;
@@ -189,22 +212,35 @@ export class TelemetriaService implements OnDestroy {
       return;
     }
 
-    if (mensagem.tipo === 'score' && typeof mensagem.score === 'number') {
-      this.scoreSignal.set(mensagem.score);
-      // Ausente é tratado como "não está calibrando": um backend anterior à
-      // ticket 7 não manda o campo, e assumir calibração eterna deixaria o aviso
-      // preso na tela.
-      this.calibrandoSignal.set(mensagem.calibrando === true);
-      this.fadigaSignal.set(typeof mensagem.fadiga === 'number' ? mensagem.fadiga : 0);
-      this.motivosSignal.set(
-        Array.isArray(mensagem.motivos_fadiga) ? mensagem.motivos_fadiga : [],
-      );
+    if (mensagem.tipo !== 'score') {
+      return;
     }
+
+    // `score: null` é a abstenção da ticket 10, e é uma mensagem válida — não
+    // um campo faltando. Só um tipo inesperado (string, objeto) é descartado.
+    const score = mensagem.score;
+    if (typeof score !== 'number' && score !== null) {
+      return;
+    }
+
+    this.scoreSignal.set(score);
+    this.incertezaSignal.set(mensagem.incerteza ?? null);
+    // Ausente é tratado como "não está calibrando": um backend anterior à
+    // ticket 7 não manda o campo, e assumir calibração eterna deixaria o aviso
+    // preso na tela.
+    this.calibrandoSignal.set(mensagem.calibrando === true);
+    this.fadigaSignal.set(typeof mensagem.fadiga === 'number' ? mensagem.fadiga : 0);
+    this.motivosSignal.set(Array.isArray(mensagem.motivos_fadiga) ? mensagem.motivos_fadiga : []);
   }
 
   private aoCair(): void {
     this.autenticado = false;
     this.conectadoSignal.set(false);
+    // O alerta de incerteza pede uma **ação** do aluno ("acenda uma luz"), e a
+    // queda pode durar os 30 s do backoff. Mantê-lo na tela sem canal para
+    // confirmar que a condição passou faria o aluno mexer na iluminação de novo
+    // à toa. O score congelado é ruim; um pedido congelado é pior.
+    this.incertezaSignal.set(null);
     this.canal = null;
     this.pararTemporizadores();
     this.janela = [];
@@ -244,7 +280,7 @@ export class TelemetriaService implements OnDestroy {
   }
 
   private amostrar(): void {
-    this.janela.push(this.lerMetricas?.() ?? null);
+    this.janela.push(this.lerCaptura?.() ?? { metricas: null, incerteza: null });
     this.amostrasNaJanela += 1;
 
     // Enviar aqui, e não num temporizador próprio, é o que garante que a

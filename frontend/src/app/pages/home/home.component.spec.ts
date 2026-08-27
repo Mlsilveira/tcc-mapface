@@ -15,8 +15,9 @@ import { signal } from '@angular/core';
 import { AuthService } from '../../core/services/auth.service';
 import { INTERVALO_ATIVIDADE_MS, Sessao } from '../../core/services/sessao.service';
 import { TelemetriaService } from '../../core/telemetria/telemetria.service';
-import { LandmarksService } from '../../core/visao/landmarks.service';
+import { LandmarksService, LeituraDaCaptura } from '../../core/visao/landmarks.service';
 import { MetricasFaciais } from '../../core/visao/metricas';
+import { MotivoDeIncerteza } from '../../core/visao/qualidade';
 import { HomeComponent } from './home.component';
 
 const API = 'http://localhost:8000';
@@ -45,9 +46,14 @@ function erroComNome(nome: string): Error {
 class LandmarksServiceFalso {
   readonly metricas = signal<MetricasFaciais | null>(null);
   readonly fps = signal(0);
+  readonly incerteza = signal<MotivoDeIncerteza | null>(null);
   readonly rostoDetectado = signal(false);
 
   ativo = false;
+
+  leitura(): LeituraDaCaptura {
+    return { metricas: this.metricas(), incerteza: this.incerteza() };
+  }
 
   readonly iniciar = jasmine.createSpy('iniciar').and.callFake(async () => {
     this.ativo = true;
@@ -57,6 +63,7 @@ class LandmarksServiceFalso {
     this.ativo = false;
     this.metricas.set(null);
     this.fps.set(0);
+    this.incerteza.set(null);
     this.rostoDetectado.set(false);
   });
 }
@@ -65,6 +72,7 @@ class LandmarksServiceFalso {
 class TelemetriaServiceFalso {
   readonly score = signal<number | null>(null);
   readonly conectado = signal(false);
+  readonly incerteza = signal<string | null>(null);
 
   readonly iniciar = jasmine.createSpy('iniciar');
   readonly parar = jasmine.createSpy('parar');
@@ -74,6 +82,7 @@ const LEITURA: MetricasFaciais = {
   ear: 0.284,
   mar: 0.052,
   cabeca: { yaw: -4.2, pitch: 7.1, roll: 0.5 },
+  assimetriaOcular: 0.03,
 };
 
 /**
@@ -541,6 +550,35 @@ describe('HomeComponent', () => {
       expect(fixture.nativeElement.querySelector('[data-teste="fps-baixo"]')).toBeNull();
     });
 
+    it('mostra o alerta de incerteza de captura com a ação que resolve', async () => {
+      // Ticket 10. O alerta reflete o que o **backend** decidiu, e não o
+      // veredito local: o que a tela mostra tem que ser o que aconteceu com o
+      // dado gravado.
+      await comSessaoAtiva();
+
+      telemetria.incerteza.set('baixa-luz');
+      fixture.detectChanges();
+
+      const alerta = fixture.nativeElement.querySelector('[data-teste="incerteza-de-captura"]');
+      expect(alerta).toBeTruthy();
+      expect(alerta.textContent).toContain('Incerteza de captura');
+      expect(alerta.textContent).toContain('Acender uma luz');
+    });
+
+    it('tira o alerta de incerteza quando volta a medir', async () => {
+      await comSessaoAtiva();
+
+      telemetria.incerteza.set('oclusao');
+      fixture.detectChanges();
+      expect(
+        fixture.nativeElement.querySelector('[data-teste="incerteza-de-captura"]'),
+      ).toBeTruthy();
+
+      telemetria.incerteza.set(null);
+      fixture.detectChanges();
+      expect(fixture.nativeElement.querySelector('[data-teste="incerteza-de-captura"]')).toBeNull();
+    });
+
     it('mantém a sessão viva quando o modelo de visão falha ao carregar', async () => {
       // Perder as métricas é ruim; perder a sessão de estudo inteira por causa
       // do modelo seria pior.
@@ -627,12 +665,19 @@ describe('HomeComponent', () => {
     it('alimenta a telemetria com as métricas da captura, não com landmarks', async () => {
       // O segundo argumento é a única porta de entrada de dados no canal: se um
       // dia alguém passar a malha crua por aqui, é neste ponto que aparece.
+      // Desde a ticket 10 ele carrega também o veredito de qualidade, que
+      // precisa vir do mesmo instante que as métricas.
       await comSessaoAtiva();
 
-      const lerMetricas = telemetria.iniciar.calls.mostRecent().args[1] as () => unknown;
+      const lerCaptura = telemetria.iniciar.calls.mostRecent().args[1] as () => {
+        metricas: unknown;
+        incerteza: unknown;
+      };
       landmarks.metricas.set(LEITURA);
+      landmarks.incerteza.set('baixa-luz');
 
-      expect(lerMetricas()).toBe(LEITURA);
+      expect(lerCaptura().metricas).toBe(LEITURA);
+      expect(lerCaptura().incerteza).toBe('baixa-luz');
     });
 
     it('não abre canal nenhum sem sessão em andamento', () => {

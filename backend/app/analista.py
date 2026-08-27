@@ -144,6 +144,24 @@ class Fadiga:
 SEM_FADIGA = Fadiga(fator=0.0, perclos=0.0, maior_fechamento_s=0.0, bocejos=0)
 
 
+#: Motivos de incerteza de captura que o navegador pode reportar (ticket 10).
+#: A lista é fechada: o rótulo vai para o banco, e aceitar string livre do
+#: cliente seria deixar o navegador escrever texto arbitrário em `log_engajamento`.
+MOTIVOS_DE_INCERTEZA = ("baixa-luz", "reflexo-ocular", "oclusao")
+
+#: Rótulo para uma incerteza reportada com motivo que este backend não conhece.
+#: A marca vale — o cliente afirmou que a leitura não é confiável, e essa é a
+#: parte que importa —, mas o texto dele não entra no banco.
+INCERTEZA_DESCONHECIDA = "desconhecida"
+
+
+def normalizar_incerteza(motivo: Optional[str]) -> Optional[str]:
+    """Reduz o motivo vindo do cliente a um rótulo conhecido, ou `None`."""
+    if not motivo:
+        return None
+    return motivo if motivo in MOTIVOS_DE_INCERTEZA else INCERTEZA_DESCONHECIDA
+
+
 @dataclass(frozen=True)
 class ResultadoIEE:
     """O score e o contexto que o produziu.
@@ -151,12 +169,17 @@ class ResultadoIEE:
     `calibrando` não é detalhe de implementação vazando: é a diferença entre um
     score medido contra o aluno e um score medido contra um rosto genérico, e
     quem consome tem o direito de saber qual dos dois recebeu.
+
+    `score is None` é a incerteza de captura da ticket 10 — e não é o mesmo que
+    `score = 0`. Zero significa "não havia rosto", que é uma medição; `None`
+    significa "havia rosto, mas as condições não sustentam nenhum número".
     """
 
-    score: float
+    score: Optional[float]
     calibrando: bool
     baseline: Baseline
     fadiga: Fadiga = SEM_FADIGA
+    incerteza: Optional[str] = None
 
 
 def _entre_zero_e_um(valor: float) -> float:
@@ -385,29 +408,53 @@ class AnalistaEngajamento:
         rosto_detectado: bool = True,
         agora: Optional[datetime] = None,
         mar: Optional[float] = None,
+        incerteza: Optional[str] = None,
     ) -> ResultadoIEE:
-        """Registra uma leitura e devolve o IEE do instante."""
-        agora = agora or agora_utc()
+        """Registra uma leitura e devolve o IEE do instante.
 
-        if self._baseline is None:
+        `incerteza` é o alerta da ticket 10, e o efeito dele é uniforme: a
+        leitura **não entra em lugar nenhum**. Não calibra, porque uma baseline
+        tirada de contornos mal detectados descreveria a má iluminação e não o
+        aluno; não alimenta o PERCLOS como olho aberto ou fechado, porque não se
+        sabe qual dos dois; e não vira score, porque um número derivado de
+        landmarks em que não se confia é precisamente o score enganoso que a
+        ticket 10 existe para não emitir.
+        """
+        agora = agora or agora_utc()
+        incerteza = normalizar_incerteza(incerteza)
+
+        # Sob incerteza a leitura é tratada como ausência de informação — que é
+        # o que o detector de fadiga já sabe representar, e o motivo de `AUSENTE`
+        # nunca ter sido sinônimo de `FECHADO`.
+        confiavel = incerteza is None
+        houve_rosto = rosto_detectado and confiavel
+
+        if self._baseline is None and confiavel:
             self._acumular(ear, yaw, rosto_detectado, agora)
 
         baseline = self._baseline or BASELINE_PROVISORIA
         self._ultima_fadiga = self._fadiga.observar(
-            agora=agora, ear=ear, baseline=baseline, mar=mar, rosto_detectado=rosto_detectado
+            agora=agora, ear=ear, baseline=baseline, mar=mar, rosto_detectado=houve_rosto
         )
 
-        return ResultadoIEE(
-            score=calcular_iee(
+        score = (
+            None
+            if not confiavel
+            else calcular_iee(
                 ear=ear,
                 yaw=yaw,
                 baseline=baseline,
                 rosto_detectado=rosto_detectado,
                 fadiga=self._ultima_fadiga.fator,
-            ),
+            )
+        )
+
+        return ResultadoIEE(
+            score=score,
             calibrando=self._baseline is None,
             baseline=baseline,
             fadiga=self._ultima_fadiga,
+            incerteza=incerteza,
         )
 
     # --- Calibração --------------------------------------------------------
