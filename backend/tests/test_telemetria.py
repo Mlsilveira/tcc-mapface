@@ -72,4 +72,6 @@ def test_schema_do_log_nao_tem_campo_de_imagem_ou_video():
         "id_sessao",
         "horario_registro",
         "score",
+        "fadiga",
+        "alerta",
     }

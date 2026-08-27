@@ -52,6 +52,17 @@
           <section class="metricas" data-teste="metricas">
             <h2>Captura</h2>
 
+            <!-- Ticket 10: o alerta vem antes dos números de propósito. Quando a
+                 captura não é confiável, os números abaixo continuam sendo
+                 exibidos como diagnóstico da webcam, mas não viraram score — e o
+                 aluno precisa saber disso antes de ler qualquer valor. -->
+            @if (mensagemDeIncerteza(); as aviso) {
+              <p class="aviso aviso--incerteza" role="status" data-teste="incerteza-de-captura">
+                <strong>Incerteza de captura.</strong>
+                {{ aviso }}
+              </p>
+            }
+
             <p class="metricas__fps" data-teste="fps">{{ fps() }} FPS</p>
             @if (fps() > 0 && fps() < FPS_MINIMO) {
               <p class="aviso" role="status" data-teste="fps-baixo">

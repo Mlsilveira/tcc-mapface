@@ -22,6 +22,7 @@ import { InactivityService } from '../../core/services/inactivity.service';
 import { SessaoService } from '../../core/services/sessao.service';
 import { TelemetriaService } from '../../core/telemetria/telemetria.service';
 import { LandmarksService } from '../../core/visao/landmarks.service';
+import { mensagemDeIncerteza } from '../../core/visao/qualidade';
 import { IconeComponent } from '../../shared/icone.component';
 import { LogoComponent } from '../../shared/logo.component';
 
@@ -48,9 +49,22 @@ export class HomeComponent implements OnInit, OnDestroy {
   readonly fps = this.landmarksService.fps;
   readonly score = this.telemetriaService.score;
   readonly telemetriaConectada = this.telemetriaService.conectado;
+  readonly incerteza = this.telemetriaService.incerteza;
 
   /** Piso de FPS exigido pela ticket 5. Abaixo disso a interface avisa o aluno. */
   readonly FPS_MINIMO = 15;
+
+  /**
+   * O que dizer ao aluno quando a captura não sustenta uma medição (ticket 10).
+   *
+   * A mensagem é sempre uma ação que ele pode tomar — acender uma luz, mudar o
+   * ângulo — e nunca uma leitura sobre ele. "Não consegui medir" é sobre o
+   * sistema; "você parece disperso", dito a partir de um dado ruim, seria uma
+   * afirmação sobre a pessoa tirada de uma lâmpada fraca.
+   */
+  mensagemDeIncerteza(): string | null {
+    return mensagemDeIncerteza(this.incerteza());
+  }
 
   erro: string | null = null;
   aguardando = false;
@@ -189,7 +203,7 @@ export class HomeComponent implements OnInit, OnDestroy {
       // primeira mensagem do WebSocket, nunca na URL.
       const token = this.authService.getToken();
       if (token !== null) {
-        this.telemetriaService.iniciar(token, () => this.landmarksService.metricas());
+        this.telemetriaService.iniciar(token, () => this.landmarksService.leitura());
       }
     } catch {
       this.erro =

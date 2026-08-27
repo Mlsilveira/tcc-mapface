@@ -34,8 +34,10 @@ def _autenticar(db: Session, mensagem: dict) -> Optional[Aluno]:
     return db.exec(select(Aluno).where(Aluno.email == email)).first()
 
 
-def _ler_metricas(payload: object) -> Optional[Tuple[float, float, bool, Optional[float]]]:
-    """Extrai (ear, yaw, rosto_detectado, mar) do payload, ou `None` se torto.
+def _ler_metricas(
+    payload: object,
+) -> Optional[Tuple[float, float, bool, Optional[float], Optional[str]]]:
+    """Extrai (ear, yaw, rosto_detectado, mar, incerteza) do payload, ou `None`.
 
     Booleano não é aceito como número apesar de `bool` ser subclasse de `int`
     em Python: `{"ear": true}` é payload quebrado, não um EAR de 1,0.
@@ -63,10 +65,32 @@ def _ler_metricas(payload: object) -> Optional[Tuple[float, float, bool, Optiona
     if not isinstance(rosto_detectado, bool):
         return None
 
+    # A incerteza da ticket 10 vem como rótulo curto, e o `AnalistaEngajamento`
+    # a reduz a um motivo conhecido antes de qualquer coisa chegar ao banco.
+    # Rótulo não-string é ignorado em vez de invalidar o payload: no pior caso
+    # o ponto é medido quando não deveria, o que é menos destrutivo que perder
+    # a série inteira de um cliente com um campo torto.
+    incerteza = payload.get("incerteza")
+    if not isinstance(incerteza, str):
+        incerteza = None
+
     # `mar` malformado é tratado como ausente, e não como payload inválido: a
     # medição de bocejo se degrada sozinha sem custar a leitura de EAR e yaw,
     # que são o que sustenta o score.
-    return ear, yaw, rosto_detectado, numero("mar")
+    return ear, yaw, rosto_detectado, numero("mar"), incerteza
+
+
+def _alerta_do(resultado: analista.ResultadoIEE) -> Optional[str]:
+    """O rótulo que vai para a coluna `alerta` do log (ticket 10).
+
+    Um rótulo só: sob incerteza, o motivo dela — não há score para a fadiga
+    descontar, e um motivo de fadiga apurado sobre leituras em que não se confia
+    seria ruído com cara de evidência. Havendo score, o motivo dominante da
+    fadiga, que é o que o relatório da ticket 11 mostra ao aluno.
+    """
+    if resultado.incerteza is not None:
+        return resultado.incerteza
+    return resultado.fadiga.motivos[0] if resultado.fadiga.motivos else None
 
 
 @router.websocket("/telemetria")
@@ -121,12 +145,18 @@ async def telemetria_ws(
             await websocket.send_json({"tipo": "erro", "motivo": "payload-invalido"})
             continue
 
-        ear, yaw, rosto_detectado, mar = metricas
+        ear, yaw, rosto_detectado, mar, incerteza = metricas
         resultado = engajamento.observar(
-            ear=ear, yaw=yaw, rosto_detectado=rosto_detectado, mar=mar
+            ear=ear, yaw=yaw, rosto_detectado=rosto_detectado, mar=mar, incerteza=incerteza
         )
 
-        telemetria.registrar_log(db, id_sessao=sessao.id, score=resultado.score)
+        telemetria.registrar_log(
+            db,
+            id_sessao=sessao.id,
+            score=resultado.score,
+            fadiga=resultado.fadiga.fator,
+            alerta=_alerta_do(resultado),
+        )
 
         # Quem manda telemetria está estudando. Sem isto, uma sessão silenciosa
         # seria encerrada por "inatividade" justamente enquanto era medida.
@@ -140,6 +170,9 @@ async def telemetria_ws(
         # pontos" sem "você passou 30% do último minuto de olhos fechados" é um
         # número que o aluno não tem como usar. O relatório da ticket 11 e o
         # dashboard da 9 consomem daqui.
+        # `incerteza` acompanha o score pela mesma lógica de `calibrando`: o
+        # aluno precisa ver "não deu para medir agora" na tela, e não um gráfico
+        # que simplesmente para de subir sem explicação (ticket 10).
         await websocket.send_json(
             {
                 "tipo": "score",
@@ -147,5 +180,6 @@ async def telemetria_ws(
                 "calibrando": resultado.calibrando,
                 "fadiga": resultado.fadiga.fator,
                 "motivos_fadiga": list(resultado.fadiga.motivos),
+                "incerteza": resultado.incerteza,
             }
         )
