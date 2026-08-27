@@ -125,6 +125,6 @@ describe('RegistroComponent', () => {
     const botao = fixture.debugElement.query(By.css('button[type="submit"]'))
       .nativeElement as HTMLButtonElement;
     expect(botao.disabled).toBeFalse();
-    expect(botao.textContent!.trim()).toBe('Cadastrar');
+    expect(botao.textContent!.trim()).toBe('Criar minha conta');
   });
 });
