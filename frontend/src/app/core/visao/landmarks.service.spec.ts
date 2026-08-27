@@ -7,6 +7,7 @@ import {
   DetectorFacial,
   INTERVALO_DE_PUBLICACAO_MS,
   LandmarksService,
+  MEDIDOR_DE_LUMINANCIA,
   RELOGIO,
 } from './landmarks.service';
 import { INDICES_BOCA, INDICES_OLHO_DIREITO, INDICES_OLHO_ESQUERDO } from './metricas';
@@ -18,18 +19,31 @@ const MATRIZ_NEUTRA = {
   data: [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 30, 1],
 };
 
-function malhaComRosto(): Array<{ x: number; y: number }> {
+/**
+ * Desenha um olho com a abertura dada. `abertura = 1` é o olho plenamente
+ * aberto; valores menores aproximam as pálpebras.
+ */
+function desenharOlho(
+  pontos: Array<{ x: number; y: number }>,
+  indices: ReadonlyArray<number>,
+  abertura: number,
+): void {
+  const [p1, p2, p3, p4, p5, p6] = indices;
+  const altura = 0.015 * abertura;
+
+  pontos[p1] = { x: -0.05, y: 0 };
+  pontos[p2] = { x: -0.025, y: -altura };
+  pontos[p3] = { x: 0.025, y: -altura };
+  pontos[p4] = { x: 0.05, y: 0 };
+  pontos[p5] = { x: 0.025, y: altura };
+  pontos[p6] = { x: -0.025, y: altura };
+}
+
+function malhaComRosto(aberturaEsquerda = 1): Array<{ x: number; y: number }> {
   const pontos = Array.from({ length: 478 }, () => ({ x: 0, y: 0 }));
 
-  for (const indices of [INDICES_OLHO_DIREITO, INDICES_OLHO_ESQUERDO]) {
-    const [p1, p2, p3, p4, p5, p6] = indices;
-    pontos[p1] = { x: -0.05, y: 0 };
-    pontos[p2] = { x: -0.025, y: -0.015 };
-    pontos[p3] = { x: 0.025, y: -0.015 };
-    pontos[p4] = { x: 0.05, y: 0 };
-    pontos[p5] = { x: 0.025, y: 0.015 };
-    pontos[p6] = { x: -0.025, y: 0.015 };
-  }
+  desenharOlho(pontos, INDICES_OLHO_DIREITO, 1);
+  desenharOlho(pontos, INDICES_OLHO_ESQUERDO, aberturaEsquerda);
 
   pontos[INDICES_BOCA.cantoEsquerdo] = { x: -0.06, y: 0.2 };
   pontos[INDICES_BOCA.cantoDireito] = { x: 0.06, y: 0.2 };
@@ -50,6 +64,16 @@ describe('LandmarksService', () => {
 
   /** Relógio controlado pelo teste: sem ele o FPS dependeria do tempo real. */
   let instante: number;
+
+  /**
+   * Luminância do quadro, controlada pelo teste. É a única parte da avaliação de
+   * qualidade que toca pixels, e portanto a única que um `<video>` dublado não
+   * consegue produzir.
+   */
+  let luminancia: number;
+
+  /** Substituível pelo teste que precisa simular falha ao ler pixels. */
+  let medirLuminancia: () => number;
 
   /** Dispara `quantidade` repinturas, avançando relógio e vídeo em `avancoMs`. */
   function rodarQuadros(quantidade: number, avancoMs = 10): void {
@@ -78,9 +102,22 @@ describe('LandmarksService', () => {
     return { faceLandmarks: [], facialTransformationMatrixes: [] };
   }
 
+  /**
+   * Um olho lido como quase fechado enquanto o outro está aberto: a assinatura
+   * de contorno de pálpebra perdido — reflexo de óculos, sombra, oclusão.
+   */
+  function resultadoComOlhosAssimetricos() {
+    return {
+      faceLandmarks: [malhaComRosto(0.05)],
+      facialTransformationMatrixes: [MATRIZ_NEUTRA],
+    };
+  }
+
   beforeEach(() => {
     instante = 1000;
     proximoQuadro = null;
+    luminancia = 0.5;
+    medirLuminancia = () => luminancia;
 
     detectForVideo = jasmine.createSpy('detectForVideo').and.callFake(resultadoComRosto);
     fechar = jasmine.createSpy('close');
@@ -99,6 +136,7 @@ describe('LandmarksService', () => {
         { provide: CRIADOR_DE_DETECTOR, useValue: () => Promise.resolve(detector) },
         { provide: AGENDADOR_DE_QUADROS, useValue: agendador },
         { provide: RELOGIO, useValue: () => instante },
+        { provide: MEDIDOR_DE_LUMINANCIA, useValue: () => medirLuminancia() },
       ],
     });
 
@@ -383,6 +421,7 @@ describe('LandmarksService', () => {
         { provide: CRIADOR_DE_DETECTOR, useValue: criar },
         { provide: AGENDADOR_DE_QUADROS, useValue: (_v: unknown, passo: () => void) => (proximoQuadro = passo) },
         { provide: RELOGIO, useValue: () => instante },
+        { provide: MEDIDOR_DE_LUMINANCIA, useValue: () => luminancia },
       ],
     });
     const outro = TestBed.inject(LandmarksService);
@@ -409,6 +448,180 @@ describe('LandmarksService', () => {
 
     expect(fechar).toHaveBeenCalled();
     expect(service.ativo).toBeFalse();
+    discardPeriodicTasks();
+  }));
+
+  // --- Incerteza de captura (ticket 10) ------------------------------------
+
+  it('não reclama de nada com luz e rosto normais', fakeAsync(() => {
+    service.iniciar(video);
+    tick();
+
+    rodarQuadros(4);
+    tick(INTERVALO_DE_PUBLICACAO_MS);
+
+    expect(service.incerteza()).toBeNull();
+
+    service.parar();
+    discardPeriodicTasks();
+  }));
+
+  it('acusa baixa luz na janela publicada', fakeAsync(() => {
+    service.iniciar(video);
+    tick();
+
+    luminancia = 0.02;
+    rodarQuadros(4);
+    tick(INTERVALO_DE_PUBLICACAO_MS);
+
+    expect(service.incerteza()).toBe('baixa-luz');
+
+    service.parar();
+    discardPeriodicTasks();
+  }));
+
+  it('acusa oclusão quando o rosto some e volta dentro da janela', fakeAsync(() => {
+    service.iniciar(video);
+    tick();
+
+    // Um quadro com rosto, três sem: o rosto está lá — o detector o perdeu.
+    detectForVideo.and.callFake(resultadoComRosto);
+    rodarQuadros(1);
+    detectForVideo.and.callFake(resultadoSemRosto);
+    rodarQuadros(3);
+    tick(INTERVALO_DE_PUBLICACAO_MS);
+
+    expect(service.incerteza()).toBe('oclusao');
+
+    service.parar();
+    discardPeriodicTasks();
+  }));
+
+  it('não confunde o aluno fora do enquadramento com oclusão', fakeAsync(() => {
+    // Nenhum quadro com rosto é uma medição verdadeira — o `P(t) = 0` do spec —,
+    // não uma falha de captura. Alertar aqui mandaria o aluno ajustar a webcam
+    // quando o que aconteceu é que ele saiu da mesa.
+    service.iniciar(video);
+    tick();
+
+    detectForVideo.and.callFake(resultadoSemRosto);
+    rodarQuadros(4);
+    tick(INTERVALO_DE_PUBLICACAO_MS);
+
+    expect(service.incerteza()).toBeNull();
+    expect(service.metricas()).toBeNull();
+
+    service.parar();
+    discardPeriodicTasks();
+  }));
+
+  it('não alerta quando a captura nem chegou a rodar', fakeAsync(() => {
+    // Aba em segundo plano: zero quadros processados. Isso é o aviso de FPS
+    // baixo da ticket 5, não uma condição adversa de iluminação.
+    service.iniciar(video);
+    tick();
+
+    luminancia = 0;
+    tick(INTERVALO_DE_PUBLICACAO_MS);
+
+    expect(service.incerteza()).toBeNull();
+
+    service.parar();
+    discardPeriodicTasks();
+  }));
+
+  it('entrega métricas e veredito do mesmo instante', fakeAsync(() => {
+    service.iniciar(video);
+    tick();
+
+    luminancia = 0.02;
+    rodarQuadros(4);
+    tick(INTERVALO_DE_PUBLICACAO_MS);
+
+    const leitura = service.leitura();
+
+    expect(leitura.metricas).toBe(service.metricas());
+    expect(leitura.incerteza).toBe('baixa-luz');
+
+    service.parar();
+    discardPeriodicTasks();
+  }));
+
+  it('julga o reflexo pela janela, não pelo último quadro', fakeAsync(() => {
+    // Reflexo constante numa lente, mas o último quadro da janela sai sem rosto.
+    // Lendo a assimetria só do último quadro, ela viraria zero e o alerta nunca
+    // dispararia para quem usa óculos — justamente o caso que ele existe para
+    // atender.
+    service.iniciar(video);
+    tick();
+
+    detectForVideo.and.callFake(resultadoComOlhosAssimetricos);
+    rodarQuadros(3);
+    detectForVideo.and.callFake(resultadoSemRosto);
+    rodarQuadros(1);
+    tick(INTERVALO_DE_PUBLICACAO_MS);
+
+    expect(service.incerteza()).toBe('reflexo-ocular');
+
+    service.parar();
+    discardPeriodicTasks();
+  }));
+
+  it('não acusa reflexo por um único quadro mal detectado', fakeAsync(() => {
+    // O erro oposto: o MediaPipe perde o contorno de um olho num quadro só. Se
+    // esse quadro calhar de ser o último da janela, o segundo inteiro seria
+    // descartado da série sem que houvesse reflexo nenhum.
+    service.iniciar(video);
+    tick();
+
+    rodarQuadros(6);
+    detectForVideo.and.callFake(resultadoComOlhosAssimetricos);
+    rodarQuadros(1);
+    tick(INTERVALO_DE_PUBLICACAO_MS);
+
+    expect(service.incerteza()).toBeNull();
+
+    service.parar();
+    discardPeriodicTasks();
+  }));
+
+  it('continua publicando quando a medição de luz falha', fakeAsync(() => {
+    // Sem proteção, a exceção abortaria `publicar()` antes de atualizar métricas
+    // e FPS: a tela congelaria na última leitura boa e a telemetria passaria a
+    // reenviá-la indefinidamente, sem erro visível para o aluno.
+    service.iniciar(video);
+    tick();
+
+    medirLuminancia = () => {
+      throw new Error('contexto de canvas perdido');
+    };
+
+    rodarQuadros(4);
+    tick(INTERVALO_DE_PUBLICACAO_MS);
+
+    expect(service.metricas()).not.toBeNull();
+    expect(service.fps()).toBeGreaterThan(0);
+    // Sem medição de luz, o palpite é "claro": alertar aqui mandaria o aluno
+    // acender uma luz por causa de um canvas quebrado.
+    expect(service.incerteza()).toBeNull();
+
+    service.parar();
+    discardPeriodicTasks();
+  }));
+
+  it('esquece o alerta ao parar', fakeAsync(() => {
+    service.iniciar(video);
+    tick();
+
+    luminancia = 0.02;
+    rodarQuadros(4);
+    tick(INTERVALO_DE_PUBLICACAO_MS);
+    expect(service.incerteza()).toBe('baixa-luz');
+
+    service.parar();
+
+    // Senão o alerta da sessão passada apareceria no começo da próxima.
+    expect(service.incerteza()).toBeNull();
     discardPeriodicTasks();
   }));
 });
