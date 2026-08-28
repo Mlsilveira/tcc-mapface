@@ -177,8 +177,16 @@ Antes disso, `log_engajamento` passou a gravar `flag_fadiga`, `fator_fadiga`, `a
 
 **Bloqueada por:** Ticket 11.
 
-- [ ] Logs granulares (segundo a segundo) sumarizados em médias após o encerramento da sessão
-- [ ] Indexação/particionamento temporal em `horario_registro`
+- [x] Logs granulares (segundo a segundo) sumarizados em médias após o encerramento da sessão
+- [x] Indexação temporal em `horario_registro`
+
+Implementado em [`backend/app/retencao.py`](./backend/app/retencao.py), com 15 testes. Uma sessão de 150 leituras vira 3 linhas ao ser encerrada; o relatório continua reportando 150 leituras e desenha 3 pontos.
+
+Três decisões que valem a defesa. A sumarização **colapsa e não copia** — copiar para uma tabela de resumos mantendo as granulares não reduziria nada. Cada linha ganhou `n_leituras`, o peso do que ela representa, em vez de existir uma tabela separada: mantém **uma série só**, então o relatório continua lendo de um lugar e a única diferença é que a média virou ponderada. E a varredura é **preguiçosa**, no mesmo idioma de `sessoes.encerrar_inativas` — quem consulta é quem dispara, o que garante que uma sessão encerrada pela varredura de inatividade, que não passa por endpoint nenhum, também seja resumida sem precisar de scheduler.
+
+O teste que mais importa aqui é `test_o_relatorio_diz_a_mesma_coisa_antes_e_depois`: se resumir mudasse os indicadores, o aluno veria a sessão mudar de nota sozinha algum tempo depois de encerrá-la.
+
+O particionamento mensal previsto no spec **não** foi feito — é otimização de volume que o SQLite da PoC não justifica, e que o RDS da ticket 15 faria de outro jeito.
 
 ## 14. Infraestrutura como código (Terraform)
 

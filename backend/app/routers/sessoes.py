@@ -4,7 +4,7 @@ from typing import Iterator, Optional
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlmodel import Session
 
-from app import relatorio, sessoes, telemetria
+from app import relatorio, retencao, sessoes, telemetria
 from app.database import get_session
 from app.deps import get_aluno_atual
 from app.models import Aluno, SessaoEstudo
@@ -69,7 +69,14 @@ def encerrar(
     db: Session = Depends(get_session),
 ) -> SessaoEstudo:
     with _traduzindo_erros():
-        return sessoes.encerrar(db, id_sessao, aluno_atual.id)
+        encerrada = sessoes.encerrar(db, id_sessao, aluno_atual.id)
+
+    # Sumariza aqui e não em `sessoes.encerrar` para manter aquele módulo sem
+    # saber de retenção de log. A varredura pega também as sessões encerradas
+    # pela inatividade, que não passam por endpoint nenhum.
+    retencao.sumarizar_encerradas(db)
+    db.refresh(encerrada)
+    return encerrada
 
 
 @router.get("/{id_sessao}/relatorio", response_model=RelatorioPublico)
@@ -86,4 +93,9 @@ def relatorio_da_sessao(
     """
     with _traduzindo_erros():
         sessao = sessoes.buscar(db, id_sessao, aluno_atual.id)
+
+    # Ler o relatório é a outra porta por onde uma sessão encerrada pela
+    # varredura de inatividade passa. Sumarizar aqui não muda o que o aluno vê:
+    # as médias da janela descrevem os mesmos dados, com menos linhas.
+    retencao.sumarizar_encerradas(db)
     return relatorio.montar(sessao, telemetria.buscar_logs(db, id_sessao=id_sessao))

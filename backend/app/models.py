@@ -30,6 +30,14 @@ class SessaoEstudo(SQLModel, table=True):
     fim: Optional[datetime] = Field(default=None)
     ultima_atividade: datetime = Field(default_factory=agora_utc)
 
+    #: Se os logs granulares desta sessão já foram colapsados em médias.
+    #:
+    #: É um marcador explícito, e não uma inferência a partir das linhas, porque
+    #: uma sessão de uma única leitura é indistinguível de uma já sumarizada se
+    #: a pergunta for "existe linha com `n_leituras` igual a 1?". Sem ele, a
+    #: varredura reexaminaria essas sessões para sempre.
+    resumida: bool = Field(default=False)
+
 
 class LogEngajamento(SQLModel, table=True):
     """Um registro de score de engajamento dentro de uma sessão (ticket 6).
@@ -56,8 +64,23 @@ class LogEngajamento(SQLModel, table=True):
 
     id: Optional[int] = Field(default=None, primary_key=True)
     id_sessao: int = Field(foreign_key="sessao_estudo.id")
-    horario_registro: datetime = Field(default_factory=agora_utc)
+
+    #: Indexado porque toda leitura da série é ordenada ou filtrada por ele — o
+    #: relatório, o gráfico e a sumarização. É a indexação temporal que a ticket
+    #: 13 pede.
+    horario_registro: datetime = Field(default_factory=agora_utc, index=True)
     score: float
+
+    #: Quantas leituras esta linha representa.
+    #:
+    #: Vale 1 enquanto a linha é granular. Depois da sumarização da ticket 13,
+    #: uma linha passa a representar uma janela inteira e os valores viram
+    #: médias dela. Guardar o peso aqui, em vez de criar uma tabela separada de
+    #: resumos, mantém **uma série só**: o relatório continua lendo de um lugar,
+    #: e a única diferença é que a média passa a ser ponderada. Duas tabelas
+    #: obrigariam todo leitor a saber qual das duas consultar, e a decidir o que
+    #: fazer quando as duas tivessem linhas da mesma sessão.
+    n_leituras: int = Field(default=1)
 
     #: Houve penalidade de fadiga neste instante.
     flag_fadiga: bool = Field(default=False)
