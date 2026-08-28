@@ -45,7 +45,7 @@ EAR_ABERTO = 0.30
 EAR_FECHADO = 0.05
 
 MAR_FECHADA = 0.02
-MAR_BOCEJO = 0.45
+MAR_BOCEJO = 0.70
 
 
 def em(segundos: float) -> datetime:
@@ -191,6 +191,42 @@ def test_bocejo_em_curso_pesa_cheio():
 
     assert fadiga.bocejos == 1
     assert fadiga.fator == pytest.approx(PENALIDADE_POR_BOCEJO)
+
+
+def test_olho_fechado_durante_bocejo_nao_vira_microssono():
+    """Gente fecha os olhos ao bocejar — e isso não é cochilo.
+
+    Sequência reproduzida de uma sessão real de webcam (28/08): o MAR subiu a
+    0,83 enquanto o EAR caía a 0,095, e o mesmo evento cobrou duas vezes — 8
+    pontos de bocejo mais 15 de microssono. É o mesmo erro de categoria já
+    corrigido entre PERCLOS e microssono.
+
+    Nenhum teste sintético teria pego isso: ninguém planta de propósito uma
+    sequência com a boca aberta e o olho fechado ao mesmo tempo.
+    """
+    bocejando = (12, 13, 14, 15)
+    estados = [EAR_FECHADO if i in (14, 15) else EAR_ABERTO for i in range(61)]
+    mars = [MAR_BOCEJO if i in bocejando else MAR_FECHADA for i in range(61)]
+
+    fadiga = roda(estados, mars=mars)
+
+    assert fadiga.bocejos == 1
+    assert "bocejos" in fadiga.motivos
+    assert "olhos-fechados-prolongados" not in fadiga.motivos
+    assert fadiga.maior_fechamento_s == pytest.approx(0.0)
+
+
+def test_olho_fechado_fora_do_bocejo_continua_valendo():
+    # A supressão é só durante o bocejo: cochilar depois de bocejar continua
+    # sendo cochilo.
+    estados = [EAR_FECHADO if i in (14, 15, 30, 31, 32) else EAR_ABERTO for i in range(61)]
+    mars = [MAR_BOCEJO if i in (12, 13, 14, 15) else MAR_FECHADA for i in range(61)]
+
+    fadiga = roda(estados, mars=mars)
+
+    assert "bocejos" in fadiga.motivos
+    assert "olhos-fechados-prolongados" in fadiga.motivos
+    assert fadiga.maior_fechamento_s == pytest.approx(3.0)
 
 
 def test_boca_aberta_por_um_instante_nao_e_bocejo():

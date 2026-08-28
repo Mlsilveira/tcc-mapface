@@ -121,12 +121,18 @@ PENALIDADE_MICROSSONO = 15.0
 
 #: MAR acima disto conta como boca aberta de bocejo.
 #:
-#: **Provisório, e sabidamente mal calibrado.** O valor herdado da trilha ML
-#: (0,60) dispara em 7 clipes de 8570 do DAiSEE — bocejo nenhum seria detectado.
-#: 0,30 fica acima do p99,9 observado (0,2884) e abaixo do máximo do dataset
-#: (0,7460). A Sprint 11 do plano reserva tempo para recalibrar thresholds de
-#: fadiga com dados reais de teste; este é o primeiro da fila.
-LIMIAR_MAR_BOCEJO = 0.30
+#: Calibrado contra **rosto real**, e não contra o DAiSEE. Um bocejo medido por
+#: webcam em 28/08 desenhou a curva 0,21 → 0,69 → 0,79 → **0,83** → 0,76 antes
+#: de voltar a 0,01 — ou seja, ultrapassou o 0,8 que a docstring de
+#: `ml/metricas.py` descreve como bocejo escancarado. A fórmula sempre esteve
+#: certa.
+#:
+#: O que enganou foi o DAiSEE, cujo máximo em ~24 h de vídeo é 0,746 e cuja
+#: mediana é 0,0036: aquele dataset não tem bocejos francos, provavelmente por
+#: enquadramento de sala de aula em vez de webcam próxima. O valor chegou a ser
+#: baixado para 0,30 por causa dele; com a evidência de rosto real, 0,50 ganha
+#: especificidade contra fala e riso sem perder o bocejo, que passa longe disso.
+LIMIAR_MAR_BOCEJO = 0.50
 
 #: Um bocejo precisa durar para não ser confundido com falar, rir ou beber água.
 #: Bocejos reais duram 4–6 s; dois segundos é folgado o suficiente para não
@@ -340,7 +346,14 @@ class DetectorDeFadiga:
         for duracao, estado, boca, fim, houve_buraco in self._segmentos():
             if estado != AUSENTE:
                 observado += duracao
-            if estado == FECHADO:
+
+            # **Olho fechado durante bocejo não é cochilo.** Gente fecha os olhos
+            # ao bocejar — numa sessão real de 28/08, o bocejo derrubou o EAR a
+            # 0,095 e o mesmo evento cobrou duas vezes: 8 pontos de bocejo mais
+            # 15 de microssono. É o mesmo erro de categoria já corrigido entre
+            # PERCLOS e microssono, agora entre bocejo e microssono: o
+            # fechamento aqui é parte do bocejo, que já está sendo cobrado.
+            if estado == FECHADO and not boca:
                 fechado += duracao
                 corrida += duracao
                 corrida_fim = fim
