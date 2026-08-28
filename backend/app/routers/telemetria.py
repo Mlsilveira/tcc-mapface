@@ -136,6 +136,10 @@ async def telemetria_ws(
             # é diferente de "olhando para a frente" — e é a mesma distinção que
             # a trilha ML faz entre NaN e zero.
             direcao_olhar=(yaw - resultado.baseline.yaw_neutro) if rosto_detectado else None,
+            # Sinais brutos, para calibrar os limiares depois. Sem rosto não há
+            # medida: `None`, e não o zero que o cliente manda por convenção.
+            ear=ear if rosto_detectado else None,
+            mar=mar if rosto_detectado else None,
         )
 
         # Quem manda telemetria está estudando. Sem isto, uma sessão silenciosa

@@ -95,9 +95,25 @@ FRACAO_OLHO_FECHADO = 0.5
 #: sonolência da literatura automotiva. Abaixo do limiar não há penalidade;
 #: acima da saturação a penalidade é máxima; entre os dois ela cresce linear.
 #: Piscar normalmente ocupa ~3–5% do tempo, então 15% já é pálpebra pesada.
+#:
+#: Medido numa sessão real de 92 s (28/08/2026), o piscar involuntário deu 3,3%
+#: — dentro do esperado. O que passava de 15% era o PERCLOS somado aos episódios
+#: longos, que já são cobrados pelo microssono; ver `_avaliar`.
 PERCLOS_LIMIAR = 0.15
 PERCLOS_SATURACAO = 0.40
 PENALIDADE_PERCLOS_MAX = 25.0
+
+#: Tempo máximo que uma única amostra pode representar.
+#:
+#: A telemetria chega a ~1 Hz, mas buracos acontecem — numa sessão real medida
+#: em 28/08, 12% dos intervalos passaram de 1,5 s, chegando a 4 s durante o
+#: aquecimento do MediaPipe. Sem este teto, a amostra anterior ao buraco tem seu
+#: estado esticado por todo ele: **uma piscada capturada antes de um intervalo de
+#: 4 segundos vira 4 segundos de olho fechado**, e sozinha dispara o microssono.
+#:
+#: Buraco é informação ausente, não estado que persistiu — é o mesmo princípio
+#: que faz ausência de rosto não contar como pálpebra fechada, aplicado ao tempo.
+INTERVALO_MAXIMO_ATRIBUIVEL = timedelta(seconds=1.5)
 
 #: Olho fechado por este tempo seguido não é piscada — é cochilo curto.
 DURACAO_MICROSSONO = timedelta(seconds=2)
@@ -266,43 +282,95 @@ class DetectorDeFadiga:
         while len(self._amostras) > 1 and self._amostras[0][0] < corte:
             self._amostras.popleft()
 
-    def _intervalos(self):
-        """(duração em segundos, estado, boca aberta) entre amostras vizinhas.
+    def _segmentos(self):
+        """(duração efetiva, estado, boca aberta, instante final, houve buraco).
 
         A duração entre duas amostras é atribuída ao estado da **primeira**: é o
-        que sabíamos durante aquele intervalo.
+        que sabíamos durante aquele intervalo. Mas só até
+        `INTERVALO_MAXIMO_ATRIBUIVEL` — o excedente é tempo sobre o qual não
+        temos observação nenhuma, e não entra em conta alguma.
         """
-        for (t0, estado, boca), (t1, _, _) in zip(self._amostras, list(self._amostras)[1:]):
-            yield (t1 - t0).total_seconds(), estado, boca
+        teto = INTERVALO_MAXIMO_ATRIBUIVEL.total_seconds()
+        amostras = list(self._amostras)
+        for (t0, estado, boca), (t1, _, _) in zip(amostras, amostras[1:]):
+            bruto = (t1 - t0).total_seconds()
+            yield min(bruto, teto), estado, boca, t1, bruto > teto
+
+    def _recencia(self, fim: datetime, agora: datetime) -> float:
+        """Peso de um episódio pelo quanto ele é recente, de 1 a 0.
+
+        Sem isto a penalidade é um degrau: um cochilo de quatro segundos cobra
+        os mesmos 15 pontos no segundo seguinte e 59 segundos depois, e some de
+        uma vez. Numa sessão real medida em 28/08, três episódios espaçados
+        deixaram 88 das 92 leituras com penalidade cheia — o número parava de
+        informar quando o aluno estava piorando ou se recuperando.
+        """
+        idade = (agora - fim).total_seconds()
+        return _entre_zero_e_um(1.0 - idade / self._janela.total_seconds())
 
     def _avaliar(self) -> Fadiga:
-        observado = 0.0   # tempo com rosto — o denominador do PERCLOS
-        fechado = 0.0
-        maior_fechamento = 0.0
-        corrida_atual = 0.0
-        bocejos = 0
-        bocejo_atual = 0.0
+        if len(self._amostras) < 2:
+            return SEM_FADIGA
 
-        for duracao, estado, boca in self._intervalos():
+        agora = self._amostras[-1][0]
+        observado = 0.0          # tempo com rosto
+        fechado = 0.0            # tempo com pálpebra fechada
+        episodios_longos = []    # (duração, fim) dos fechamentos que viram microssono
+        bocejos_datados = []     # fim de cada bocejo confirmado
+        corrida, corrida_fim = 0.0, agora
+        maior_corrida = 0.0
+        bocejo_atual, bocejo_fim = 0.0, agora
+
+        def fecha_corrida():
+            nonlocal corrida, maior_corrida
+            maior_corrida = max(maior_corrida, corrida)
+            if corrida >= DURACAO_MICROSSONO.total_seconds():
+                episodios_longos.append((corrida, corrida_fim))
+            corrida = 0.0
+
+        def fecha_bocejo():
+            """Um bocejo é datado pelo **fim**, não pelo instante em que passa
+            dos 2 s. Datá-lo na largada faria um bocejo ainda em curso perder
+            peso enquanto acontece, que é o oposto do que deveria."""
+            nonlocal bocejo_atual
+            if bocejo_atual >= DURACAO_MINIMA_BOCEJO.total_seconds():
+                bocejos_datados.append(bocejo_fim)
+            bocejo_atual = 0.0
+
+        for duracao, estado, boca, fim, houve_buraco in self._segmentos():
             if estado != AUSENTE:
                 observado += duracao
             if estado == FECHADO:
                 fechado += duracao
-                corrida_atual += duracao
-                maior_fechamento = max(maior_fechamento, corrida_atual)
+                corrida += duracao
+                corrida_fim = fim
             else:
                 # Ausência interrompe a corrida: não dá para afirmar que a
                 # pálpebra continuou fechada enquanto o rosto sumiu.
-                corrida_atual = 0.0
+                fecha_corrida()
 
             if boca:
                 bocejo_atual += duracao
-                if bocejo_atual >= DURACAO_MINIMA_BOCEJO.total_seconds() > bocejo_atual - duracao:
-                    bocejos += 1
+                bocejo_fim = fim
             else:
-                bocejo_atual = 0.0
+                fecha_bocejo()
 
-        perclos = fechado / observado if observado > 0 else 0.0
+            # Um buraco não deixa afirmar continuidade de coisa alguma.
+            if houve_buraco:
+                fecha_corrida()
+                fecha_bocejo()
+        fecha_corrida()
+        fecha_bocejo()
+
+        # **Um evento não é cobrado duas vezes.** Um fechamento de quatro
+        # segundos já é penalizado como microssono; deixá-lo também no PERCLOS
+        # faria a mesma pálpebra pagar dois preços — e foi o que inflou o PERCLOS
+        # a 15,2% na sessão real, quando o piscar involuntário dava 3,3%. O
+        # PERCLOS passa a medir o que sobra: o fechamento difuso.
+        tempo_longo = sum(duracao for duracao, _ in episodios_longos)
+        difuso = max(0.0, fechado - tempo_longo)
+        base = max(0.0, observado - tempo_longo)
+        perclos = difuso / base if base > 0 else 0.0
 
         motivos: List[str] = []
         fator = 0.0
@@ -312,19 +380,26 @@ class DetectorDeFadiga:
             fator += PENALIDADE_PERCLOS_MAX * _entre_zero_e_um(excedente)
             motivos.append("palpebras-pesadas")
 
-        if maior_fechamento >= DURACAO_MICROSSONO.total_seconds():
-            fator += PENALIDADE_MICROSSONO
+        if episodios_longos:
+            # O episódio mais penalizante manda, e não a soma: dois cochilos não
+            # são o dobro de um: são o mesmo estado observado duas vezes.
+            fator += max(
+                PENALIDADE_MICROSSONO * self._recencia(fim, agora)
+                for _, fim in episodios_longos
+            )
             motivos.append("olhos-fechados-prolongados")
 
-        if bocejos:
-            fator += PENALIDADE_POR_BOCEJO * bocejos
+        if bocejos_datados:
+            fator += sum(
+                PENALIDADE_POR_BOCEJO * self._recencia(fim, agora) for fim in bocejos_datados
+            )
             motivos.append("bocejos")
 
         return Fadiga(
             fator=min(fator, FADIGA_MAXIMA),
             perclos=perclos,
-            maior_fechamento_s=maior_fechamento,
-            bocejos=bocejos,
+            maior_fechamento_s=maior_corrida,
+            bocejos=len(bocejos_datados),
             motivos=tuple(motivos),
         )
 
