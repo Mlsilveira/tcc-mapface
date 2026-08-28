@@ -95,9 +95,39 @@ export function traduzirFalhaDeCamera(erro: unknown): FalhaDeCamera {
 @Injectable({ providedIn: 'root' })
 export class CameraService implements OnDestroy {
   private readonly streamSignal = signal<MediaStream | null>(null);
+  private readonly proporcaoSignal = signal<number | null>(null);
 
   /** Stream da webcam enquanto houver captura ativa, ou `null`. */
   readonly stream = this.streamSignal.asReadonly();
+
+  /**
+   * Proporção (largura ÷ altura) que a câmera está de fato entregando.
+   *
+   * Existe porque a caixa do preview não pode ser fixa. Uma webcam USB comum
+   * entrega 4:3; um celular exposto como câmera do Windows entrega 16:9. Uma
+   * caixa 4:3 recebendo 16:9 ou corta 25% da largura (com `cover`) ou fica com
+   * barras (com `contain`) — e nenhuma das duas é aceitável num preview cuja
+   * função é o aluno conferir o próprio enquadramento.
+   *
+   * `null` até haver stream, e aí o CSS usa a proporção de fallback.
+   */
+  readonly proporcao = this.proporcaoSignal.asReadonly();
+
+  private medirProporcao(stream: MediaStream): void {
+    // A proporção é refinamento de apresentação; o acesso à câmera não pode
+    // depender dela. `getSettings` é padrão em navegador real, mas se faltar —
+    // trilha de origem exótica, ambiente antigo — o fallback do CSS resolve, e
+    // derrubar `solicitarAcesso` por causa disso seria trocar um enquadramento
+    // imperfeito por sessão nenhuma.
+    const trilha = stream.getVideoTracks()[0];
+    const ajustes = typeof trilha?.getSettings === 'function' ? trilha.getSettings() : undefined;
+    const largura = ajustes?.width;
+    const altura = ajustes?.height;
+    // `aspectRatio` vem direto em alguns navegadores; onde não vier, deriva de
+    // largura e altura. Sem nenhum dos dois, o CSS fica com o fallback.
+    const proporcao = ajustes?.aspectRatio ?? (largura && altura ? largura / altura : null);
+    this.proporcaoSignal.set(proporcao && isFinite(proporcao) && proporcao > 0 ? proporcao : null);
+  }
 
   /**
    * Pede acesso à webcam. Idempotente: chamadas repetidas reaproveitam o stream
@@ -125,6 +155,7 @@ export class CameraService implements OnDestroy {
     }
 
     this.streamSignal.set(stream);
+    this.medirProporcao(stream);
     return stream;
   }
 
@@ -195,6 +226,7 @@ export class CameraService implements OnDestroy {
 
     stream.getTracks().forEach((track) => track.stop());
     this.streamSignal.set(null);
+    this.proporcaoSignal.set(null);
   }
 
   /**
