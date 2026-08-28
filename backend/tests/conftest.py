@@ -7,6 +7,21 @@ from app.database import get_session
 from app.main import app
 
 
+@pytest.fixture(autouse=True)
+def registro_de_analistas_limpo():
+    """Dá a cada teste um registro de analistas vazio.
+
+    O registro é estado de processo, e cada teste começa com um banco em memória
+    novo — então a sessão de estudo criada por todos eles recebe o mesmo `id`. Sem
+    isto, a calibração acumulada num teste seria reencontrada pelo teste seguinte,
+    que passaria (ou falharia) por causa do anterior.
+    """
+    from app import analista
+
+    analista.registro = analista.RegistroDeAnalistas()
+    yield
+
+
 @pytest.fixture(name="session")
 def session_fixture():
     engine = create_engine(
