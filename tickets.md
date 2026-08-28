@@ -168,8 +168,16 @@ Antes disso, `log_engajamento` passou a gravar `flag_fadiga`, `fator_fadiga`, `a
 
 **Bloqueada por:** Ticket 11.
 
-- [ ] Lista de sessões passadas do aluno autenticado
-- [ ] Acesso ao relatório completo de cada sessão anterior
+- [ ] Lista de sessões passadas do aluno autenticado — **backend pronto, falta a tela**
+- [ ] Acesso ao relatório completo de cada sessão anterior — **backend pronto, falta a tela**
+
+`GET /sessoes` devolve as sessões do aluno, da mais recente para a mais antiga, cada uma com duração, número de leituras, score médio e se houve fadiga — o suficiente para o aluno **escolher** qual relatório abrir. O relatório completo continua em `GET /sessoes/{id}/relatorio`, que a ticket 11 já entregou. 18 testes.
+
+A regra ficou repartida entre os módulos que já são donos de cada coisa: `sessoes.listar` conhece `sessao_estudo`, `telemetria.agregar_por_sessao` conhece `log_engajamento`, e `relatorio.historico` combina os dois sem tocar no banco — por isso continua testável sem subir banco nenhum.
+
+Duas decisões que valem a defesa. **O resumo de todas as sessões sai numa consulta só**: montar o relatório completo de cada linha custaria uma consulta por sessão, o N+1 clássico, que numa lista de 50 vira 51 idas ao banco para calcular três números. Há um teste que conta as consultas e falha se alguém trocar isso por um laço. E **a sessão em andamento aparece na lista**, marcada como parcial: escondê-la criaria um buraco esquisito, em que o aluno encerra a sessão e ela aparece, como se tivesse nascido naquele instante.
+
+A tela depende do relatório da ticket 11 existir — é para ele que cada item da lista aponta.
 
 ## 13. Sumarização e retenção de logs
 

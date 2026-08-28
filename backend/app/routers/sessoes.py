@@ -8,7 +8,7 @@ from app import relatorio, retencao, sessoes, telemetria
 from app.database import get_session
 from app.deps import get_aluno_atual
 from app.models import Aluno, SessaoEstudo
-from app.schemas import RelatorioPublico, SessaoPublica
+from app.schemas import ItemDoHistoricoPublico, RelatorioPublico, SessaoPublica
 
 router = APIRouter(prefix="/sessoes", tags=["sessões de estudo"])
 
@@ -40,6 +40,28 @@ def iniciar(
             status_code=status.HTTP_409_CONFLICT,
             detail="Já existe uma sessão de estudo em andamento",
         )
+
+
+@router.get("", response_model=list[ItemDoHistoricoPublico])
+def historico(
+    aluno_atual: Aluno = Depends(get_aluno_atual),
+    db: Session = Depends(get_session),
+) -> list[relatorio.ItemDoHistorico]:
+    """Sessões do aluno, da mais recente para a mais antiga (ticket 12).
+
+    Só as do aluno autenticado: o `id_aluno` vem do token, nunca da URL. Aceitar
+    um identificador do cliente aqui deixaria qualquer um listar as sessões de
+    qualquer outro, e o spec é explícito em que os dados de um estudante são
+    visíveis apenas para ele.
+    """
+    # Aproveita a passagem para resumir o que a varredura de inatividade tiver
+    # encerrado desde a última visita — inclusive sessões que nunca passaram por
+    # endpoint algum.
+    retencao.sumarizar_encerradas(db)
+
+    sessoes_do_aluno = sessoes.listar(db, aluno_atual.id)
+    agregados = telemetria.agregar_por_sessao(db, [s.id for s in sessoes_do_aluno])
+    return relatorio.historico(sessoes_do_aluno, agregados)
 
 
 @router.get("/ativa", response_model=Optional[SessaoPublica])

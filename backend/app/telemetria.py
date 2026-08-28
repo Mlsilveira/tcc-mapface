@@ -8,9 +8,11 @@ onde ele passou a ser medido contra a baseline calibrada de cada aluno. O que
 sobra aqui é o que sempre foi de persistência: gravar e ler os pontos da série.
 """
 
+from dataclasses import dataclass
 from datetime import datetime
-from typing import List, Optional, Sequence
+from typing import Dict, List, Optional, Sequence
 
+from sqlalchemy import func
 from sqlmodel import Session, select
 
 from app.models import LogEngajamento
@@ -58,6 +60,53 @@ def registrar_log(
     db.commit()
     db.refresh(log)
     return log
+
+
+@dataclass(frozen=True)
+class AgregadoDaSessao:
+    """Os números de uma sessão, sem carregar a série inteira dela."""
+
+    n_leituras: int
+    score_medio: float
+    teve_fadiga: bool
+
+
+def agregar_por_sessao(db: Session, ids: Sequence[int]) -> Dict[int, AgregadoDaSessao]:
+    """Resumo de várias sessões numa **única** consulta (ticket 12).
+
+    O histórico precisa mostrar como foi cada sessão, e montar o relatório
+    completo de cada uma para isso seria uma consulta por linha da lista — o
+    N+1 clássico, que numa tela de 50 sessões vira 51 idas ao banco e carrega
+    dezenas de milhares de logs para calcular três números.
+
+    A média é **ponderada por `n_leituras`**, pela mesma razão do relatório:
+    depois da sumarização da ticket 13 uma linha pode valer um minuto inteiro, e
+    tratá-la como uma leitura faria o mesmo histórico mudar de número conforme
+    as sessões fossem sendo resumidas.
+    """
+    if not ids:
+        return {}
+
+    peso = func.sum(LogEngajamento.n_leituras)
+    linhas = db.exec(
+        select(
+            LogEngajamento.id_sessao,
+            peso,
+            func.sum(LogEngajamento.score * LogEngajamento.n_leituras),
+            func.max(LogEngajamento.flag_fadiga),
+        )
+        .where(LogEngajamento.id_sessao.in_(ids))
+        .group_by(LogEngajamento.id_sessao)
+    ).all()
+
+    return {
+        id_sessao: AgregadoDaSessao(
+            n_leituras=int(total or 0),
+            score_medio=float(soma) / float(total) if total else 0.0,
+            teve_fadiga=bool(fadiga),
+        )
+        for id_sessao, total, soma, fadiga in linhas
+    }
 
 
 def buscar_logs(db: Session, id_sessao: int) -> List[LogEngajamento]:
