@@ -700,6 +700,19 @@ a:hover {
   font-size: 0.92rem;
 }
 
+/* Cronômetro da sessão. Tabular-nums impede que os dígitos mudem de largura a
+   cada segundo — sem isso o número inteiro treme enquanto conta. */
+.sessao__cronometro {
+  display: block;
+  margin-top: 0.35rem;
+  color: var(--tinta-900);
+  font-size: 1.75rem;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: 0.01em;
+  line-height: 1.1;
+}
+
 .selo-ativo {
   display: inline-flex;
   align-items: center;

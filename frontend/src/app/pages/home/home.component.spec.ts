@@ -215,6 +215,40 @@ describe('HomeComponent', () => {
       expect(texto()).toContain('Sessão em andamento');
     });
 
+    it('mostra há quanto tempo a sessão está correndo', async () => {
+      // O relógio é fixado para que o cronômetro tenha um valor determinístico:
+      // sessão iniciada 1 min e 5 s atrás.
+      spyOn(Date, 'now').and.returnValue(Date.parse(SESSAO_EM_ANDAMENTO.inicio) + 65_000);
+      // O componente já foi construído no beforeEach, e é na construção que
+      // ele lê o relógio pela primeira vez. Recriar aqui é o que faz o spy valer.
+      fixture = TestBed.createComponent(HomeComponent);
+
+      await abrirTelaEAguardar(SESSAO_EM_ANDAMENTO);
+
+      const cronometro = fixture.nativeElement.querySelector('[data-teste="cronometro-sessao"]');
+      expect(cronometro?.textContent?.trim()).toBe('01:05');
+    });
+
+    it('conta a partir do início que veio do servidor, não de quando a tela abriu', async () => {
+      // Recarregar a página no meio de uma sessão não pode zerar o cronômetro:
+      // o backend é a fonte da verdade sobre quando a sessão começou.
+      spyOn(Date, 'now').and.returnValue(Date.parse(SESSAO_EM_ANDAMENTO.inicio) + 3_600_000);
+      // O componente já foi construído no beforeEach, e é na construção que
+      // ele lê o relógio pela primeira vez. Recriar aqui é o que faz o spy valer.
+      fixture = TestBed.createComponent(HomeComponent);
+
+      await abrirTelaEAguardar(SESSAO_EM_ANDAMENTO);
+
+      const cronometro = fixture.nativeElement.querySelector('[data-teste="cronometro-sessao"]');
+      expect(cronometro?.textContent?.trim()).toBe('1:00:00');
+    });
+
+    it('não mostra cronômetro quando não há sessão', () => {
+      abrirTela(null);
+
+      expect(fixture.nativeElement.querySelector('[data-teste="cronometro-sessao"]')).toBeNull();
+    });
+
     it('inicia a sessão ao clicar em iniciar e passa a oferecer o encerramento', async () => {
       abrirTela(null);
 
