@@ -176,4 +176,7 @@ def test_schema_do_log_nao_tem_campo_de_imagem_ou_video():
         # entre distâncias de landmarks — número, não imagem.
         "ear",
         "mar",
+        # Quantas leituras a linha representa, depois da sumarização da ticket
+        # 13. É uma contagem.
+        "n_leituras",
     }
