@@ -86,6 +86,30 @@ def buscar(db: Session, id_sessao: int, id_aluno: int) -> SessaoEstudo:
     return sessao
 
 
+#: Teto de sessões devolvidas pelo histórico. Um aluno que estuda todo dia por um
+#: semestre acumula centenas; devolver tudo de uma vez transformaria a tela de
+#: histórico numa resposta de megabytes que ninguém rola até o fim.
+LIMITE_HISTORICO = 50
+
+
+def listar(db: Session, id_aluno: int, limite: int = LIMITE_HISTORICO) -> List[SessaoEstudo]:
+    """Sessões do aluno, da mais recente para a mais antiga (ticket 12).
+
+    Inclui a sessão em andamento, se houver. O critério da ticket fala em
+    "sessões passadas", mas esconder a atual criaria um buraco esquisito — o
+    aluno encerraria a sessão e ela *apareceria*, como se tivesse nascido ali.
+    Quem consome distingue pelo `fim`, que é nulo enquanto ela corre.
+    """
+    return list(
+        db.exec(
+            select(SessaoEstudo)
+            .where(SessaoEstudo.id_aluno == id_aluno)
+            .order_by(SessaoEstudo.inicio.desc())
+            .limit(limite)
+        ).all()
+    )
+
+
 def iniciar(db: Session, id_aluno: int, agora: Optional[datetime] = None) -> SessaoEstudo:
     agora = agora or agora_utc()
 

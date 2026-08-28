@@ -308,3 +308,50 @@ class TestRelatorioDaSessao:
 
     def test_relatorio_de_sessao_inexistente(self, client, cabecalhos):
         assert client.get("/sessoes/9999/relatorio", headers=cabecalhos).status_code == 404
+
+
+class TestHistoricoDeSessoes:
+    """Endpoint do histórico (ticket 12).
+
+    A regra vive em `sessoes.listar`, `telemetria.agregar_por_sessao` e
+    `relatorio.historico`, e é testada em `test_historico.py`. O que se afirma
+    aqui é o que só existe no nível HTTP: quem enxerga o quê.
+    """
+
+    def test_lista_as_sessoes_do_aluno(self, client, cabecalhos):
+        sessao_id = client.post("/sessoes", headers=cabecalhos).json()["id"]
+        client.post(f"/sessoes/{sessao_id}/encerrar", headers=cabecalhos)
+
+        resposta = client.get("/sessoes", headers=cabecalhos)
+
+        assert resposta.status_code == 200
+        corpo = resposta.json()
+        assert [item["id_sessao"] for item in corpo] == [sessao_id]
+        assert corpo[0]["parcial"] is False
+
+    def test_o_historico_de_um_aluno_nao_mostra_a_sessao_de_outro(
+        self, client, cabecalhos, cabecalhos_outro_aluno
+    ):
+        """Requisito de privacidade do spec: os dados de um estudante são
+        visíveis apenas para ele. O `id_aluno` vem do token, nunca da URL."""
+        client.post("/sessoes", headers=cabecalhos)
+
+        assert client.get("/sessoes", headers=cabecalhos_outro_aluno).json() == []
+
+    def test_historico_exige_autenticacao(self, client):
+        assert client.get("/sessoes").status_code == 401
+
+    def test_aluno_sem_sessao_recebe_lista_vazia(self, client, cabecalhos):
+        assert client.get("/sessoes", headers=cabecalhos).json() == []
+
+    def test_cada_item_permite_abrir_o_relatorio_daquela_sessao(self, client, cabecalhos):
+        # É o segundo critério da ticket: acesso ao relatório completo de cada
+        # sessão anterior. O item traz o id, e o id abre o relatório.
+        sessao_id = client.post("/sessoes", headers=cabecalhos).json()["id"]
+        client.post(f"/sessoes/{sessao_id}/encerrar", headers=cabecalhos)
+
+        (item,) = client.get("/sessoes", headers=cabecalhos).json()
+        relatorio = client.get(f"/sessoes/{item['id_sessao']}/relatorio", headers=cabecalhos)
+
+        assert relatorio.status_code == 200
+        assert relatorio.json()["id_sessao"] == sessao_id
