@@ -78,6 +78,7 @@ class IndicadoresPublicos(BaseModel):
     prop_com_fadiga: float
     fadiga_maxima: float
     desvio_olhar_medio: float
+    prop_captura_incerta: float
 
     model_config = {"from_attributes": True}
 

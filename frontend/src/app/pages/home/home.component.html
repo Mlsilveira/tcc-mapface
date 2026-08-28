@@ -68,6 +68,15 @@
           <section class="metricas" data-teste="metricas">
             <h2>Captura</h2>
 
+            @if (!capturaConfiavel()) {
+              <!-- `role="status"` e não `alert`: é um aviso sobre a medição, não
+                   uma emergência que deva interromper o que o aluno está lendo. -->
+              <p class="aviso" role="status" data-teste="incerteza-captura">
+                Incerteza de captura: os números abaixo podem não descrever você.
+                Luz de frente costuma resolver.
+              </p>
+            }
+
             <p class="metricas__fps" data-teste="fps">{{ fps() }} FPS</p>
             @if (fps() > 0 && fps() < FPS_MINIMO) {
               <p class="aviso" role="status" data-teste="fps-baixo">

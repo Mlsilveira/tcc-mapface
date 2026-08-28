@@ -239,6 +239,33 @@ describe('TelemetriaService', () => {
     discardPeriodicTasks();
   }));
 
+  it('expõe a incerteza de captura e a retira quando ela passa (ticket 10)', fakeAsync(() => {
+    const aberto = conectarEAutenticar();
+
+    aberto.receber({ tipo: 'score', score: 40, captura_confiavel: false });
+    expect(service.capturaConfiavel()).toBeFalse();
+
+    // Incerteza é estado, não sentença: a captura melhora e o aviso sai.
+    aberto.receber({ tipo: 'score', score: 90, captura_confiavel: true });
+    expect(service.capturaConfiavel()).toBeTrue();
+
+    service.parar();
+    discardPeriodicTasks();
+  }));
+
+  it('trata score sem o campo de confiabilidade como confiável', fakeAsync(() => {
+    // Backend anterior à ticket 10: assumir incerteza eterna deixaria o aviso
+    // preso na tela pelo resto da sessão.
+    const aberto = conectarEAutenticar();
+
+    aberto.receber({ tipo: 'score', score: 82.5 });
+
+    expect(service.capturaConfiavel()).toBeTrue();
+
+    service.parar();
+    discardPeriodicTasks();
+  }));
+
   it('reconecta sozinho quando a conexão cai', fakeAsync(() => {
     // Critério da ticket 6: uma instabilidade momentânea de rede não pode
     // interromper a sessão de estudo inteira.

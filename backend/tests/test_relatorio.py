@@ -193,3 +193,45 @@ def test_recomendacoes_nao_afirmam_estado_mental():
     texto = " ".join(r.recomendacoes).lower()
     for palavra in proibidas:
         assert palavra not in texto, f"o relatório afirmou estado mental: {palavra!r}"
+
+
+# --- Captura incerta (ticket 10) -------------------------------------------
+
+
+def test_leituras_incertas_ficam_fora_dos_indicadores_de_score():
+    """O critério "o alerta não é registrado como score corrompido".
+
+    Uma câmera instável produz scores baixos que não são sobre o aluno. Incluí-los
+    faria o relatório dizer "você esteve disperso" quando o certo é "a captura
+    falhou" — a conclusão errada que a ticket 10 existe para evitar.
+    """
+    bons = serie([90.0] * 10)
+    ruins = [log(10 + i, 20.0, alerta="incerteza-de-captura") for i in range(10)]
+    for l in ruins:
+        l.captura_confiavel = False
+
+    r = relatorio.montar(sessao(fim_em=20), bons + ruins)
+
+    assert r.indicadores.score_medio == pytest.approx(90.0)
+    assert r.indicadores.score_minimo == pytest.approx(90.0)
+    assert r.indicadores.prop_captura_incerta == pytest.approx(0.5)
+
+
+def test_captura_incerta_alta_vira_recomendacao_acionavel():
+    logs = serie([40.0] * 10, alerta="incerteza-de-captura")
+    for l in logs:
+        l.captura_confiavel = False
+
+    r = relatorio.montar(sessao(fim_em=10), logs)
+
+    assert any("captura ficou instável" in frase for frase in r.recomendacoes)
+    # A frase precisa dizer o que fazer, não só o que houve.
+    assert any("Luz de frente" in frase for frase in r.recomendacoes)
+
+
+def test_captura_boa_nao_gera_aviso_de_incerteza():
+    # Um alerta que aparece em sessão normal treina o aluno a ignorá-lo.
+    r = relatorio.montar(sessao(fim_em=60), serie([85.0] * 61))
+
+    assert r.indicadores.prop_captura_incerta == 0.0
+    assert not any("captura" in frase for frase in r.recomendacoes)

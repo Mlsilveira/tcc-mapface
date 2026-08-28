@@ -76,6 +76,8 @@ def _resumir_janela(logs: List[LogEngajamento]) -> LogEngajamento:
         # esconderia o episódio do relatório.
         flag_fadiga=any(log.flag_fadiga for log in logs),
         alerta_gerado=",".join(alertas) or None,
+        # Todas as linhas do bloco têm a mesma confiabilidade — ver `_janelas`.
+        captura_confiavel=logs[0].captura_confiavel,
         direcao_olhar=ponderada([log.direcao_olhar for log in logs]),
         ear=ponderada([log.ear for log in logs]),
         mar=ponderada([log.mar for log in logs]),
@@ -83,16 +85,26 @@ def _resumir_janela(logs: List[LogEngajamento]) -> LogEngajamento:
 
 
 def _janelas(logs: List[LogEngajamento], janela: timedelta) -> List[List[LogEngajamento]]:
-    """Agrupa em blocos de `janela`, contados a partir da primeira leitura."""
+    """Agrupa em blocos de `janela`, contados a partir da primeira leitura.
+
+    Leituras confiáveis e duvidosas **nunca caem no mesmo bloco**, mesmo dentro
+    do mesmo minuto. Misturá-las obrigaria a decidir se o resumo inteiro é
+    confiável ou não, e as duas respostas mentem: marcar tudo como duvidoso
+    descartaria medição boa, e marcar tudo como bom devolveria ao relatório
+    justamente os números que a ticket 10 existe para tirar dele.
+
+    Um minuto de qualidade mista vira duas linhas. É o preço de as médias e as
+    proporções continuarem exatas depois de resumir.
+    """
     if not logs:
         return []
 
     origem = como_utc(logs[0].horario_registro)
     segundos = janela.total_seconds()
-    blocos: Dict[int, List[LogEngajamento]] = {}
+    blocos: Dict[tuple, List[LogEngajamento]] = {}
     for log in logs:
         indice = int((como_utc(log.horario_registro) - origem).total_seconds() // segundos)
-        blocos.setdefault(indice, []).append(log)
+        blocos.setdefault((indice, log.captura_confiavel), []).append(log)
     return [blocos[chave] for chave in sorted(blocos)]
 
 

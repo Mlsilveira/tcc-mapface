@@ -313,6 +313,65 @@ def test_ausencia_de_rosto_grava_direcao_nula(client, com_sessao_ativa, session)
     assert log.direcao_olhar is None
 
 
+def test_captura_instavel_e_gravada_como_incerta(client, com_sessao_ativa, session):
+    """Ticket 10 ponta a ponta: o alerta chega ao banco e a leitura fica marcada.
+
+    O critério é que o alerta **não** seja registrado como score corrompido — o
+    score continua gravado, porque a fórmula é bem definida sobre os números que
+    chegaram, mas a linha fica marcada para o relatório não a somar aos
+    indicadores.
+    """
+    from datetime import timedelta
+
+    from app import analista, telemetria
+    from app.tempo import agora_utc
+
+    id_sessao = _id_da_sessao_ativa(client, com_sessao_ativa)
+
+    # Meio minuto de landmarks instáveis terminando agora, para caírem dentro
+    # da janela de qualidade que o payload do WebSocket vai encontrar.
+    agora = agora_utc()
+    engajamento = analista.registro.obter(id_sessao)
+    for atras in range(24, -1, -1):
+        engajamento.observar(
+            ear=(0.05 if atras % 2 else 0.35),
+            yaw=0.0,
+            agora=agora - timedelta(seconds=atras),
+        )
+
+    with client.websocket_connect("/telemetria") as ws:
+        ws.send_json({"token": com_sessao_ativa})
+        ws.receive_json()
+
+        ws.send_json({"ear": 0.30, "yaw": 0.0, "mar": 0.02, "rosto_detectado": True})
+        resposta = ws.receive_json()
+
+    assert resposta["captura_confiavel"] is False
+
+    (log,) = telemetria.buscar_logs(session, id_sessao=id_sessao)
+    assert log.captura_confiavel is False
+    assert "incerteza-de-captura" in log.alerta_gerado
+    # O score continua lá: o que muda é a confiança nele, não a existência dele.
+    assert log.score > 0
+
+
+def test_captura_boa_grava_a_leitura_como_confiavel(client, com_sessao_ativa, session):
+    from app import telemetria
+
+    id_sessao = _id_da_sessao_ativa(client, com_sessao_ativa)
+
+    with client.websocket_connect("/telemetria") as ws:
+        ws.send_json({"token": com_sessao_ativa})
+        ws.receive_json()
+        ws.send_json({"ear": 0.30, "yaw": 0.0, "mar": 0.02, "rosto_detectado": True})
+        resposta = ws.receive_json()
+
+    assert resposta["captura_confiavel"] is True
+    (log,) = telemetria.buscar_logs(session, id_sessao=id_sessao)
+    assert log.captura_confiavel is True
+    assert log.alerta_gerado is None
+
+
 def test_telemetria_conta_como_atividade_da_sessao(client, com_sessao_ativa, session):
     from app.models import SessaoEstudo
 
