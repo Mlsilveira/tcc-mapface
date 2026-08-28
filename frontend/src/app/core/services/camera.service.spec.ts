@@ -11,6 +11,7 @@ import {
 
 interface TrilhaFalsa {
   readyState: MediaStreamTrackState;
+  getSettings: () => MediaTrackSettings;
   stop: jasmine.Spy;
 }
 
@@ -18,6 +19,10 @@ function criarTrilhaFalsa(readyState: MediaStreamTrackState = 'live'): TrilhaFal
   const trilha: TrilhaFalsa = {
     readyState,
     stop: jasmine.createSpy('stop'),
+    // O dublê precisa honrar a interface que substitui: `getSettings` faz parte
+    // de `MediaStreamTrack`, e o serviço a consulta para medir a proporção.
+    // 640x480 é o que uma webcam comum entrega.
+    getSettings: () => ({ width: 640, height: 480 }),
   };
   trilha.stop.and.callFake(() => (trilha.readyState = 'ended'));
   return trilha;
@@ -296,5 +301,76 @@ describe('CameraService — dispositivo alternativo', () => {
     const esperado = RESTRICOES_DE_VIDEO.video as MediaTrackConstraints;
     expect(chamadaComId!.width).toEqual(esperado.width);
     expect(chamadaComId!.frameRate).toEqual(esperado.frameRate);
+  });
+});
+
+describe('CameraService — proporção da câmera', () => {
+  let service: CameraService;
+  let getUserMedia: jasmine.Spy;
+  const mediaDevicesOriginal = Object.getOwnPropertyDescriptor(navigator, 'mediaDevices');
+
+  function streamCom(ajustes: MediaTrackSettings): MediaStream {
+    const trilha = {
+      readyState: 'live' as MediaStreamTrackState,
+      stop: jasmine.createSpy('stop'),
+      getSettings: () => ajustes,
+    };
+    return {
+      getTracks: () => [trilha],
+      getVideoTracks: () => [trilha],
+    } as unknown as MediaStream;
+  }
+
+  beforeEach(() => {
+    TestBed.configureTestingModule({});
+    service = TestBed.inject(CameraService);
+    getUserMedia = jasmine.createSpy('getUserMedia');
+    Object.defineProperty(navigator, 'mediaDevices', {
+      value: { getUserMedia, enumerateDevices: () => Promise.resolve([]) },
+      configurable: true,
+    });
+  });
+
+  afterEach(() => {
+    if (mediaDevicesOriginal) {
+      Object.defineProperty(navigator, 'mediaDevices', mediaDevicesOriginal);
+    }
+  });
+
+  it('começa sem proporção conhecida', () => {
+    expect(service.proporcao()).toBeNull();
+  });
+
+  it('usa o aspectRatio que a câmera reporta', async () => {
+    getUserMedia.and.resolveTo(streamCom({ width: 1280, height: 720, aspectRatio: 16 / 9 }));
+
+    await service.solicitarAcesso();
+
+    expect(service.proporcao()).toBeCloseTo(16 / 9, 6);
+  });
+
+  it('deriva a proporção de largura e altura quando o navegador não reporta', async () => {
+    getUserMedia.and.resolveTo(streamCom({ width: 640, height: 480 }));
+
+    await service.solicitarAcesso();
+
+    expect(service.proporcao()).toBeCloseTo(4 / 3, 6);
+  });
+
+  it('fica nula quando não há como medir, deixando o CSS usar o fallback', async () => {
+    getUserMedia.and.resolveTo(streamCom({}));
+
+    await service.solicitarAcesso();
+
+    expect(service.proporcao()).toBeNull();
+  });
+
+  it('esquece a proporção ao encerrar', async () => {
+    getUserMedia.and.resolveTo(streamCom({ width: 1280, height: 720 }));
+    await service.solicitarAcesso();
+
+    service.encerrar();
+
+    expect(service.proporcao()).toBeNull();
   });
 });
