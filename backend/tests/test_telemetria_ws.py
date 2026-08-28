@@ -243,6 +243,76 @@ def test_mar_malformado_nao_invalida_a_leitura(client, com_sessao_ativa):
     assert resposta["score"] == pytest.approx(100.0)
 
 
+def test_fadiga_detectada_chega_ao_banco(client, com_sessao_ativa, session):
+    """O elo que faltava: a ticket 8 calculava a fadiga e a jogava fora.
+
+    Sem esta gravação, o relatório da ticket 11 não teria como listar "alertas
+    de fadiga registrados" — eles nunca teriam sido registrados.
+    """
+    from datetime import timedelta
+
+    from app import analista, telemetria
+    from app.tempo import agora_utc
+
+    id_sessao = _id_da_sessao_ativa(client, com_sessao_ativa)
+
+    # Dez segundos de olho fechado terminando agora, para caírem dentro da
+    # janela de 60 s que o payload do WebSocket vai encontrar.
+    agora = agora_utc()
+    engajamento = analista.registro.obter(id_sessao)
+    for atras in range(10, -1, -1):
+        engajamento.observar(ear=0.05, yaw=0.0, agora=agora - timedelta(seconds=atras))
+    assert engajamento.validar_fadiga().fator > 0
+
+    with client.websocket_connect("/telemetria") as ws:
+        ws.send_json({"token": com_sessao_ativa})
+        ws.receive_json()
+
+        ws.send_json({"ear": 0.30, "yaw": -12.0, "mar": 0.02, "rosto_detectado": True})
+        ws.receive_json()
+
+    (log,) = telemetria.buscar_logs(session, id_sessao=id_sessao)
+    assert log.flag_fadiga is True
+    assert log.fator_fadiga > 0
+    assert "olhos-fechados-prolongados" in log.alerta_gerado
+    # Baseline provisória tem yaw neutro 0, então o desvio é o próprio yaw.
+    assert log.direcao_olhar == pytest.approx(-12.0)
+
+
+def test_sessao_sem_fadiga_grava_a_serie_limpa(client, com_sessao_ativa, session):
+    from app import telemetria
+
+    id_sessao = _id_da_sessao_ativa(client, com_sessao_ativa)
+
+    with client.websocket_connect("/telemetria") as ws:
+        ws.send_json({"token": com_sessao_ativa})
+        ws.receive_json()
+
+        ws.send_json({"ear": 0.30, "yaw": 0.0, "mar": 0.02, "rosto_detectado": True})
+        ws.receive_json()
+
+    (log,) = telemetria.buscar_logs(session, id_sessao=id_sessao)
+    assert log.flag_fadiga is False
+    assert log.alerta_gerado is None
+
+
+def test_ausencia_de_rosto_grava_direcao_nula(client, com_sessao_ativa, session):
+    from app import telemetria
+
+    id_sessao = _id_da_sessao_ativa(client, com_sessao_ativa)
+
+    with client.websocket_connect("/telemetria") as ws:
+        ws.send_json({"token": com_sessao_ativa})
+        ws.receive_json()
+
+        ws.send_json({"ear": 0.0, "yaw": 0.0, "rosto_detectado": False})
+        ws.receive_json()
+
+    (log,) = telemetria.buscar_logs(session, id_sessao=id_sessao)
+    assert log.score == 0.0
+    assert log.direcao_olhar is None
+
+
 def test_telemetria_conta_como_atividade_da_sessao(client, com_sessao_ativa, session):
     from app.models import SessaoEstudo
 
