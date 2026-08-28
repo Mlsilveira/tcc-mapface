@@ -26,3 +26,6 @@ probe_local_new.txt
 Plano_de_Sprints_TCC.pdf
 TCC_EM_ABNT*.pdf
 *.pdf
+
+#Database DAISEE
+database/

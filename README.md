@@ -39,6 +39,9 @@ Implementado:
 - **Ticket 3 — Cadastro e login.** Registro com hashing bcrypt, login com JWT, rotas protegidas no Angular e expiração por inatividade.
 - **Ticket 4 — Ciclo de vida da sessão de estudo.** Iniciar e encerrar sessão, associada ao aluno autenticado, com encerramento automático por inatividade prolongada.
 - **Ticket 5 — Captura client-side.** Permissão de webcam com mensagem por tipo de falha, preview durante a sessão, extração de landmarks via MediaPipe e cálculo local de EAR, MAR e Head Pose, com FPS medido na tela.
+- **Ticket 6 — Canal de telemetria.** WebSocket autenticado pela primeira mensagem, agregação a 1 Hz no cliente, reconexão automática com backoff e log persistido em `log_engajamento`.
+- **Ticket 7 — Fórmula real do IEE.** `AnalistaEngajamento` calibra a baseline individual do aluno nos primeiros 60 s e passa a medir EAR e Head Pose contra ela, em vez de contra constantes iguais para todo mundo.
+- **Ticket 8 — Fator de fadiga.** `DetectorDeFadiga` penaliza o IEE por pálpebra pesada (PERCLOS), fechamento prolongado e bocejo, com os limiares relativos à baseline do aluno. O fator vem de regras, e não do Random Forest — o porquê está em [`resultado_18_08.md`](./resultado_18_08.md).
 
 O plano completo, com as 16 fatias verticais e suas dependências, está em [`tickets.md`](./tickets.md). O problema, as histórias de usuário e as decisões de arquitetura estão em [`spec-poc-iee.md`](./spec-poc-iee.md).
 
@@ -94,12 +97,20 @@ cd frontend && npm test
 
 A suíte do Angular usa o Chromium que vem com o puppeteer, então não depende de um navegador instalado na máquina.
 
+Do npm 11 em diante, os scripts de instalação das dependências vêm bloqueados por padrão — e o do puppeteer é justamente quem baixa esse Chromium. Em máquina limpa, o `npm test` falha por falta do binário do Chrome sem dizer o porquê. Se acontecer, baixe o navegador explicitamente:
+
+```bash
+cd frontend && npx puppeteer browsers install chrome
+```
+
 ## Organização do código
 
 ```
 backend/
   app/
     sessoes.py       regras do ciclo de vida da sessão, sem depender de HTTP
+    analista.py      calibração da baseline, fórmula do IEE e fator de fadiga
+    telemetria.py    persistência da série de engajamento
     security.py      hashing de senha e emissão/validação de JWT
     tempo.py         normalização de datetimes para UTC
     models.py        tabelas aluno e sessao_estudo
@@ -116,7 +127,7 @@ frontend/src/app/
 frontend/src/styles.css   sistema de design: tokens, botões, campos, telas
 ```
 
-As regras de negócio ficam fora do FastAPI de propósito — `app/sessoes.py` não conhece HTTP, banco de requisição nem UI, e é onde os testes de comportamento batem. O mesmo vale para o `AnalistaEngajamento`, que entra nas tickets 7 e 8.
+As regras de negócio ficam fora do FastAPI de propósito — `app/sessoes.py` e `app/analista.py` não conhecem HTTP, banco de requisição nem UI, e é onde os testes de comportamento batem. O `AnalistaEngajamento` é o seam principal do spec: entrou na ticket 7 com a calibração e a fórmula do IEE, e recebe o fator de fadiga na ticket 8.
 
 No frontend a divisão é a mesma: `core/visao/metricas.ts` é aritmética pura sobre pontos e não importa o MediaPipe. Só `landmarks.service.ts` conhece a biblioteca de visão computacional, então trocá-la mexe num arquivo só.
 

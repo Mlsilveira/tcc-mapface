@@ -180,6 +180,65 @@ describe('TelemetriaService', () => {
     discardPeriodicTasks();
   }));
 
+  it('marca o score do primeiro minuto como calibrando (ticket 7)', fakeAsync(() => {
+    const aberto = conectarEAutenticar();
+
+    aberto.receber({ tipo: 'score', score: 76, calibrando: true });
+    expect(service.calibrando()).toBeTrue();
+
+    // Fechada a baseline, o aviso tem que sair sozinho.
+    aberto.receber({ tipo: 'score', score: 100, calibrando: false });
+    expect(service.calibrando()).toBeFalse();
+
+    service.parar();
+    discardPeriodicTasks();
+  }));
+
+  it('trata score sem o campo calibrando como já calibrado', fakeAsync(() => {
+    // Backend anterior à ticket 7: assumir calibração eterna deixaria o aviso
+    // preso na tela pelo resto da sessão.
+    const aberto = conectarEAutenticar();
+
+    aberto.receber({ tipo: 'score', score: 82.5 });
+
+    expect(service.calibrando()).toBeFalse();
+
+    service.parar();
+    discardPeriodicTasks();
+  }));
+
+  it('expõe o fator de fadiga e seus motivos (ticket 8)', fakeAsync(() => {
+    const aberto = conectarEAutenticar();
+
+    aberto.receber({
+      tipo: 'score',
+      score: 62,
+      calibrando: false,
+      fadiga: 15,
+      motivos_fadiga: ['olhos-fechados-prolongados'],
+    });
+
+    expect(service.fadiga()).toBe(15);
+    expect(service.motivosDeFadiga()).toEqual(['olhos-fechados-prolongados']);
+
+    service.parar();
+    discardPeriodicTasks();
+  }));
+
+  it('zera a fadiga quando o score volta sem penalidade', fakeAsync(() => {
+    // Sem isto o aviso ficaria preso na tela depois que o aluno se recuperou.
+    const aberto = conectarEAutenticar();
+
+    aberto.receber({ tipo: 'score', score: 62, fadiga: 15, motivos_fadiga: ['bocejos'] });
+    aberto.receber({ tipo: 'score', score: 100, fadiga: 0, motivos_fadiga: [] });
+
+    expect(service.fadiga()).toBe(0);
+    expect(service.motivosDeFadiga()).toEqual([]);
+
+    service.parar();
+    discardPeriodicTasks();
+  }));
+
   it('reconecta sozinho quando a conexão cai', fakeAsync(() => {
     // Critério da ticket 6: uma instabilidade momentânea de rede não pode
     // interromper a sessão de estudo inteira.
@@ -267,14 +326,14 @@ describe('TelemetriaService', () => {
     discardPeriodicTasks();
   }));
 
-  it('nunca envia landmarks — só ear, yaw e presença de rosto', fakeAsync(() => {
+  it('nunca envia landmarks — só ear, yaw, mar e presença de rosto', fakeAsync(() => {
     // A fronteira de privacidade, afirmada no ponto exato onde os dados saem
-    // do navegador.
+    // do navegador. `mar` entrou na ticket 8 para a detecção de bocejo.
     conectarEAutenticar();
     tick(INTERVALO_DE_ENVIO_MS * 2);
 
     for (const payload of canal().payloads.slice(1)) {
-      expect(Object.keys(payload).sort()).toEqual(['ear', 'rosto_detectado', 'yaw']);
+      expect(Object.keys(payload).sort()).toEqual(['ear', 'mar', 'rosto_detectado', 'yaw']);
     }
 
     service.parar();
