@@ -43,6 +43,56 @@ class Token(BaseModel):
     token_type: str = "bearer"
 
 
+class IndicadoresPublicos(BaseModel):
+    """Os números-chave da sessão (ticket 11)."""
+
+    n_leituras: int
+    duracao_s: float
+    score_medio: float
+    score_minimo: float
+    score_maximo: float
+    score_inicio: float
+    score_fim: float
+    prop_com_rosto: float
+    prop_com_fadiga: float
+    fadiga_maxima: float
+    desvio_olhar_medio: float
+
+    model_config = {"from_attributes": True}
+
+
+class PontoDaSeriePublico(BaseModel):
+    """Um instante do gráfico do IEE."""
+
+    horario: datetime
+    score: float
+    fadiga: float
+    alerta: Optional[str] = None
+
+    model_config = {"from_attributes": True}
+
+
+class RelatorioPublico(BaseModel):
+    """Relatório de autopercepção de uma sessão.
+
+    `parcial` é `True` quando a sessão não foi encerrada formalmente — queda de
+    conexão, aba fechada. O relatório existe do mesmo jeito, com o que foi
+    medido até ali, e a interface precisa poder dizer isso ao aluno em vez de
+    apresentar dados incompletos como se fossem a sessão inteira.
+    """
+
+    id_sessao: int
+    inicio: datetime
+    fim: Optional[datetime] = None
+    parcial: bool
+    indicadores: IndicadoresPublicos
+    serie: list[PontoDaSeriePublico]
+    alertas: dict[str, int]
+    recomendacoes: list[str]
+
+    model_config = {"from_attributes": True}
+
+
 class SessaoPublica(BaseModel):
     id: int
     id_aluno: int
