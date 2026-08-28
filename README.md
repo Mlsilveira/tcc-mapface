@@ -63,6 +63,16 @@ A API sobe em `http://localhost:8000`, com documentação interativa em `http://
 
 Antes de rodar em qualquer ambiente real, troque a `SECRET_KEY` no `.env` por um valor aleatório. O `.env` não é versionado.
 
+#### Quando o schema muda
+
+O banco é criado por `SQLModel.metadata.create_all` na subida da aplicação, e **não há Alembic**: `create_all` cria tabelas que faltam, mas não adiciona colunas a tabelas que já existem. Depois de um `git pull` que mexa em `app/models.py`, um `app.db` antigo continua com o schema velho e a aplicação quebra com `no such column`. Em desenvolvimento, apague e deixe recriar:
+
+```bash
+rm backend/app.db
+```
+
+Isso descarta os dados locais, o que é aceitável enquanto o banco é SQLite de desenvolvimento. Deixa de ser quando a ticket 15 apontar para o RDS — o deploy vai precisar de uma estratégia de migração de verdade.
+
 ### Frontend
 
 ```bash

@@ -40,8 +40,16 @@ class LogEngajamento(SQLModel, table=True):
     trava a lista de colunas exatamente para forçar essa conversa quando alguém
     quiser adicionar campo novo.
 
-    As colunas de fadiga e alerta previstas no spec entram na ticket 8, junto
-    com o modelo que as produz.
+    As colunas de fadiga entraram depois da ticket 8: o fator já era calculado e
+    devolvido ao navegador, mas não era gravado — e o relatório da ticket 11
+    precisa dos "alertas de fadiga registrados", que só existem se alguém os
+    tiver registrado.
+
+    **`flag_fadiga` e `fator_fadiga` convivem de propósito.** O spec previa só o
+    booleano, e ele é o que responde "houve fadiga nesta sessão?" numa consulta
+    direta. Mas um booleano não distingue um bocejo isolado de meia hora de
+    pálpebra pesada, e é essa diferença que vira indicador-chave no relatório.
+    O flag é sempre `fator_fadiga > 0`; há um teste que trava essa relação.
     """
 
     __tablename__ = "log_engajamento"
@@ -50,3 +58,22 @@ class LogEngajamento(SQLModel, table=True):
     id_sessao: int = Field(foreign_key="sessao_estudo.id")
     horario_registro: datetime = Field(default_factory=agora_utc)
     score: float
+
+    #: Houve penalidade de fadiga neste instante.
+    flag_fadiga: bool = Field(default=False)
+
+    #: Quanto a fadiga descontou do score, em pontos da escala de 0 a 100.
+    fator_fadiga: float = Field(default=0.0)
+
+    #: Motivos separados por vírgula (`palpebras-pesadas`, `bocejos`, ...), ou
+    #: `None` quando não houve alerta. Coluna de texto e não booleana porque a
+    #: ticket 10 grava aqui a "Incerteza de Captura" pelo mesmo canal — o spec
+    #: chamou de `alerta_gerado`, no singular, mas o campo sempre foi o lugar de
+    #: registrar *o que* o sistema quis dizer ao aluno naquele segundo.
+    alerta_gerado: Optional[str] = Field(default=None)
+
+    #: Desvio do yaw em relação à pose neutra do aluno, em graus, com sinal.
+    #: É o desvio, e não o yaw absoluto: a mesma normalização que o IEE usa, e a
+    #: única forma de a série significar a mesma coisa entre alunos que sentam
+    #: de jeitos diferentes. `None` quando não havia rosto.
+    direcao_olhar: Optional[float] = Field(default=None)

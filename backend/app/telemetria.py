@@ -9,7 +9,7 @@ sobra aqui é o que sempre foi de persistência: gravar e ler os pontos da séri
 """
 
 from datetime import datetime
-from typing import List, Optional
+from typing import List, Optional, Sequence
 
 from sqlmodel import Session, select
 
@@ -18,13 +18,37 @@ from app.tempo import agora_utc
 
 
 def registrar_log(
-    db: Session, id_sessao: int, score: float, agora: Optional[datetime] = None
+    db: Session,
+    id_sessao: int,
+    score: float,
+    agora: Optional[datetime] = None,
+    fator_fadiga: float = 0.0,
+    alertas: Sequence[str] = (),
+    direcao_olhar: Optional[float] = None,
 ) -> LogEngajamento:
-    """Grava um ponto da série de engajamento da sessão."""
+    """Grava um ponto da série de engajamento da sessão.
+
+    Tudo além de `score` tem default porque a série continua fazendo sentido sem
+    esses campos: um payload sem `mar` não produz alerta de bocejo, e um instante
+    sem rosto não produz direção de olhar. Gravar zero ou vazio ali é registrar o
+    que de fato se observou, e não um buraco.
+
+    `alertas` chega como sequência e é achatado numa string separada por vírgula.
+    A alternativa — uma tabela de alertas por log — seria a modelagem correta se
+    alertas tivessem atributos próprios; eles não têm, são rótulos. Uma tabela
+    para guardar rótulo custaria um join em toda leitura do relatório para não
+    guardar nada a mais.
+    """
     log = LogEngajamento(
         id_sessao=id_sessao,
         score=score,
         horario_registro=agora or agora_utc(),
+        fator_fadiga=fator_fadiga,
+        # O flag é derivado aqui, num lugar só, para não haver como gravar uma
+        # linha em que ele discorde do fator.
+        flag_fadiga=fator_fadiga > 0,
+        alerta_gerado=",".join(alertas) or None,
+        direcao_olhar=direcao_olhar,
     )
     db.add(log)
     db.commit()
