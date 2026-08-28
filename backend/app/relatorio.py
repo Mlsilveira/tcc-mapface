@@ -104,10 +104,24 @@ def _terco(valores: Sequence[float], final: bool) -> float:
     return _media(valores[-tamanho:] if final else valores[:tamanho])
 
 
+def _proporcao(logs: Sequence[LogEngajamento], criterio) -> float:
+    """Fração das leituras que satisfazem o critério, **ponderada**.
+
+    Depois da sumarização da ticket 13, uma linha pode representar um minuto
+    inteiro. Contar linhas trataria esse minuto como uma leitura só, e a
+    proporção passaria a depender de a sessão já ter sido resumida ou não —
+    o mesmo relatório mudaria de número sem nenhum dado ter mudado.
+    """
+    total = sum(log.n_leituras for log in logs)
+    if total == 0:
+        return 0.0
+    return sum(log.n_leituras for log in logs if criterio(log)) / total
+
+
 def _indicadores(logs: Sequence[LogEngajamento]) -> Indicadores:
     scores = [log.score for log in logs]
     com_rosto = [log for log in logs if log.direcao_olhar is not None]
-    com_fadiga = [log for log in logs if log.flag_fadiga]
+    total_leituras = sum(log.n_leituras for log in logs)
 
     if logs:
         duracao = (como_utc(logs[-1].horario_registro) - como_utc(logs[0].horario_registro))
@@ -115,21 +129,27 @@ def _indicadores(logs: Sequence[LogEngajamento]) -> Indicadores:
     else:
         duracao_s = 0.0
 
+    def media_ponderada(selecionados: Sequence[LogEngajamento], valor) -> float:
+        peso = sum(log.n_leituras for log in selecionados)
+        if peso == 0:
+            return 0.0
+        return sum(valor(log) * log.n_leituras for log in selecionados) / peso
+
     return Indicadores(
-        n_leituras=len(logs),
+        n_leituras=total_leituras,
         duracao_s=duracao_s,
-        score_medio=_media(scores),
+        score_medio=media_ponderada(logs, lambda log: log.score),
         score_minimo=min(scores) if scores else 0.0,
         score_maximo=max(scores) if scores else 0.0,
         score_inicio=_terco(scores, final=False),
         score_fim=_terco(scores, final=True),
-        prop_com_rosto=len(com_rosto) / len(logs) if logs else 0.0,
-        prop_com_fadiga=len(com_fadiga) / len(logs) if logs else 0.0,
+        prop_com_rosto=_proporcao(logs, lambda log: log.direcao_olhar is not None),
+        prop_com_fadiga=_proporcao(logs, lambda log: log.flag_fadiga),
         fadiga_maxima=max((log.fator_fadiga for log in logs), default=0.0),
         # Só faz sentido sobre as leituras em que havia rosto: incluir as outras
         # como zero puxaria a média para "olhando de frente" justamente nos
         # instantes em que não havia para onde olhar.
-        desvio_olhar_medio=_media([abs(log.direcao_olhar) for log in com_rosto]),
+        desvio_olhar_medio=media_ponderada(com_rosto, lambda log: abs(log.direcao_olhar)),
     )
 
 
