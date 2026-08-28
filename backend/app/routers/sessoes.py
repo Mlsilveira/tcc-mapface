@@ -4,11 +4,11 @@ from typing import Iterator, Optional
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlmodel import Session
 
-from app import sessoes
+from app import relatorio, sessoes, telemetria
 from app.database import get_session
 from app.deps import get_aluno_atual
 from app.models import Aluno, SessaoEstudo
-from app.schemas import SessaoPublica
+from app.schemas import RelatorioPublico, SessaoPublica
 
 router = APIRouter(prefix="/sessoes", tags=["sessões de estudo"])
 
@@ -70,3 +70,20 @@ def encerrar(
 ) -> SessaoEstudo:
     with _traduzindo_erros():
         return sessoes.encerrar(db, id_sessao, aluno_atual.id)
+
+
+@router.get("/{id_sessao}/relatorio", response_model=RelatorioPublico)
+def relatorio_da_sessao(
+    id_sessao: int,
+    aluno_atual: Aluno = Depends(get_aluno_atual),
+    db: Session = Depends(get_session),
+) -> relatorio.Relatorio:
+    """Relatório de autopercepção da sessão (ticket 11).
+
+    Aceita sessão ainda aberta de propósito: é o relatório parcial que a ticket
+    pede para o caso de a sessão ter sido interrompida por erro. O campo
+    `parcial` diz qual dos dois casos o aluno está vendo.
+    """
+    with _traduzindo_erros():
+        sessao = sessoes.buscar(db, id_sessao, aluno_atual.id)
+    return relatorio.montar(sessao, telemetria.buscar_logs(db, id_sessao=id_sessao))
