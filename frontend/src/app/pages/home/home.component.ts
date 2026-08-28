@@ -4,14 +4,18 @@ import {
   ElementRef,
   OnDestroy,
   OnInit,
+  computed,
+  NgZone,
   effect,
   inject,
+  signal,
   untracked,
   viewChild,
 } from '@angular/core';
 import { Router } from '@angular/router';
 import { Observable } from 'rxjs';
 
+import { formatarDuracao } from '../../core/tempo';
 import { AuthService } from '../../core/services/auth.service';
 import {
   CameraService,
@@ -39,6 +43,7 @@ export class HomeComponent implements OnInit, OnDestroy {
   private readonly sessaoService = inject(SessaoService);
   private readonly telemetriaService = inject(TelemetriaService);
   private readonly router = inject(Router);
+  private readonly zone = inject(NgZone);
 
   private readonly preview = viewChild<ElementRef<HTMLVideoElement>>('preview');
 
@@ -51,6 +56,30 @@ export class HomeComponent implements OnInit, OnDestroy {
 
   /** Piso de FPS exigido pela ticket 5. Abaixo disso a interface avisa o aluno. */
   readonly FPS_MINIMO = 15;
+
+  /**
+   * Relógio do cronômetro, avançando de segundo em segundo.
+   *
+   * É um signal em vez de um `Date.now()` lido no template porque o template
+   * não tem como saber que o tempo passou: sem uma fonte reativa, o cronômetro
+   * só se atualizaria quando outra coisa da tela mudasse.
+   */
+  private readonly agora = signal(Date.now());
+  private relogio: ReturnType<typeof setInterval> | null = null;
+
+  /**
+   * Há quanto tempo a sessão corrente começou, formatado, ou `null` sem sessão.
+   *
+   * O início vem do **servidor**, e não do instante em que esta tela abriu:
+   * recarregar a página no meio de uma sessão não pode zerar o cronômetro.
+   */
+  readonly duracaoDaSessao = computed(() => {
+    const sessao = this.sessaoAtiva();
+    if (sessao === null) {
+      return null;
+    }
+    return formatarDuracao((this.agora() - new Date(sessao.inicio).getTime()) / 1000);
+  });
 
   erro: string | null = null;
   aguardando = false;
@@ -104,6 +133,16 @@ export class HomeComponent implements OnInit, OnDestroy {
   }
 
   ngOnInit(): void {
+    // **Fora da zona do Angular**, como o amostrador do `TelemetriaService`.
+    // Um `setInterval` dentro dela é uma tarefa periódica que nunca termina, e
+    // a aplicação nunca mais fica estável: `whenStable()` deixa de resolver e
+    // todo teste assíncrono desta tela estoura por timeout. A escrita no signal
+    // agenda a detecção de mudanças por conta própria, então o cronômetro
+    // continua redesenhando.
+    this.zone.runOutsideAngular(() => {
+      this.relogio = setInterval(() => this.agora.set(Date.now()), 1000);
+    });
+
     // Recarregar a página no meio de uma sessão não pode "perder" a sessão:
     // o backend é a fonte da verdade sobre o que está em andamento.
     this.sessaoService.carregarAtiva().subscribe({
@@ -232,6 +271,10 @@ export class HomeComponent implements OnInit, OnDestroy {
    * sem desligar a webcam deixaria a captura rodando em segundo plano.
    */
   ngOnDestroy(): void {
+    if (this.relogio !== null) {
+      clearInterval(this.relogio);
+      this.relogio = null;
+    }
     this.telemetriaService.parar();
     this.landmarksService.parar();
     this.cameraService.encerrar();
