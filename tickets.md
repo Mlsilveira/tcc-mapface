@@ -154,6 +154,10 @@ O payload do WebSocket passou a levar `mar`, que já era calculado no navegador 
 - [ ] Inclui recomendações básicas de autorregulação (pausas, mudança de estratégia)
 - [ ] Relatório parcial é gerado mesmo se a sessão for interrompida por erro (queda de conexão, falha do navegador)
 
+A base já está no lugar: `log_engajamento` passou a gravar `flag_fadiga`, `fator_fadiga`, `alerta_gerado` e `direcao_olhar`, que é o que sustenta os "alertas de fadiga registrados" deste relatório. Antes disso a ticket 8 calculava a fadiga e a descartava. O que falta aqui é o endpoint de dados agregados e a tela.
+
+**Atenção ao atualizar:** não há Alembic, então um `app.db` anterior a essa mudança quebra com `no such column`. Ver a seção de schema no [README](./README.md).
+
 ## 12. Histórico de sessões
 
 **O que construir:** o estudante consegue revisitar relatórios de sessões passadas.

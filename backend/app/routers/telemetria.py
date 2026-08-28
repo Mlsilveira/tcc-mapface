@@ -126,7 +126,17 @@ async def telemetria_ws(
             ear=ear, yaw=yaw, rosto_detectado=rosto_detectado, mar=mar
         )
 
-        telemetria.registrar_log(db, id_sessao=sessao.id, score=resultado.score)
+        telemetria.registrar_log(
+            db,
+            id_sessao=sessao.id,
+            score=resultado.score,
+            fator_fadiga=resultado.fadiga.fator,
+            alertas=resultado.fadiga.motivos,
+            # Sem rosto não há para onde olhar: `None` diz "não observado", que
+            # é diferente de "olhando para a frente" — e é a mesma distinção que
+            # a trilha ML faz entre NaN e zero.
+            direcao_olhar=(yaw - resultado.baseline.yaw_neutro) if rosto_detectado else None,
+        )
 
         # Quem manda telemetria está estudando. Sem isto, uma sessão silenciosa
         # seria encerrada por "inatividade" justamente enquanto era medida.
