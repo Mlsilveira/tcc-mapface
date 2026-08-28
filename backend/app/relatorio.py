@@ -24,6 +24,7 @@ from datetime import datetime
 from typing import Dict, List, Optional, Sequence
 
 from app.models import LogEngajamento, SessaoEstudo
+from app.telemetria import AgregadoDaSessao
 from app.tempo import como_utc
 
 #: Abaixo disto, a sessão teve engajamento médio baixo o bastante para valer uma
@@ -226,6 +227,59 @@ def _recomendacoes(ind: Indicadores, alertas: Dict[str, int]) -> List[str]:
         )
 
     return frases
+
+
+@dataclass(frozen=True)
+class ItemDoHistorico:
+    """Uma linha da lista de sessões passadas (ticket 12).
+
+    Traz o suficiente para o aluno **escolher** qual relatório abrir. Uma lista
+    só com datas o obrigaria a abrir sessão por sessão para lembrar como cada
+    uma foi, que é o oposto de um histórico.
+    """
+
+    id_sessao: int
+    inicio: datetime
+    fim: Optional[datetime]
+    parcial: bool
+    duracao_s: float
+    n_leituras: int
+    score_medio: float
+    teve_fadiga: bool
+
+
+def historico(
+    sessoes: Sequence[SessaoEstudo], agregados: Dict[int, AgregadoDaSessao]
+) -> List[ItemDoHistorico]:
+    """Combina sessões e seus agregados numa lista para a tela de histórico.
+
+    Função pura: recebe o que já foi lido do banco. Quem consulta é o router,
+    e é por isso que este módulo continua testável sem subir banco nenhum.
+
+    A duração vem de `inicio`/`fim` da sessão, e não do intervalo entre a
+    primeira e a última leitura: uma sessão em que a webcam foi negada tem
+    duração real e nenhuma leitura, e mostrar zero ali seria mentir sobre o
+    tempo que o aluno passou na tela.
+    """
+    itens: List[ItemDoHistorico] = []
+    for sessao in sessoes:
+        inicio = como_utc(sessao.inicio)
+        fim = como_utc(sessao.fim) if sessao.fim else None
+        agregado = agregados.get(sessao.id)
+
+        itens.append(
+            ItemDoHistorico(
+                id_sessao=sessao.id,
+                inicio=inicio,
+                fim=fim,
+                parcial=sessao.fim is None,
+                duracao_s=(fim - inicio).total_seconds() if fim else 0.0,
+                n_leituras=agregado.n_leituras if agregado else 0,
+                score_medio=agregado.score_medio if agregado else 0.0,
+                teve_fadiga=agregado.teve_fadiga if agregado else False,
+            )
+        )
+    return itens
 
 
 def montar(sessao: SessaoEstudo, logs: Sequence[LogEngajamento]) -> Relatorio:
