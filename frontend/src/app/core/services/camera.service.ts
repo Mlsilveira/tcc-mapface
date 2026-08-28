@@ -121,11 +121,62 @@ export class CameraService implements OnDestroy {
     try {
       stream = await navigator.mediaDevices.getUserMedia(RESTRICOES_DE_VIDEO);
     } catch (erro) {
-      throw traduzirFalhaDeCamera(erro);
+      stream = await this.tentarOutrosDispositivos(erro);
     }
 
     this.streamSignal.set(stream);
     return stream;
+  }
+
+  /**
+   * Quando o dispositivo escolhido pelo navegador não inicia, tenta os outros.
+   *
+   * Sem indicar `deviceId`, quem escolhe a câmera é o navegador — e ele escolhe
+   * mal com frequência. Numa máquina de teste com três dispositivos (uma webcam
+   * USB, a câmera virtual do OBS e um celular exposto como câmera do Windows),
+   * o Chrome elegeu a USB, que estava travada em `NotReadableError`, e a sessão
+   * não começava. **Havia uma câmera funcionando o tempo todo**, a duas linhas
+   * de distância.
+   *
+   * Só vale a pena para `NotReadableError`, que significa "o dispositivo existe
+   * mas não inicia". Permissão negada não melhora trocando de câmera — negar é
+   * decisão do aluno sobre a origem inteira —, e ausência de dispositivo não
+   * tem alternativa a tentar.
+   *
+   * A enumeração vem **depois** da primeira tentativa de propósito: antes de o
+   * navegador conceder acesso, `enumerateDevices` devolve entradas anônimas e
+   * sem `deviceId` utilizável. É a chamada que falhou que destrava a lista.
+   */
+  private async tentarOutrosDispositivos(erroOriginal: unknown): Promise<MediaStream> {
+    const falha = traduzirFalhaDeCamera(erroOriginal);
+    if (falha.motivo !== 'webcam-ocupada') {
+      throw falha;
+    }
+
+    let dispositivos: MediaDeviceInfo[];
+    try {
+      dispositivos = (await navigator.mediaDevices.enumerateDevices()).filter(
+        (dispositivo) => dispositivo.kind === 'videoinput',
+      );
+    } catch {
+      // Enumerar falhou: nada a acrescentar ao diagnóstico original.
+      throw falha;
+    }
+
+    for (const dispositivo of dispositivos) {
+      try {
+        return await navigator.mediaDevices.getUserMedia({
+          video: { ...(RESTRICOES_DE_VIDEO.video as MediaTrackConstraints), deviceId: { exact: dispositivo.deviceId } },
+          audio: false,
+        });
+      } catch {
+        // Esta não abriu; segue para a próxima. O erro individual não interessa
+        // — o que o aluno precisa saber é se alguma funcionou.
+      }
+    }
+
+    // Nenhuma abriu: o diagnóstico original continua sendo o mais honesto.
+    throw falha;
   }
 
   /**

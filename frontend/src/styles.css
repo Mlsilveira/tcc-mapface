@@ -767,7 +767,20 @@ a:hover {
   max-height: 56vh;
   border-radius: var(--raio-m);
   background: #0b1120;
-  object-fit: cover;
+  /* `contain` e não `cover`: o preview precisa mostrar **o quadro inteiro**, e
+     não um recorte dele.
+
+     A caixa é 4:3, mas a câmera pode entregar qualquer proporção — um celular
+     usado como câmera do Windows entrega 16:9. Com `cover`, um quadro 16:9
+     nesta caixa perde 25% da largura e aparece ampliado em 1,33×, o que numa
+     máquina de teste deixou o preview colado no rosto.
+
+     Isso não é só estética: o MediaPipe lê o **quadro inteiro** do elemento,
+     não o recorte que o CSS desenha. Com `cover`, o aluno se enquadra olhando
+     para uma imagem que não corresponde ao que está sendo medido — ele veria
+     o rosto centralizado enquanto o algoritmo enxerga margens que ele não faz
+     ideia de que existem. As barras que sobram são o preço honesto disso. */
+  object-fit: contain;
   /* Espelhado: o aluno espera se ver como num espelho, não como numa filmagem.
      É só apresentação — as métricas saem dos landmarks, não deste elemento. */
   transform: scaleX(-1);
