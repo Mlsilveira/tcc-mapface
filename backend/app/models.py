@@ -101,6 +101,21 @@ class LogEngajamento(SQLModel, table=True):
     #: de jeitos diferentes. `None` quando não havia rosto.
     direcao_olhar: Optional[float] = Field(default=None)
 
+    #: Se dá para confiar nesta leitura (ticket 10).
+    #:
+    #: `False` quando a captura estava instável — detecção piscando ou EAR
+    #: saltando muito além do fisiológico. O `score` continua gravado, porque a
+    #: fórmula é bem definida sobre os números que chegaram; o que esta coluna
+    #: diz é que **aqueles números não descrevem o aluno**.
+    #:
+    #: É o critério "o alerta não é registrado como score corrompido": em vez de
+    #: inventar um score, ou de gravar um buraco que apagaria o instante da
+    #: série, a leitura fica registrada e marcada. O relatório exclui as não
+    #: confiáveis dos indicadores, então uma câmera ruim vira "a captura falhou
+    #: em 30% da sessão" em vez de "você esteve disperso em 30% da sessão" —
+    #: que é exatamente a conclusão errada que a ticket existe para evitar.
+    captura_confiavel: bool = Field(default=True)
+
     #: EAR e MAR brutos da janela, como o navegador os mediu. `None` sem rosto.
     #:
     #: Existem para **calibração**, não para o score — que já é derivado deles.

@@ -282,3 +282,57 @@ def test_a_serie_do_grafico_encolhe_mas_continua_descrevendo_a_sessao(session):
     assert len(serie) == 10                       # 600 pontos viraram 10
     assert serie[0].score == pytest.approx(100.0)  # a queda continua visível
     assert serie[-1].score == pytest.approx(40.0)
+
+
+def test_janela_de_qualidade_mista_vira_duas_linhas(session):
+    """Misturar leituras confiáveis e duvidosas na mesma média mentiria de um
+    jeito ou de outro: marcar tudo como duvidoso descartaria medição boa, e
+    marcar tudo como bom devolveria ao relatório os números que a ticket 10
+    tirou dele."""
+    sessao = _sessao(session)
+    _plantar(session, sessao, 30, score=lambda i: 90.0)
+    for i in range(30, 60):
+        session.add(
+            LogEngajamento(
+                id_sessao=sessao.id,
+                horario_registro=T0 + timedelta(seconds=i),
+                score=20.0,
+                captura_confiavel=False,
+                alerta_gerado="incerteza-de-captura",
+                direcao_olhar=0.0,
+            )
+        )
+    session.commit()
+
+    retencao.sumarizar_sessao(session, sessao)
+
+    logs = _logs(session, sessao)
+    assert len(logs) == 2
+    confiavel = next(l for l in logs if l.captura_confiavel)
+    duvidosa = next(l for l in logs if not l.captura_confiavel)
+    assert confiavel.score == pytest.approx(90.0)
+    assert duvidosa.score == pytest.approx(20.0)
+    assert confiavel.n_leituras == 30 and duvidosa.n_leituras == 30
+
+
+def test_a_proporcao_de_captura_incerta_sobrevive_ao_resumo(session):
+    sessao = _sessao(session)
+    _plantar(session, sessao, 45)
+    for i in range(45, 60):
+        session.add(
+            LogEngajamento(
+                id_sessao=sessao.id,
+                horario_registro=T0 + timedelta(seconds=i),
+                score=10.0,
+                captura_confiavel=False,
+                direcao_olhar=0.0,
+            )
+        )
+    session.commit()
+
+    antes = relatorio.montar(sessao, _logs(session, sessao)).indicadores
+    retencao.sumarizar_sessao(session, sessao)
+    depois = relatorio.montar(sessao, _logs(session, sessao)).indicadores
+
+    assert depois.prop_captura_incerta == pytest.approx(antes.prop_captura_incerta)
+    assert depois.score_medio == pytest.approx(antes.score_medio)

@@ -45,6 +45,11 @@ FRACAO_FADIGA_ALTA = 0.30
 #: se descrevessem a sessão inteira.
 PRESENCA_BAIXA = 0.70
 
+#: Fração da sessão com captura incerta a partir da qual vale avisar o aluno.
+#: Abaixo disso é oscilação normal — uma nuvem passando, um movimento brusco —
+#: e transformar isso em recomendação seria ruído.
+CAPTURA_INCERTA_ALTA = 0.20
+
 
 @dataclass(frozen=True)
 class Indicadores:
@@ -62,6 +67,8 @@ class Indicadores:
     prop_com_fadiga: float
     fadiga_maxima: float
     desvio_olhar_medio: float
+    #: Fração da sessão em que a captura não foi confiável (ticket 10).
+    prop_captura_incerta: float
 
 
 @dataclass(frozen=True)
@@ -120,8 +127,14 @@ def _proporcao(logs: Sequence[LogEngajamento], criterio) -> float:
 
 
 def _indicadores(logs: Sequence[LogEngajamento]) -> Indicadores:
-    scores = [log.score for log in logs]
-    com_rosto = [log for log in logs if log.direcao_olhar is not None]
+    # **Os indicadores de score descrevem só o que foi bem medido.** Uma câmera
+    # instável produz scores baixos que não são sobre o aluno, e incluí-los faria
+    # o relatório dizer "você esteve disperso" quando o certo é "a captura
+    # falhou". A proporção de captura incerta vai separada, como indicador
+    # próprio, para o aluno saber o quanto da sessão está fora da conta.
+    confiaveis = [log for log in logs if log.captura_confiavel]
+    scores = [log.score for log in confiaveis]
+    com_rosto = [log for log in confiaveis if log.direcao_olhar is not None]
     total_leituras = sum(log.n_leituras for log in logs)
 
     if logs:
@@ -139,14 +152,15 @@ def _indicadores(logs: Sequence[LogEngajamento]) -> Indicadores:
     return Indicadores(
         n_leituras=total_leituras,
         duracao_s=duracao_s,
-        score_medio=media_ponderada(logs, lambda log: log.score),
+        score_medio=media_ponderada(confiaveis, lambda log: log.score),
         score_minimo=min(scores) if scores else 0.0,
         score_maximo=max(scores) if scores else 0.0,
         score_inicio=_terco(scores, final=False),
         score_fim=_terco(scores, final=True),
         prop_com_rosto=_proporcao(logs, lambda log: log.direcao_olhar is not None),
         prop_com_fadiga=_proporcao(logs, lambda log: log.flag_fadiga),
-        fadiga_maxima=max((log.fator_fadiga for log in logs), default=0.0),
+        prop_captura_incerta=_proporcao(logs, lambda log: not log.captura_confiavel),
+        fadiga_maxima=max((log.fator_fadiga for log in confiaveis), default=0.0),
         # Só faz sentido sobre as leituras em que havia rosto: incluir as outras
         # como zero puxaria a média para "olhando de frente" justamente nos
         # instantes em que não havia para onde olhar.
@@ -184,6 +198,18 @@ def _recomendacoes(ind: Indicadores, alertas: Dict[str, int]) -> List[str]:
 
     if ind.n_leituras == 0:
         return ["Não houve medição nesta sessão — a webcam pode não ter sido autorizada."]
+
+    # Vem primeiro de propósito: se a captura falhou em boa parte da sessão, é a
+    # primeira coisa que o aluno precisa saber antes de ler qualquer indicador —
+    # e a ação que ela sugere (arrumar a luz, tirar o obstáculo) é a única que
+    # melhora as próximas sessões.
+    if ind.prop_captura_incerta > CAPTURA_INCERTA_ALTA:
+        frases.append(
+            f"Em {ind.prop_captura_incerta:.0%} da sessão a captura ficou instável, e "
+            "esses trechos ficaram de fora dos indicadores. Luz de frente e sem "
+            "contraluz costuma resolver; óculos com reflexo e algo cobrindo parte do "
+            "rosto também atrapalham."
+        )
 
     if ind.prop_com_rosto < PRESENCA_BAIXA:
         frases.append(

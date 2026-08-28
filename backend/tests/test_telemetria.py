@@ -179,4 +179,7 @@ def test_schema_do_log_nao_tem_campo_de_imagem_ou_video():
         # Quantas leituras a linha representa, depois da sumarização da ticket
         # 13. É uma contagem.
         "n_leituras",
+        # Se dá para confiar na leitura. Booleano derivado da estabilidade dos
+        # números, não de imagem.
+        "captura_confiavel",
     }

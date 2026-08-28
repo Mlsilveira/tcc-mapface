@@ -74,6 +74,7 @@ export class TelemetriaService implements OnDestroy {
 
   private readonly scoreSignal = signal<number | null>(null);
   private readonly calibrandoSignal = signal(false);
+  private readonly capturaConfiavelSignal = signal(true);
   private readonly fadigaSignal = signal(0);
   private readonly motivosSignal = signal<readonly string[]>([]);
   private readonly conectadoSignal = signal(false);
@@ -100,6 +101,15 @@ export class TelemetriaService implements OnDestroy {
 
   /** Por que houve penalidade: `palpebras-pesadas`, `olhos-fechados-prolongados`, `bocejos`. */
   readonly motivosDeFadiga = this.motivosSignal.asReadonly();
+
+  /**
+   * Se dá para confiar na última leitura (ticket 10).
+   *
+   * `false` quando a captura ficou instável — detecção piscando ou EAR saltando
+   * muito além do fisiológico. Começa em `true` porque o silêncio inicial não é
+   * motivo de alarme: sem leitura nenhuma, não há por que duvidar de nada.
+   */
+  readonly capturaConfiavel = this.capturaConfiavelSignal.asReadonly();
 
   readonly conectado = this.conectadoSignal.asReadonly();
 
@@ -142,6 +152,7 @@ export class TelemetriaService implements OnDestroy {
     this.janela = [];
     this.scoreSignal.set(null);
     this.calibrandoSignal.set(false);
+    this.capturaConfiavelSignal.set(true);
     this.fadigaSignal.set(0);
     this.motivosSignal.set([]);
     this.conectadoSignal.set(false);
@@ -168,6 +179,7 @@ export class TelemetriaService implements OnDestroy {
       tipo?: string;
       score?: number;
       calibrando?: boolean;
+      captura_confiavel?: boolean;
       fadiga?: number;
       motivos_fadiga?: string[];
     };
@@ -195,6 +207,10 @@ export class TelemetriaService implements OnDestroy {
       // ticket 7 não manda o campo, e assumir calibração eterna deixaria o aviso
       // preso na tela.
       this.calibrandoSignal.set(mensagem.calibrando === true);
+      // Ausente é tratado como confiável, pela mesma razão de `calibrando`: um
+      // backend anterior à ticket 10 não manda o campo, e assumir incerteza
+      // eterna deixaria o aviso preso na tela.
+      this.capturaConfiavelSignal.set(mensagem.captura_confiavel !== false);
       this.fadigaSignal.set(typeof mensagem.fadiga === 'number' ? mensagem.fadiga : 0);
       this.motivosSignal.set(
         Array.isArray(mensagem.motivos_fadiga) ? mensagem.motivos_fadiga : [],

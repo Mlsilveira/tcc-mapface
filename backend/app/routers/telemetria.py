@@ -131,7 +131,10 @@ async def telemetria_ws(
             id_sessao=sessao.id,
             score=resultado.score,
             fator_fadiga=resultado.fadiga.fator,
-            alertas=resultado.fadiga.motivos,
+            # Os alertas de fadiga e de captura vão pelo mesmo canal: os dois
+            # são o que o sistema quis dizer ao aluno naquele segundo.
+            alertas=tuple(resultado.fadiga.motivos) + resultado.qualidade.alertas,
+            captura_confiavel=resultado.qualidade.confiavel,
             # Sem rosto não há para onde olhar: `None` diz "não observado", que
             # é diferente de "olhando para a frente" — e é a mesma distinção que
             # a trilha ML faz entre NaN e zero.
@@ -159,6 +162,7 @@ async def telemetria_ws(
                 "tipo": "score",
                 "score": resultado.score,
                 "calibrando": resultado.calibrando,
+                "captura_confiavel": resultado.qualidade.confiavel,
                 "fadiga": resultado.fadiga.fator,
                 "motivos_fadiga": list(resultado.fadiga.motivos),
             }
