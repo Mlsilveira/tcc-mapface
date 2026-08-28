@@ -48,11 +48,29 @@ describe('agregar', () => {
     expect(payload!.yaw).toBeCloseTo(0, 10);
   });
 
-  it('leva apenas ear, yaw e presença de rosto — nunca landmarks', () => {
+  it('leva apenas ear, yaw, mar e presença de rosto — nunca landmarks', () => {
     // O contrato do payload é a fronteira de privacidade: o que não estiver
-    // aqui não sai do navegador.
+    // aqui não sai do navegador. A lista é fechada de propósito — qualquer
+    // campo novo precisa passar por aqui, e é neste momento que alguém tem que
+    // perguntar se ele carrega dado bruto de imagem.
+    //
+    // `mar` entrou na ticket 8: já era calculado desde a ticket 5 mas parava no
+    // navegador, e a detecção de bocejo precisa dele no servidor. Continua
+    // sendo número derivado de landmarks, não imagem.
     const payload = agregar([leitura(0.3, 0)]);
 
-    expect(Object.keys(payload!).sort()).toEqual(['ear', 'rosto_detectado', 'yaw']);
+    expect(Object.keys(payload!).sort()).toEqual(['ear', 'mar', 'rosto_detectado', 'yaw']);
+  });
+
+  it('promedia o mar da janela', () => {
+    const janela = [leitura(0.3, 0), leitura(0.3, 0)];
+    janela[0].mar = 0.1;
+    janela[1].mar = 0.5;
+
+    expect(agregar(janela)!.mar).toBeCloseTo(0.3, 10);
+  });
+
+  it('reporta mar zero quando a janela inteira ficou sem rosto', () => {
+    expect(agregar([null, null])!.mar).toBe(0);
   });
 });
