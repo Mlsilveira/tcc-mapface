@@ -49,6 +49,14 @@ export class HomeComponent implements OnInit, OnDestroy {
 
   readonly sessaoAtiva = this.sessaoService.sessaoAtiva;
   readonly streamDaWebcam = this.cameraService.stream;
+
+  /**
+   * Proporção real da câmera, para a caixa do preview acompanhá-la.
+   *
+   * Enquanto não há stream fica `null`, e o CSS usa a proporção de fallback —
+   * o que reserva o espaço antes do primeiro quadro e evita a tela pular.
+   */
+  readonly proporcaoDoPreview = this.cameraService.proporcao;
   readonly metricas = this.landmarksService.metricas;
   readonly fps = this.landmarksService.fps;
   readonly score = this.telemetriaService.score;

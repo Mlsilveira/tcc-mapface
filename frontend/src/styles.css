@@ -760,6 +760,10 @@ a:hover {
 .preview video {
   display: block;
   width: 100%;
+  /* Fallback. A proporção de verdade vem do componente, medida do stream, e
+     chega como estilo inline — que ganha desta regra. O 4:3 aqui só reserva o
+     espaço entre a tela montar e o primeiro quadro chegar, para o layout não
+     pular. */
   aspect-ratio: 4 / 3;
   /* Teto de altura em qualquer largura: sem ele, num notebook de 720px de
      altura o preview em 4:3 come a tela inteira e as métricas ficam abaixo da
@@ -767,19 +771,19 @@ a:hover {
   max-height: 56vh;
   border-radius: var(--raio-m);
   background: #0b1120;
-  /* `contain` e não `cover`: o preview precisa mostrar **o quadro inteiro**, e
-     não um recorte dele.
+  /* `contain` e não `cover`: o preview precisa mostrar **o quadro inteiro**.
 
-     A caixa é 4:3, mas a câmera pode entregar qualquer proporção — um celular
-     usado como câmera do Windows entrega 16:9. Com `cover`, um quadro 16:9
-     nesta caixa perde 25% da largura e aparece ampliado em 1,33×, o que numa
-     máquina de teste deixou o preview colado no rosto.
+     Com a caixa acompanhando a proporção da câmera, os dois dariam no mesmo na
+     prática — mas `contain` é a rede de segurança para quando a proporção não
+     puder ser medida e o fallback 4:3 valer. Aí um quadro 16:9 com `cover`
+     perderia 25% da largura e apareceria ampliado em 1,33×, que foi como o
+     preview acabou colado no rosto numa máquina de teste.
 
      Isso não é só estética: o MediaPipe lê o **quadro inteiro** do elemento,
-     não o recorte que o CSS desenha. Com `cover`, o aluno se enquadra olhando
-     para uma imagem que não corresponde ao que está sendo medido — ele veria
-     o rosto centralizado enquanto o algoritmo enxerga margens que ele não faz
-     ideia de que existem. As barras que sobram são o preço honesto disso. */
+     não o recorte que o CSS desenha. Recortando, o aluno se enquadra olhando
+     para uma imagem que não corresponde ao que está sendo medido — veria o
+     rosto centralizado enquanto o algoritmo enxerga margens que ele não faz
+     ideia de que existem. */
   object-fit: contain;
   /* Espelhado: o aluno espera se ver como num espelho, não como numa filmagem.
      É só apresentação — as métricas saem dos landmarks, não deste elemento. */
