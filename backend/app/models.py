@@ -77,3 +77,16 @@ class LogEngajamento(SQLModel, table=True):
     #: única forma de a série significar a mesma coisa entre alunos que sentam
     #: de jeitos diferentes. `None` quando não havia rosto.
     direcao_olhar: Optional[float] = Field(default=None)
+
+    #: EAR e MAR brutos da janela, como o navegador os mediu. `None` sem rosto.
+    #:
+    #: Existem para **calibração**, não para o score — que já é derivado deles.
+    #: Sem guardá-los não há como responder "o limiar de bocejo está certo?"
+    #: depois da sessão: foi exatamente o que faltou para diagnosticar os 58
+    #: alertas de bocejo da sessão de 28/08. A Sprint 11 prevê recalibrar esses
+    #: limiares com dados reais, e estes são os dados.
+    #:
+    #: São números derivados de landmarks, como todo o resto que trafega — a
+    #: fronteira de privacidade não se move por causa deles.
+    ear: Optional[float] = Field(default=None)
+    mar: Optional[float] = Field(default=None)
