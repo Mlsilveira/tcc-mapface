@@ -254,3 +254,57 @@ class TestPersistencia:
         corpo = client.post("/sessoes", headers=cabecalhos).json()
 
         assert corpo["inicio"].endswith("Z") or "+00:00" in corpo["inicio"]
+
+
+class TestRelatorioDaSessao:
+    """Endpoint do relatório de autopercepção (ticket 11).
+
+    A regra vive em `app/relatorio.py` e é testada em `test_relatorio.py`. O que
+    se afirma aqui é o que só existe no nível HTTP: quem pode ler o quê.
+    """
+
+    def test_relatorio_de_sessao_encerrada(self, client, cabecalhos):
+        sessao_id = client.post("/sessoes", headers=cabecalhos).json()["id"]
+        client.post(f"/sessoes/{sessao_id}/encerrar", headers=cabecalhos)
+
+        resposta = client.get(f"/sessoes/{sessao_id}/relatorio", headers=cabecalhos)
+
+        assert resposta.status_code == 200
+        corpo = resposta.json()
+        assert corpo["id_sessao"] == sessao_id
+        assert corpo["parcial"] is False
+        assert corpo["recomendacoes"]
+
+    def test_relatorio_de_sessao_ainda_aberta_vem_marcado_como_parcial(
+        self, client, cabecalhos
+    ):
+        # É o relatório parcial da ticket 11: sessão interrompida por queda de
+        # conexão nunca recebe `fim`, e o aluno não pode perder o que foi medido.
+        sessao_id = client.post("/sessoes", headers=cabecalhos).json()["id"]
+
+        corpo = client.get(f"/sessoes/{sessao_id}/relatorio", headers=cabecalhos).json()
+
+        assert corpo["parcial"] is True
+        assert corpo["fim"] is None
+
+    def test_relatorio_de_outro_aluno_e_indistinguivel_de_inexistente(
+        self, client, cabecalhos, cabecalhos_outro_aluno
+    ):
+        """Requisito de privacidade do spec: os dados de um estudante são
+        visíveis apenas para ele. Responder 403 já entregaria que a sessão
+        existe — 404 não conta nada."""
+        sessao_id = client.post("/sessoes", headers=cabecalhos).json()["id"]
+
+        resposta = client.get(
+            f"/sessoes/{sessao_id}/relatorio", headers=cabecalhos_outro_aluno
+        )
+
+        assert resposta.status_code == 404
+
+    def test_relatorio_exige_autenticacao(self, client, cabecalhos):
+        sessao_id = client.post("/sessoes", headers=cabecalhos).json()["id"]
+
+        assert client.get(f"/sessoes/{sessao_id}/relatorio").status_code == 401
+
+    def test_relatorio_de_sessao_inexistente(self, client, cabecalhos):
+        assert client.get("/sessoes/9999/relatorio", headers=cabecalhos).status_code == 404

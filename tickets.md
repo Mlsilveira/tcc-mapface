@@ -154,7 +154,11 @@ O payload do WebSocket passou a levar `mar`, que já era calculado no navegador 
 - [ ] Inclui recomendações básicas de autorregulação (pausas, mudança de estratégia)
 - [ ] Relatório parcial é gerado mesmo se a sessão for interrompida por erro (queda de conexão, falha do navegador)
 
-A base já está no lugar: `log_engajamento` passou a gravar `flag_fadiga`, `fator_fadiga`, `alerta_gerado` e `direcao_olhar`, que é o que sustenta os "alertas de fadiga registrados" deste relatório. Antes disso a ticket 8 calculava a fadiga e a descartava. O que falta aqui é o endpoint de dados agregados e a tela.
+**O backend está pronto; falta a tela.** `GET /sessoes/{id}/relatorio` devolve indicadores, série para o gráfico, contagem de alertas por tipo e as recomendações. A regra vive em [`backend/app/relatorio.py`](./backend/app/relatorio.py), fora do FastAPI, com 19 testes.
+
+Três decisões que valem a defesa. O relatório é **calculado sob demanda, não guardado**: guardá-lo criaria uma segunda fonte de verdade que envelhece, e a ticket 13 teria de manter as duas em dia. **Sessão aberta também tem relatório** — não há caminho especial para o critério parcial, o relatório simplesmente não exige `fim` e se marca como `parcial`. E as recomendações relatam o observado antes de sugerir, sem afirmar nada sobre estado mental: há um teste que falha se o texto disser que o aluno estava desatento ou cansado, porque o sistema mede proxies comportamentais e o texto não pode prometer mais que isso.
+
+Antes disso, `log_engajamento` passou a gravar `flag_fadiga`, `fator_fadiga`, `alerta_gerado`, `direcao_olhar`, `ear` e `mar` — a ticket 8 calculava a fadiga e a descartava.
 
 **Atenção ao atualizar:** não há Alembic, então um `app.db` anterior a essa mudança quebra com `no such column`. Ver a seção de schema no [README](./README.md).
 
