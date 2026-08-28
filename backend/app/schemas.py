@@ -43,6 +43,27 @@ class Token(BaseModel):
     token_type: str = "bearer"
 
 
+class ItemDoHistoricoPublico(BaseModel):
+    """Uma sessão na lista de histórico (ticket 12).
+
+    Traz o suficiente para o aluno escolher qual relatório abrir, sem que a
+    lista precise carregar a série de cada sessão. O relatório completo continua
+    em `GET /sessoes/{id}/relatorio`.
+    """
+
+    id_sessao: int
+    inicio: datetime
+    fim: Optional[datetime] = None
+    #: `True` enquanto a sessão não foi encerrada — inclusive a que corre agora.
+    parcial: bool
+    duracao_s: float
+    n_leituras: int
+    score_medio: float
+    teve_fadiga: bool
+
+    model_config = {"from_attributes": True}
+
+
 class IndicadoresPublicos(BaseModel):
     """Os números-chave da sessão (ticket 11)."""
 
