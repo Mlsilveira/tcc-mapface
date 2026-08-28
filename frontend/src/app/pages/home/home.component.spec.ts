@@ -65,6 +65,7 @@ class LandmarksServiceFalso {
 class TelemetriaServiceFalso {
   readonly score = signal<number | null>(null);
   readonly conectado = signal(false);
+  readonly capturaConfiavel = signal(true);
 
   readonly iniciar = jasmine.createSpy('iniciar');
   readonly parar = jasmine.createSpy('parar');
@@ -584,6 +585,43 @@ describe('HomeComponent', () => {
 
       expect(botao('encerrar-sessao')).toBeTruthy();
       expect(texto()).toContain('não foi possível carregar o modelo');
+    });
+  });
+
+  describe('incerteza de captura', () => {
+    function aviso(): HTMLElement | null {
+      return fixture.nativeElement.querySelector('[data-teste="incerteza-captura"]');
+    }
+
+    it('não avisa nada enquanto a captura está boa', async () => {
+      // Um alerta que aparece em sessão normal treina o aluno a ignorá-lo.
+      await abrirTelaEAguardar(SESSAO_EM_ANDAMENTO);
+
+      expect(aviso()).toBeNull();
+    });
+
+    it('avisa quando o backend reporta captura instável', async () => {
+      await abrirTelaEAguardar(SESSAO_EM_ANDAMENTO);
+
+      telemetria.capturaConfiavel.set(false);
+      fixture.detectChanges();
+
+      expect(aviso()).toBeTruthy();
+      // A frase precisa ressalvar os números e dizer o que fazer — um aviso que
+      // só diz "algo está errado" não ajuda o aluno a melhorar a próxima sessão.
+      expect(aviso()!.textContent).toContain('podem não descrever você');
+      expect(aviso()!.textContent).toContain('Luz de frente');
+    });
+
+    it('retira o aviso quando a captura se recupera', async () => {
+      await abrirTelaEAguardar(SESSAO_EM_ANDAMENTO);
+
+      telemetria.capturaConfiavel.set(false);
+      fixture.detectChanges();
+      telemetria.capturaConfiavel.set(true);
+      fixture.detectChanges();
+
+      expect(aviso()).toBeNull();
     });
   });
 

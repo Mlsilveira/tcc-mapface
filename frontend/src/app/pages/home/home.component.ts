@@ -61,6 +61,7 @@ export class HomeComponent implements OnInit, OnDestroy {
   readonly fps = this.landmarksService.fps;
   readonly score = this.telemetriaService.score;
   readonly telemetriaConectada = this.telemetriaService.conectado;
+  readonly capturaConfiavel = this.telemetriaService.capturaConfiavel;
 
   /** Piso de FPS exigido pela ticket 5. Abaixo disso a interface avisa o aluno. */
   readonly FPS_MINIMO = 15;

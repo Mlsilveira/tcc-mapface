@@ -29,6 +29,7 @@ def registrar_log(
     direcao_olhar: Optional[float] = None,
     ear: Optional[float] = None,
     mar: Optional[float] = None,
+    captura_confiavel: bool = True,
 ) -> LogEngajamento:
     """Grava um ponto da série de engajamento da sessão.
 
@@ -55,6 +56,7 @@ def registrar_log(
         direcao_olhar=direcao_olhar,
         ear=ear,
         mar=mar,
+        captura_confiavel=captura_confiavel,
     )
     db.add(log)
     db.commit()

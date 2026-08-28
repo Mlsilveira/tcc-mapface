@@ -32,6 +32,7 @@ from statistics import median
 from typing import Deque, Dict, List, Optional, Tuple
 
 from app.config import settings
+from app.qualidade import CAPTURA_CONFIAVEL, DetectorDeIncerteza, Qualidade
 from app.tempo import agora_utc
 
 PESO_OCULAR = 0.6
@@ -179,6 +180,7 @@ class ResultadoIEE:
     calibrando: bool
     baseline: Baseline
     fadiga: Fadiga = SEM_FADIGA
+    qualidade: Qualidade = CAPTURA_CONFIAVEL
 
 
 def _entre_zero_e_um(valor: float) -> float:
@@ -447,6 +449,7 @@ class AnalistaEngajamento:
         self._ultima_presenca: Optional[datetime] = None
         self._fadiga = DetectorDeFadiga()
         self._ultima_fadiga: Fadiga = SEM_FADIGA
+        self._incerteza = DetectorDeIncerteza()
 
     @property
     def baseline(self) -> Optional[Baseline]:
@@ -476,14 +479,35 @@ class AnalistaEngajamento:
     ) -> ResultadoIEE:
         """Registra uma leitura e devolve o IEE do instante."""
         agora = agora or agora_utc()
+        qualidade = self._incerteza.observar(
+            ear=ear, rosto_detectado=rosto_detectado, agora=agora
+        )
 
-        if self._baseline is None:
-            self._acumular(ear, yaw, rosto_detectado, agora)
+        # **Leitura não confiável não alimenta nada.** Calibrar contra landmarks
+        # instáveis fixaria uma baseline ruim para a sessão inteira, e um EAR que
+        # salta produziria fechamentos e microssonos que nunca aconteceram. O
+        # buraco que isso abre nas janelas é tratado como tempo não observado,
+        # que é exatamente o que ele é.
+        if qualidade.confiavel:
+            if self._baseline is None:
+                self._acumular(ear, yaw, rosto_detectado, agora)
 
         baseline = self._baseline or BASELINE_PROVISORIA
-        self._ultima_fadiga = self._fadiga.observar(
-            agora=agora, ear=ear, baseline=baseline, mar=mar, rosto_detectado=rosto_detectado
-        )
+        if qualidade.confiavel:
+            self._ultima_fadiga = self._fadiga.observar(
+                agora=agora, ear=ear, baseline=baseline, mar=mar, rosto_detectado=rosto_detectado
+            )
+        else:
+            # **Captura duvidosa não afirma fadiga.** Manter o último valor
+            # medido congelaria uma penalidade que ninguém consegue mais
+            # verificar, e ela ficaria de pé pelo tempo que a captura levasse a
+            # melhorar. "Não sabemos" vale para tudo o que se derivaria daquela
+            # leitura, não só para o score.
+            #
+            # A janela do detector não é limpa: quando a captura voltar, o
+            # histórico anterior à instabilidade continua lá e a fadiga real
+            # reaparece — o buraco no meio é tratado como tempo não observado.
+            self._ultima_fadiga = SEM_FADIGA
 
         return ResultadoIEE(
             score=calcular_iee(
@@ -496,6 +520,7 @@ class AnalistaEngajamento:
             calibrando=self._baseline is None,
             baseline=baseline,
             fadiga=self._ultima_fadiga,
+            qualidade=qualidade,
         )
 
     # --- Calibração --------------------------------------------------------

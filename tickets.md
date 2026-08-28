@@ -139,9 +139,19 @@ O payload do WebSocket passou a levar `mar`, que já era calculado no navegador 
 
 **Bloqueada por:** Ticket 7.
 
-- [ ] Alerta de "Incerteza de Captura" em cenários de baixa luz, óculos reflexivos ou oclusão
-- [ ] O alerta não é registrado como score corrompido no banco
-- [ ] Score zera quando o rosto fica ausente por tempo prolongado
+- [x] Alerta de "Incerteza de Captura" em cenários de baixa luz, óculos reflexivos ou oclusão
+- [x] O alerta não é registrado como score corrompido no banco
+- [x] Score zera quando o rosto fica ausente por tempo prolongado — entregue na ticket 7 pelo `P(t) = 0`
+
+Implementado em [`backend/app/qualidade.py`](./backend/app/qualidade.py), com o aviso na tela de sessão. 36 testes.
+
+**Não afirmamos a causa.** A ticket lista baixa luz, óculos reflexivos e oclusão, mas nada do que chega ao backend distingue os três — só coordenadas numéricas. O que dá para afirmar é que a captura ficou instável, e é isso que o nome do alerta diz. Prometer o diagnóstico da causa seria inventar.
+
+Dois sinais, **calibrados contra as sessões reais de webcam de 28/08**: sumiços breves e repetidos do rosto (quem se levanta produz uma ausência longa e única; landmarks que não se firmam produzem piscadas de detecção — nas sessões boas houve *zero*), e jitter mediano do EAR entre leituras vizinhas (0,034 nas sessões boas, com p90 de 0,095; o limiar é 0,10). A **mediana** e não a média, para que um bocejo isolado não dispare o alerta.
+
+Três decisões que valem a defesa. **Leitura incerta não alimenta nada** — nem a calibração, que fixaria uma baseline ruim para a sessão inteira, nem a fadiga, onde um EAR saltando produziria microssonos que nunca aconteceram. **A leitura é gravada e marcada, não descartada**: é assim que o critério "não registrar score corrompido" se cumpre sem abrir um buraco na série — o relatório exclui as incertas dos indicadores, então uma câmera ruim vira "a captura falhou em 30% da sessão" em vez de "você esteve disperso em 30% da sessão". E a **sumarização separa leituras confiáveis das duvidosas** dentro do mesmo minuto, para as médias e proporções continuarem exatas depois de resumir.
+
+O risco desta ticket não é deixar de detectar captura ruim — é alarmar em captura boa, porque um alerta que aparece em sessão normal treina o aluno a ignorá-lo. Metade dos testes afirma que o alerta *não* dispara.
 
 ## 11. Relatório de autopercepção
 
