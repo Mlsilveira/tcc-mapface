@@ -1,0 +1,239 @@
+"""Relatório de autopercepção da sessão de estudo (ticket 11).
+
+Como `sessoes.py` e `analista.py`, este módulo não conhece HTTP nem WebSocket:
+recebe a série de logs e devolve indicadores. É onde os testes batem.
+
+**O relatório é calculado sob demanda, não guardado.** Guardá-lo criaria uma
+segunda fonte de verdade que envelhece — e a ticket 13, que vai sumarizar os
+logs granulares depois da sessão, teria de manter as duas em dia. Calcular na
+hora custa uma varredura sobre alguns milhares de linhas de uma sessão, o que é
+barato, e garante que o relatório sempre descreve o que está no banco.
+
+**Sessão aberta também tem relatório.** É o critério de relatório parcial da
+ticket 11: se o navegador caiu ou a conexão morreu antes do encerramento formal,
+o aluno não pode perder o que já foi medido. Não há caminho especial para isso —
+o relatório simplesmente não exige `fim`, e se marca como `parcial`.
+
+O tom das recomendações é decisão de produto, não de implementação: o sistema
+**não diagnostica, não avalia e não julga**. As frases abaixo sugerem, não
+prescrevem, e nenhuma delas afirma algo sobre o estado mental do aluno — só
+relatam o que foi observado e oferecem uma ação possível.
+"""
+from dataclasses import dataclass
+from datetime import datetime
+from typing import Dict, List, Optional, Sequence
+
+from app.models import LogEngajamento, SessaoEstudo
+from app.tempo import como_utc
+
+#: Abaixo disto, a sessão teve engajamento médio baixo o bastante para valer uma
+#: sugestão de pausa. Não é diagnóstico: é o ponto em que a média deixa de ser
+#: explicável por variação normal de atenção ao longo de uma sessão.
+SCORE_BAIXO = 55.0
+
+#: Queda, em pontos, entre o primeiro e o último terço da sessão que caracteriza
+#: uma tendência — e não a oscilação normal de quem estuda.
+QUEDA_RELEVANTE = 15.0
+
+#: Fração da sessão com alerta de fadiga a partir da qual a fadiga deixa de ser
+#: episódica.
+FRACAO_FADIGA_ALTA = 0.30
+
+#: Abaixo desta fração de leituras com rosto, a medição cobriu pouco da sessão e
+#: os indicadores merecem ressalva explícita — em vez de serem apresentados como
+#: se descrevessem a sessão inteira.
+PRESENCA_BAIXA = 0.70
+
+
+@dataclass(frozen=True)
+class Indicadores:
+    """Os números que resumem uma sessão."""
+
+    n_leituras: int
+    duracao_s: float
+    score_medio: float
+    score_minimo: float
+    score_maximo: float
+    #: Média do primeiro e do último terço, para enxergar tendência.
+    score_inicio: float
+    score_fim: float
+    prop_com_rosto: float
+    prop_com_fadiga: float
+    fadiga_maxima: float
+    desvio_olhar_medio: float
+
+
+@dataclass(frozen=True)
+class PontoDaSerie:
+    """Um instante do gráfico do IEE."""
+
+    horario: datetime
+    score: float
+    fadiga: float
+    alerta: Optional[str]
+
+
+@dataclass(frozen=True)
+class Relatorio:
+    id_sessao: int
+    inicio: datetime
+    fim: Optional[datetime]
+    #: `True` quando a sessão não foi encerrada formalmente.
+    parcial: bool
+    indicadores: Indicadores
+    serie: List[PontoDaSerie]
+    #: Quantas leituras registraram cada tipo de alerta.
+    alertas: Dict[str, int]
+    recomendacoes: List[str]
+
+
+def _media(valores: Sequence[float]) -> float:
+    return sum(valores) / len(valores) if valores else 0.0
+
+
+def _terco(valores: Sequence[float], final: bool) -> float:
+    """Média do primeiro ou do último terço da série.
+
+    Terços, e não primeiro-versus-último ponto: um único ponto é ruído, e a
+    pergunta que interessa — "o engajamento caiu ao longo da sessão?" — é sobre
+    tendência.
+    """
+    if not valores:
+        return 0.0
+    tamanho = max(1, len(valores) // 3)
+    return _media(valores[-tamanho:] if final else valores[:tamanho])
+
+
+def _indicadores(logs: Sequence[LogEngajamento]) -> Indicadores:
+    scores = [log.score for log in logs]
+    com_rosto = [log for log in logs if log.direcao_olhar is not None]
+    com_fadiga = [log for log in logs if log.flag_fadiga]
+
+    if logs:
+        duracao = (como_utc(logs[-1].horario_registro) - como_utc(logs[0].horario_registro))
+        duracao_s = duracao.total_seconds()
+    else:
+        duracao_s = 0.0
+
+    return Indicadores(
+        n_leituras=len(logs),
+        duracao_s=duracao_s,
+        score_medio=_media(scores),
+        score_minimo=min(scores) if scores else 0.0,
+        score_maximo=max(scores) if scores else 0.0,
+        score_inicio=_terco(scores, final=False),
+        score_fim=_terco(scores, final=True),
+        prop_com_rosto=len(com_rosto) / len(logs) if logs else 0.0,
+        prop_com_fadiga=len(com_fadiga) / len(logs) if logs else 0.0,
+        fadiga_maxima=max((log.fator_fadiga for log in logs), default=0.0),
+        # Só faz sentido sobre as leituras em que havia rosto: incluir as outras
+        # como zero puxaria a média para "olhando de frente" justamente nos
+        # instantes em que não havia para onde olhar.
+        desvio_olhar_medio=_media([abs(log.direcao_olhar) for log in com_rosto]),
+    )
+
+
+def _contar_alertas(logs: Sequence[LogEngajamento]) -> Dict[str, int]:
+    """Quantas leituras registraram cada tipo de alerta.
+
+    Conta **leituras**, não episódios. Um cochilo de quatro segundos aparece em
+    várias leituras seguidas, e a janela de fadiga o mantém vivo por um minuto —
+    então este número mede *por quanto tempo o alerta esteve de pé*, que é o que
+    o gráfico mostra. Contar episódios distintos exigiria reprocessar a série
+    inteira pelo detector, e é trabalho da ticket 13, ao sumarizar.
+    """
+    contagem: Dict[str, int] = {}
+    for log in logs:
+        if not log.alerta_gerado:
+            continue
+        for alerta in log.alerta_gerado.split(","):
+            contagem[alerta] = contagem.get(alerta, 0) + 1
+    return contagem
+
+
+def _recomendacoes(ind: Indicadores, alertas: Dict[str, int]) -> List[str]:
+    """Sugestões de autorregulação a partir do que foi observado.
+
+    Cada frase relata o observado antes de sugerir, de propósito: uma sugestão
+    sem o dado que a motivou é um palpite, e o aluno não tem como avaliar se faz
+    sentido para ele. Nenhuma afirma nada sobre estado mental — o sistema mede
+    proxies comportamentais visuais, e o texto não pode prometer mais que isso.
+    """
+    frases: List[str] = []
+
+    if ind.n_leituras == 0:
+        return ["Não houve medição nesta sessão — a webcam pode não ter sido autorizada."]
+
+    if ind.prop_com_rosto < PRESENCA_BAIXA:
+        frases.append(
+            f"Seu rosto foi detectado em {ind.prop_com_rosto:.0%} do tempo, então os "
+            "indicadores abaixo descrevem só essa parte da sessão."
+        )
+
+    if alertas.get("olhos-fechados-prolongados"):
+        frases.append(
+            "Houve momentos de olhos fechados por vários segundos seguidos. "
+            "Se você se sentir cansado, uma pausa curta costuma render mais que insistir."
+        )
+    elif ind.prop_com_fadiga > FRACAO_FADIGA_ALTA:
+        frases.append(
+            f"Sinais de cansaço apareceram em {ind.prop_com_fadiga:.0%} da sessão. "
+            "Considere uma pausa antes do próximo bloco de estudo."
+        )
+
+    if alertas.get("bocejos"):
+        frases.append("Bocejos foram registrados — vale observar se o horário de estudo está favorecendo você.")
+
+    queda = ind.score_inicio - ind.score_fim
+    if queda >= QUEDA_RELEVANTE:
+        frases.append(
+            f"Seu índice caiu cerca de {queda:.0f} pontos entre o começo e o fim da sessão. "
+            "Trocar de assunto ou de formato de estudo pode ajudar a retomar."
+        )
+
+    if ind.desvio_olhar_medio > 20:
+        frases.append(
+            "Sua cabeça esteve bastante virada em relação à sua posição neutra. "
+            "Se houver algo disputando sua atenção por perto, afastá-lo pode ajudar."
+        )
+
+    if not frases and ind.score_medio >= SCORE_BAIXO:
+        frases.append("Sessão estável, sem sinais relevantes de dispersão ou cansaço.")
+    elif not frases:
+        frases.append(
+            "O índice ficou baixo sem um motivo isolado que se destaque. "
+            "Vale observar se o ambiente ou o horário estão ajudando."
+        )
+
+    return frases
+
+
+def montar(sessao: SessaoEstudo, logs: Sequence[LogEngajamento]) -> Relatorio:
+    """Monta o relatório de uma sessão a partir da série gravada.
+
+    Função pura sobre os dados: não consulta o banco, não sabe de HTTP, e por
+    isso os testes conseguem montar sessões improváveis — vazia, interrompida,
+    toda sem rosto — sem subir aplicação nenhuma.
+    """
+    ordenados = sorted(logs, key=lambda log: como_utc(log.horario_registro))
+    indicadores = _indicadores(ordenados)
+    alertas = _contar_alertas(ordenados)
+
+    return Relatorio(
+        id_sessao=sessao.id,
+        inicio=como_utc(sessao.inicio),
+        fim=como_utc(sessao.fim) if sessao.fim else None,
+        parcial=sessao.fim is None,
+        indicadores=indicadores,
+        serie=[
+            PontoDaSerie(
+                horario=como_utc(log.horario_registro),
+                score=log.score,
+                fadiga=log.fator_fadiga,
+                alerta=log.alerta_gerado,
+            )
+            for log in ordenados
+        ],
+        alertas=alertas,
+        recomendacoes=_recomendacoes(indicadores, alertas),
+    )

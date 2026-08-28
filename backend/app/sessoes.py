@@ -72,6 +72,20 @@ def buscar_ativa(
     ).first()
 
 
+def buscar(db: Session, id_sessao: int, id_aluno: int) -> SessaoEstudo:
+    """Uma sessão do aluno, aberta ou encerrada.
+
+    Diferente de `_buscar_em_andamento`, aceita sessão já encerrada: o relatório
+    da ticket 11 é lido justamente depois do fim, e o histórico da ticket 12 lê
+    sessões antigas. Sessão de outro aluno continua indistinguível de sessão
+    inexistente — nada sobre os dados de um estudante vaza para outro.
+    """
+    sessao = db.get(SessaoEstudo, id_sessao)
+    if sessao is None or sessao.id_aluno != id_aluno:
+        raise SessaoNaoEncontrada
+    return sessao
+
+
 def iniciar(db: Session, id_aluno: int, agora: Optional[datetime] = None) -> SessaoEstudo:
     agora = agora or agora_utc()
 
