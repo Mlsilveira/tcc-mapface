@@ -172,4 +172,8 @@ def test_schema_do_log_nao_tem_campo_de_imagem_ou_video():
         "fator_fadiga",
         "alerta_gerado",
         "direcao_olhar",
+        # EAR e MAR brutos, para calibrar limiares depois da sessão. São razões
+        # entre distâncias de landmarks — número, não imagem.
+        "ear",
+        "mar",
     }

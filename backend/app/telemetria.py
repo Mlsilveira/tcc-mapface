@@ -25,6 +25,8 @@ def registrar_log(
     fator_fadiga: float = 0.0,
     alertas: Sequence[str] = (),
     direcao_olhar: Optional[float] = None,
+    ear: Optional[float] = None,
+    mar: Optional[float] = None,
 ) -> LogEngajamento:
     """Grava um ponto da série de engajamento da sessão.
 
@@ -49,6 +51,8 @@ def registrar_log(
         flag_fadiga=fator_fadiga > 0,
         alerta_gerado=",".join(alertas) or None,
         direcao_olhar=direcao_olhar,
+        ear=ear,
+        mar=mar,
     )
     db.add(log)
     db.commit()

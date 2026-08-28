@@ -11,8 +11,17 @@ que é exatamente o que este arquivo faz.
 Todas as sequências abaixo são construídas à mão, a 1 Hz, com os valores
 esperados calculados a partir das constantes acordadas:
 
-    PERCLOS = tempo com pálpebra fechada / tempo com rosto visível
+    PERCLOS = fechamento difuso / tempo observado, ambos **descontados dos
+              episódios longos**, que já são cobrados pelo microssono
     penalidade_perclos = 25 × (PERCLOS − 0,15) / (0,40 − 0,15), limitada a [0, 25]
+    penalidade de episódio = valor cheio × (1 − idade / 60 s)
+
+Duas convenções que explicam os números esperados. A primeira: o intervalo entre
+duas amostras é atribuído ao estado da **primeira**, então um fechamento nas
+amostras 10–12 vale até t=13. A segunda: episódios decaem pela idade, então o
+mesmo evento vale menos conforme a sessão avança — foi a sessão real de 28/08,
+com 88 de 92 leituras em penalidade cheia, que mostrou por que o degrau anterior
+não servia.
 """
 from datetime import datetime, timedelta, timezone
 
@@ -116,16 +125,36 @@ def test_perclos_saturado_da_a_penalidade_maxima():
 def test_fechamento_prolongado_penaliza_mesmo_com_perclos_baixo():
     """Três segundos seguidos de olho fechado não são três piscadas.
 
-    A proporção sozinha não distingue os dois casos — 3 s em 60 dá PERCLOS de
-    0,05 de qualquer jeito. É por isso que a corrida máxima é um sinal separado.
+    A proporção sozinha não distingue os dois casos. É por isso que a corrida
+    máxima é um sinal separado — e por isso o episódio longo sai do PERCLOS,
+    para não ser cobrado duas vezes pelo mesmo fechamento.
     """
     estados = [EAR_FECHADO if i in (10, 11, 12) else EAR_ABERTO for i in range(61)]
     fadiga = roda(estados)
 
-    assert fadiga.perclos == pytest.approx(0.05)   # abaixo do limiar
     assert fadiga.maior_fechamento_s == pytest.approx(3.0)
-    assert fadiga.fator == pytest.approx(PENALIDADE_MICROSSONO)
+    assert fadiga.perclos == pytest.approx(0.0)   # o fechamento inteiro virou microssono
     assert "olhos-fechados-prolongados" in fadiga.motivos
+    assert "palpebras-pesadas" not in fadiga.motivos
+
+    # O fechamento cobre as amostras 10-12, e o intervalo 12→13 ainda é
+    # atribuído ao estado da amostra 12: o episódio vale até t=13. Avaliado em
+    # t=60, tem 47 s de idade numa janela de 60 → peso 13/60.
+    assert fadiga.fator == pytest.approx(PENALIDADE_MICROSSONO * 13 / 60)
+
+
+def test_fechamento_recente_pesa_mais_que_o_antigo():
+    """O decaimento é a diferença entre "está cochilando" e "cochilou".
+
+    Sem ele a penalidade é um degrau: o mesmo valor no segundo seguinte e 59
+    segundos depois, sumindo de uma vez. Numa sessão real, três episódios
+    espaçados deixaram 88 de 92 leituras com penalidade cheia.
+    """
+    antigo = roda([EAR_FECHADO if i in (5, 6, 7) else EAR_ABERTO for i in range(61)])
+    recente = roda([EAR_FECHADO if i in (56, 57, 58) else EAR_ABERTO for i in range(61)])
+
+    assert recente.fator > antigo.fator
+    assert recente.fator == pytest.approx(PENALIDADE_MICROSSONO * 59 / 60)
 
 
 def test_fechamento_curto_nao_conta_como_microssono():
@@ -142,12 +171,26 @@ def test_fechamento_curto_nao_conta_como_microssono():
 
 def test_bocejo_sustentado_e_contado():
     # Boca aberta em 20, 21, 22 → dois intervalos de 1 s → atinge os 2 s exigidos.
+    # O bocejo cobre as amostras 20-22 e vale até t=23; em t=60, pesa 23/60.
     mars = [MAR_BOCEJO if i in (20, 21, 22) else MAR_FECHADA for i in range(61)]
     fadiga = roda([EAR_ABERTO] * 61, mars=mars)
 
     assert fadiga.bocejos == 1
-    assert fadiga.fator == pytest.approx(PENALIDADE_POR_BOCEJO)
+    assert fadiga.fator == pytest.approx(PENALIDADE_POR_BOCEJO * 23 / 60)
     assert "bocejos" in fadiga.motivos
+
+
+def test_bocejo_em_curso_pesa_cheio():
+    """Um bocejo é datado pelo fim, não por quando cruza os 2 s.
+
+    Datá-lo na largada faria um bocejo ainda acontecendo perder peso enquanto
+    acontece — o oposto do que deveria.
+    """
+    mars = [MAR_BOCEJO if i >= 57 else MAR_FECHADA for i in range(61)]
+    fadiga = roda([EAR_ABERTO] * 61, mars=mars)
+
+    assert fadiga.bocejos == 1
+    assert fadiga.fator == pytest.approx(PENALIDADE_POR_BOCEJO)
 
 
 def test_boca_aberta_por_um_instante_nao_e_bocejo():
@@ -159,12 +202,13 @@ def test_boca_aberta_por_um_instante_nao_e_bocejo():
     assert fadiga.fator == 0.0
 
 
-def test_dois_bocejos_penalizam_o_dobro():
+def test_bocejos_somam_e_o_mais_recente_pesa_mais():
+    # Bocejos valendo até t=13 e t=43 → pesos 13/60 e 43/60.
     mars = [MAR_BOCEJO if i in (10, 11, 12, 40, 41, 42) else MAR_FECHADA for i in range(61)]
     fadiga = roda([EAR_ABERTO] * 61, mars=mars)
 
     assert fadiga.bocejos == 2
-    assert fadiga.fator == pytest.approx(2 * PENALIDADE_POR_BOCEJO)
+    assert fadiga.fator == pytest.approx(PENALIDADE_POR_BOCEJO * (13 / 60 + 43 / 60))
 
 
 def test_sem_mar_no_payload_nao_inventa_bocejo():
@@ -239,8 +283,15 @@ def test_o_mesmo_ear_e_fadiga_para_quem_tem_baseline_alta():
     baixa = roda([0.12] * 61, baseline=Baseline(ear_neutro=0.18, yaw_neutro=0.0))
     alta = roda([0.12] * 61, baseline=Baseline(ear_neutro=0.30, yaw_neutro=0.0))
 
-    assert baixa.perclos == pytest.approx(0.0)
-    assert alta.perclos == pytest.approx(1.0)
+    assert baixa.fator == 0.0
+    assert baixa.maior_fechamento_s == pytest.approx(0.0)
+
+    # Para quem tem a baseline alta, o minuto inteiro é um só fechamento — que
+    # por ser contínuo é microssono, e não pálpebra difusa. Por isso o PERCLOS
+    # fica em zero: ele mede o que sobra depois dos episódios longos.
+    assert alta.maior_fechamento_s == pytest.approx(60.0)
+    assert alta.perclos == pytest.approx(0.0)
+    assert "olhos-fechados-prolongados" in alta.motivos
 
 
 # --- Teto e janela ---------------------------------------------------------
@@ -252,9 +303,12 @@ def test_fator_nao_passa_do_teto():
     Se pudesse, a componente de atenção — EAR e head pose — viraria decoração,
     e o índice deixaria de informar o que se propõe a informar.
     """
-    mars = [MAR_BOCEJO] * 61
+    # Olhos fechados o minuto inteiro e bocejos encadeados: cerca de vinte
+    # bocejos somados dariam muito mais de 40 pontos sem o teto.
+    mars = [MAR_BOCEJO if i % 3 else MAR_FECHADA for i in range(61)]
     fadiga = roda([EAR_FECHADO] * 61, mars=mars)
 
+    assert fadiga.bocejos > 10
     assert fadiga.fator == pytest.approx(FADIGA_MAXIMA)
 
 
