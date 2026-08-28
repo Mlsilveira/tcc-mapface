@@ -18,6 +18,21 @@
             <p class="sessao__desde" data-teste="sessao-em-andamento">
               Sessão em andamento desde {{ sessao.inicio | date: 'shortTime' }}.
             </p>
+
+            @if (duracaoDaSessao(); as duracao) {
+              <!-- `time` e não `span`: é uma duração, e o leitor de tela deve
+                   anunciá-la como tal. `aria-live="off"` porque um cronômetro
+                   que se anuncia a cada segundo tornaria a tela inusável para
+                   quem depende de leitor de tela. -->
+              <time
+                class="sessao__cronometro"
+                data-teste="cronometro-sessao"
+                aria-live="off"
+                [attr.datetime]="sessao.inicio"
+              >
+                {{ duracao }}
+              </time>
+            }
           </div>
 
           <button
