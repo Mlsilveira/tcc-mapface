@@ -46,7 +46,8 @@ Implementado:
 - **Ticket 8 — Fator de fadiga.** `DetectorDeFadiga` penaliza o IEE por pálpebra pesada (PERCLOS), fechamento prolongado e bocejo, com os limiares relativos à baseline do aluno. O fator vem de regras, e não do Random Forest — o porquê está em [`resultado_18_08.md`](./resultado_18_08.md).
 - **Ticket 10 — Condições adversas.** `DetectorDeIncerteza` marca a leitura como não confiável quando a detecção pisca ou o EAR salta além do fisiológico; a tela avisa, e o relatório exclui esses trechos dos indicadores em vez de contá-los como dispersão.
 - **Ticket 11 — Relatório de autopercepção.** Encerrar a sessão leva o aluno a `/relatorio/:id`, com o gráfico do IEE, os indicadores da sessão, os alertas registrados e as recomendações de autorregulação. Sessão interrompida antes do encerramento também tem relatório, marcado como parcial. Absorveu a ticket 9, retirada do produto.
-- **Tickets 12 e 13 — Histórico e retenção (backend).** `GET /sessoes` lista as sessões passadas do aluno com o resumo de cada uma, e os logs granulares são resumidos em médias por minuto ao fim da sessão. A tela do histórico ainda não existe.
+- **Ticket 12 — Histórico de sessões.** `/historico` lista as sessões do aluno, da mais recente para a mais antiga, cada uma com duração, índice médio e sinal de cansaço, e cada linha abre o relatório completo daquela sessão.
+- **Ticket 13 — Retenção de logs.** Os logs granulares são resumidos em médias por minuto ao fim da sessão, com indexação temporal em `horario_registro`.
 
 O plano completo, com as 16 fatias verticais e suas dependências, está em [`tickets.md`](./tickets.md). O problema, as histórias de usuário e as decisões de arquitetura estão em [`spec-poc-iee.md`](./spec-poc-iee.md).
 

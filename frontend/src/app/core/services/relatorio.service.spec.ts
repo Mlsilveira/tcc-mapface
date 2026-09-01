@@ -4,6 +4,7 @@ import { TestBed } from '@angular/core/testing';
 
 import {
   ALERTA_INCERTEZA,
+  ItemDoHistorico,
   PontoDoRelatorio,
   Relatorio,
   RelatorioService,
@@ -46,6 +47,17 @@ const RELATORIO: Relatorio = {
   recomendacoes: ['Sessão estável, sem sinais relevantes de dispersão ou cansaço.'],
 };
 
+const HISTORICO: ItemDoHistorico = {
+  id_sessao: 7,
+  inicio: '2026-08-13T12:00:00Z',
+  fim: '2026-08-13T12:30:00Z',
+  parcial: false,
+  duracao_s: 1800,
+  n_leituras: 1800,
+  score_medio: 72.5,
+  teve_fadiga: true,
+};
+
 describe('RelatorioService', () => {
   let service: RelatorioService;
   let httpMock: HttpTestingController;
@@ -71,6 +83,20 @@ describe('RelatorioService', () => {
     requisicao.flush(RELATORIO);
 
     expect(recebidos).toEqual([RELATORIO]);
+  });
+
+  it('lista as sessões passadas do aluno autenticado (ticket 12)', () => {
+    // Sem parâmetro de aluno: o backend tira o dono do token, e aceitar um id
+    // do cliente deixaria qualquer um listar as sessões de qualquer outro.
+    const recebidos: ItemDoHistorico[][] = [];
+    service.historico().subscribe((itens) => recebidos.push(itens));
+
+    const requisicao = httpMock.expectOne(`${API}/sessoes`);
+    expect(requisicao.request.method).toBe('GET');
+    expect(requisicao.request.params.keys()).toEqual([]);
+    requisicao.flush([HISTORICO]);
+
+    expect(recebidos).toEqual([[HISTORICO]]);
   });
 });
 

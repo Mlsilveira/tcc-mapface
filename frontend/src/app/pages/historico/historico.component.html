@@ -1,0 +1,72 @@
+<div class="aplicacao">
+  <header class="topo">
+    <div class="topo__interno">
+      <app-logo />
+      <button type="button" class="botao botao--fantasma" data-teste="voltar" (click)="voltar()">
+        Voltar
+      </button>
+    </div>
+  </header>
+
+  <main class="conteudo">
+    <section class="painel">
+      <h1>Suas sessões</h1>
+
+      @if (carregando()) {
+        <p class="carregando" role="status" data-teste="carregando">Buscando suas sessões…</p>
+      } @else if (erro()) {
+        <p class="erro-geral" role="alert" data-teste="erro">{{ erro() }}</p>
+      } @else if (vazio()) {
+        <p class="sem-rosto" data-teste="historico-vazio">
+          Você ainda não tem sessões registradas. A primeira aparece aqui assim que você encerrar
+          uma.
+        </p>
+      } @else {
+        <!-- Lista de links, e não uma tabela: cada linha inteira é o alvo de
+             clique, e o leitor de tela anuncia "link" antes de qualquer número. -->
+        <ul class="lista-sessoes" data-teste="sessoes">
+          @for (linha of linhas(); track linha.item.id_sessao) {
+            <li>
+              <a
+                class="sessao-passada"
+                [routerLink]="['/relatorio', linha.item.id_sessao]"
+                [attr.data-teste]="'sessao-' + linha.item.id_sessao"
+              >
+                <span class="sessao-passada__quando">
+                  <strong>{{ linha.item.inicio | date: 'dd/MM/yyyy' }}</strong>
+                  <span>
+                    {{ linha.item.inicio | date: 'shortTime' }}
+                    @if (linha.duracao) {
+                      · {{ linha.duracao }}
+                    }
+                  </span>
+                </span>
+
+                <span class="sessao-passada__sinais">
+                  @if (linha.item.parcial) {
+                    <span class="selo-parcial" data-teste="selo-parcial">Não encerrada</span>
+                  }
+                  @if (linha.item.teve_fadiga) {
+                    <!-- Sinal, não veredito: diz que houve registro de cansaço na
+                         sessão, e o relatório é que conta quanto e quando. -->
+                    <span class="selo-fadiga" data-teste="selo-fadiga">Sinais de cansaço</span>
+                  }
+                  @if (linha.score !== null) {
+                    <span class="sessao-passada__score">
+                      {{ linha.score | number: '1.0-0' }}<span class="de-cem">/100</span>
+                    </span>
+                  } @else {
+                    <span class="sessao-passada__sem-score">sem medição</span>
+                  }
+                  <app-icone nome="bussola" />
+                </span>
+              </a>
+            </li>
+          }
+        </ul>
+      }
+    </section>
+  </main>
+
+  <p class="rodape-tela">MapFace · Índice de Engajamento no Estudo</p>
+</div>

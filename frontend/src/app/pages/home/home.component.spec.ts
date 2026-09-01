@@ -327,6 +327,41 @@ describe('HomeComponent', () => {
       expect(botao('encerrar-sessao')).toBeTruthy();
     });
 
+    it('oferece o histórico de sessões quando não há sessão em andamento (ticket 12)', () => {
+      abrirTela(null);
+
+      expect(botao('ir-para-historico')?.getAttribute('href')).toBe('/historico');
+    });
+
+    it('esconde o histórico durante a sessão, para não matar a captura', async () => {
+      // Sair de /home destrói este componente, e o `ngOnDestroy` desliga
+      // câmera, landmarks e telemetria — enquanto o heartbeat do SessaoService,
+      // que é raiz, mantém a sessão viva no servidor. O aluno voltaria com um
+      // buraco sem leitura nenhuma no meio da sessão, e sem nada na tela que
+      // dissesse isso. Enquanto a captura não sobreviver à troca de rota, a
+      // saída fica fechada.
+      await abrirTelaEAguardar(SESSAO_EM_ANDAMENTO);
+
+      expect(botao('ir-para-historico')).toBeNull();
+    });
+
+    it('manda para o login quando o token expirou, em vez do relatório', async () => {
+      // O token dura 30 min e sessões de estudo passam disso. Com ele morto, o
+      // relatório responderia 401 igual: mandar o aluno para lá o deixaria numa
+      // tela que nunca carrega, sem caminho de volta.
+      await abrirTelaEAguardar(SESSAO_EM_ANDAMENTO);
+
+      clicar('encerrar-sessao');
+      httpMock
+        .expectOne(`${API}/sessoes/${SESSAO_EM_ANDAMENTO.id}/encerrar`)
+        .flush({}, { status: 401, statusText: 'Unauthorized' });
+      fixture.detectChanges();
+
+      expect(navegar).toHaveBeenCalledWith(['/login']);
+      expect(navegar).not.toHaveBeenCalledWith(['/relatorio', SESSAO_EM_ANDAMENTO.id]);
+      expect(authService.getToken()).toBeNull();
+    });
+
     it('leva ao relatório da sessão que acabou de ser encerrada (ticket 11)', async () => {
       await abrirTelaEAguardar(SESSAO_EM_ANDAMENTO);
 

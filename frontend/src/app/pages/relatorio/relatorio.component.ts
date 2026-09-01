@@ -1,6 +1,6 @@
 import { DatePipe, DecimalPipe, PercentPipe } from '@angular/common';
 import { Component, OnInit, computed, inject, signal } from '@angular/core';
-import { ActivatedRoute, Router } from '@angular/router';
+import { ActivatedRoute, Router, RouterLink } from '@angular/router';
 
 import {
   Relatorio,
@@ -45,7 +45,15 @@ export const LIMIAR_DE_QUEDA = 15;
 @Component({
   selector: 'app-relatorio',
   standalone: true,
-  imports: [DatePipe, DecimalPipe, PercentPipe, GraficoIeeComponent, IconeComponent, LogoComponent],
+  imports: [
+    DatePipe,
+    DecimalPipe,
+    PercentPipe,
+    RouterLink,
+    GraficoIeeComponent,
+    IconeComponent,
+    LogoComponent,
+  ],
   templateUrl: './relatorio.component.html',
 })
 export class RelatorioComponent implements OnInit {

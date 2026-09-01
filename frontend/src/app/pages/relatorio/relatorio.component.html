@@ -2,9 +2,14 @@
   <header class="topo">
     <div class="topo__interno">
       <app-logo />
-      <button type="button" class="botao botao--fantasma" data-teste="voltar" (click)="voltar()">
-        Voltar
-      </button>
+      <nav class="topo__acoes">
+        <a class="botao botao--fantasma" data-teste="ir-para-historico" routerLink="/historico">
+          Minhas sessões
+        </a>
+        <button type="button" class="botao botao--fantasma" data-teste="voltar" (click)="voltar()">
+          Voltar
+        </button>
+      </nav>
     </div>
   </header>
 
@@ -32,11 +37,17 @@
           @if (dados.parcial) {
             <!-- Critério de relatório parcial da ticket 11. `role="status"` e não
                  `alert`: é uma ressalva sobre o que se está lendo, não uma
-                 emergência que deva interromper a leitura. -->
+                 emergência que deva interromper a leitura.
+
+                 **Não afirmamos a causa.** `parcial` só diz que a sessão não tem
+                 `fim`, e isso cobre tanto uma queda de conexão quanto a sessão
+                 que está correndo agora, alcançável pelo histórico. Dizer que o
+                 navegador caiu seria inventar um motivo — o mesmo erro que a
+                 ticket 10 evita ao chamar o alerta de "incerteza". -->
             <p class="aviso" role="status" data-teste="relatorio-parcial">
               <app-icone nome="olho" />
-              Esta sessão não foi encerrada — o navegador ou a conexão caíram antes. O relatório
-              descreve o que deu tempo de medir.
+              Esta sessão ainda não foi encerrada. O relatório descreve o que foi medido até
+              agora.
             </p>
           }
 

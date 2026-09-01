@@ -12,7 +12,7 @@ import {
   untracked,
   viewChild,
 } from '@angular/core';
-import { Router } from '@angular/router';
+import { Router, RouterLink } from '@angular/router';
 import { Observable } from 'rxjs';
 
 import { formatarDuracao } from '../../core/tempo';
@@ -32,7 +32,7 @@ import { LogoComponent } from '../../shared/logo.component';
 @Component({
   selector: 'app-home',
   standalone: true,
-  imports: [DatePipe, DecimalPipe, LogoComponent, IconeComponent],
+  imports: [DatePipe, DecimalPipe, RouterLink, LogoComponent, IconeComponent],
   templateUrl: './home.component.html',
 })
 export class HomeComponent implements OnInit, OnDestroy {
@@ -266,13 +266,24 @@ export class HomeComponent implements OnInit, OnDestroy {
         this.aguardando = false;
         this.router.navigate(['/relatorio', sessao.id]);
       },
-      error: () => {
+      error: (falha: { status?: number }) => {
         this.aguardando = false;
 
+        // **401 antes de tudo.** O token dura 30 minutos e sessões de estudo
+        // passam disso; com ele morto, o relatório responderia 401 igual.
+        // Mandar o aluno para lá o deixaria numa tela que nunca carrega, e o
+        // histórico ao lado dela também não carregaria — um beco sem saída.
+        // Entrar de novo é a única coisa que resolve, e a sessão já foi
+        // encerrada no servidor de qualquer forma.
+        if (falha?.status === 401) {
+          this.sair();
+          return;
+        }
+
         // O serviço já esquece a sessão quando descobre que o servidor a
-        // encerrou primeiro — inatividade prolongada, JWT expirado. A sessão
-        // acabou de verdade e o relatório dela existe; devolver o aluno à tela
-        // de convite esconderia dele o que acabou de ser medido.
+        // encerrou primeiro — inatividade prolongada. A sessão acabou de
+        // verdade e o relatório dela existe; devolver o aluno à tela de convite
+        // esconderia dele o que acabou de ser medido.
         if (this.sessaoService.sessaoAtiva() === null) {
           this.router.navigate(['/relatorio', sessao.id]);
           return;

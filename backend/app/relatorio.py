@@ -176,13 +176,19 @@ def _contar_alertas(logs: Sequence[LogEngajamento]) -> Dict[str, int]:
     então este número mede *por quanto tempo o alerta esteve de pé*, que é o que
     o gráfico mostra. Contar episódios distintos exigiria reprocessar a série
     inteira pelo detector, e é trabalho da ticket 13, ao sumarizar.
+
+    E conta **ponderado por `n_leituras`**, pela mesma razão que `_proporcao`:
+    depois da sumarização da ticket 13 uma linha vale um minuto inteiro. Somar
+    linhas faria o mesmo episódio valer 12 antes de a retenção rodar e 1 depois,
+    sem nenhum dado ter mudado — e a tela mostra esse número com unidade de
+    leitura.
     """
     contagem: Dict[str, int] = {}
     for log in logs:
         if not log.alerta_gerado:
             continue
         for alerta in log.alerta_gerado.split(","):
-            contagem[alerta] = contagem.get(alerta, 0) + 1
+            contagem[alerta] = contagem.get(alerta, 0) + log.n_leituras
     return contagem
 
 

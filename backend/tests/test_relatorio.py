@@ -113,6 +113,26 @@ def test_sessao_sem_alertas_nao_inventa_chaves():
     assert r.alertas == {}
 
 
+def test_contagem_de_alertas_nao_muda_quando_a_sessao_e_sumarizada():
+    """O mesmo episódio tem que dar o mesmo número antes e depois da ticket 13.
+
+    Contar linhas faria a resposta depender de a sessão já ter sido resumida ou
+    não: doze segundos de olhos fechados viram "12" hoje e "1" depois que a
+    retenção colapsa a janela, sem nenhum dado ter mudado. É a mesma razão pela
+    qual `_proporcao` pondera por `n_leituras`.
+    """
+    granular = serie([40.0] * 12, fadiga=20.0, alerta="olhos-fechados-prolongados")
+
+    resumido = log(0, 40.0, 20.0, "olhos-fechados-prolongados")
+    resumido.n_leituras = 12
+
+    antes = relatorio.montar(sessao(fim_em=12), granular)
+    depois = relatorio.montar(sessao(fim_em=12), [resumido])
+
+    assert antes.alertas == {"olhos-fechados-prolongados": 12}
+    assert depois.alertas == antes.alertas
+
+
 # --- Relatório parcial (critério 4) ----------------------------------------
 
 
