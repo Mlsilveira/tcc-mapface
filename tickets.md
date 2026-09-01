@@ -124,14 +124,19 @@ O payload do WebSocket passou a levar `mar`, que já era calculado no navegador 
 
 **Pendência conhecida:** `LIMIAR_MAR_BOCEJO` está em 0,30, escolhido a partir da distribuição observada no DAiSEE (p99,9 = 0,2884). O valor herdado de 0,60 disparava em 7 clipes de 8570 — bocejo nenhum. A Sprint 11 já reserva tempo para recalibrar thresholds de fadiga com dados reais de teste.
 
-## 9. Dashboard ao vivo
+## 9. Dashboard ao vivo — ~~descartada~~, absorvida pela Ticket 11
 
-**O que construir:** o estudante vê seu score de IEE evoluindo em tempo real durante a sessão.
+**Decisão de 27/08/2026.** A ticket foi implementada e depois **retirada do produto**. O painel mostrava o score do IEE e o gráfico atualizando durante a sessão; nada disso chega ao aluno enquanto ele estuda.
 
-**Bloqueada por:** Ticket 7.
+**Por quê.** Um score de atenção na tela **compete com a tarefa que ele mede**. O aluno olha para o número, e o ato de olhar derruba o número — a medição interfere no medido. Pior: o gráfico se torna a coisa mais interessante da tela justamente quando o objetivo declarado era o material de estudo. Some-se a isso o custo de manter uma camada de tempo real que não entregava valor proporcional.
 
-- [ ] Gráfico do IEE atualizado em tempo real (chart.js) durante a sessão
-- [ ] Score numérico exibido ao vivo na interface
+O MapFace é um **espelho retrospectivo**, não um monitor cardíaco. O valor está em olhar para a sessão depois que ela terminou, com distância suficiente para tirar conclusões — que é exatamente o que o relatório da ticket 11 faz.
+
+**O que sobrou.** O `GraficoIeeComponent` continua no código e é o gráfico do relatório: ele nunca soube de onde vinham os dados, então sobreviveu à mudança sem alteração. O que saiu foi o painel na tela de sessão e a série em memória — o relatório lê a série do banco, que é onde ela de fato mora.
+
+**O que continua aparecendo durante a sessão**, e por quê: o preview da webcam, o FPS e o alerta de Incerteza de Captura (ticket 10). Nenhum é avaliação de desempenho; os três são diagnóstico do equipamento, e existem para que a sessão não termine num relatório vazio. A régua é essa — durante o estudo, só o que o aluno pode **agir a respeito agora**.
+
+**Impacto no spec:** a história 20 ("ver meu score de IEE atualizado em tempo real durante a sessão") foi movida para *Out of Scope* em [`spec-poc-iee.md`](./spec-poc-iee.md), com a mesma justificativa.
 
 ## 10. Tratamento de condições adversas
 

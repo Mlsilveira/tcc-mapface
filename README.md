@@ -34,6 +34,8 @@ O layout responde em três faixas: abaixo de 960px a tela de acesso empilha o pa
 
 Antes de a câmera acender, a tela do estudante explica em três passos o que vai acontecer — pedir webcam sem explicar é o jeito mais rápido de o aluno negar a permissão.
 
+**Durante a sessão, a tela não mostra o score.** Um número de atenção competiria com a tarefa que ele mede: o aluno olha para o número, e o ato de olhar derruba o número. O MapFace é um espelho retrospectivo — a leitura vem no relatório, quando ele tem distância para agir sobre ela. O que aparece enquanto ele estuda é só o que dá para resolver na hora: o preview da webcam, o FPS e o alerta de incerteza de captura.
+
 ## Estado atual
 
 Implementado:
