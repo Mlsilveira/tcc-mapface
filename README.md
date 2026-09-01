@@ -32,6 +32,8 @@ O layout responde em três faixas: abaixo de 960px a tela de acesso empilha o pa
 
 Antes de a câmera acender, a tela do estudante explica em três passos o que vai acontecer — pedir webcam sem explicar é o jeito mais rápido de o aluno negar a permissão.
 
+**Durante a sessão, a tela não mostra o score.** Um número de atenção competiria com a tarefa que ele mede: o aluno olha para o número, e o ato de olhar derruba o número. O MapFace é um espelho retrospectivo — a leitura vem no relatório, quando ele tem distância para agir sobre ela. O que aparece enquanto ele estuda é só o que dá para resolver na hora: o preview da webcam, o FPS e o alerta de incerteza de captura.
+
 ## Estado atual
 
 Implementado:
@@ -43,7 +45,8 @@ Implementado:
 - **Ticket 7 — Fórmula real do IEE.** `AnalistaEngajamento` calibra a baseline individual do aluno nos primeiros 60 s e passa a medir EAR e Head Pose contra ela, em vez de contra constantes iguais para todo mundo.
 - **Ticket 8 — Fator de fadiga.** `DetectorDeFadiga` penaliza o IEE por pálpebra pesada (PERCLOS), fechamento prolongado e bocejo, com os limiares relativos à baseline do aluno. O fator vem de regras, e não do Random Forest — o porquê está em [`resultado_18_08.md`](./resultado_18_08.md).
 - **Ticket 10 — Condições adversas.** `DetectorDeIncerteza` marca a leitura como não confiável quando a detecção pisca ou o EAR salta além do fisiológico; a tela avisa, e o relatório exclui esses trechos dos indicadores em vez de contá-los como dispersão.
-- **Tickets 11 a 13 — Relatório, histórico e retenção (backend).** `GET /sessoes/{id}/relatorio` entrega indicadores, série do gráfico e recomendações; `GET /sessoes` lista as sessões passadas do aluno; e os logs granulares são resumidos em médias por minuto ao fim da sessão. As telas de relatório e histórico ainda não existem.
+- **Ticket 11 — Relatório de autopercepção.** Encerrar a sessão leva o aluno a `/relatorio/:id`, com o gráfico do IEE, os indicadores da sessão, os alertas registrados e as recomendações de autorregulação. Sessão interrompida antes do encerramento também tem relatório, marcado como parcial. Absorveu a ticket 9, retirada do produto.
+- **Tickets 12 e 13 — Histórico e retenção (backend).** `GET /sessoes` lista as sessões passadas do aluno com o resumo de cada uma, e os logs granulares são resumidos em médias por minuto ao fim da sessão. A tela do histórico ainda não existe.
 
 O plano completo, com as 16 fatias verticais e suas dependências, está em [`tickets.md`](./tickets.md). O problema, as histórias de usuário e as decisões de arquitetura estão em [`spec-poc-iee.md`](./spec-poc-iee.md).
 

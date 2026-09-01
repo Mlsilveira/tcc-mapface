@@ -326,6 +326,34 @@ describe('HomeComponent', () => {
       expect(texto()).toContain('Não foi possível encerrar');
       expect(botao('encerrar-sessao')).toBeTruthy();
     });
+
+    it('leva ao relatório da sessão que acabou de ser encerrada (ticket 11)', async () => {
+      await abrirTelaEAguardar(SESSAO_EM_ANDAMENTO);
+
+      clicar('encerrar-sessao');
+      httpMock
+        .expectOne(`${API}/sessoes/${SESSAO_EM_ANDAMENTO.id}/encerrar`)
+        .flush(SESSAO_ENCERRADA);
+      fixture.detectChanges();
+
+      expect(navegar).toHaveBeenCalledWith(['/relatorio', SESSAO_EM_ANDAMENTO.id]);
+    });
+
+    it('leva ao relatório mesmo quando o servidor já tinha encerrado a sessão', async () => {
+      // Inatividade prolongada: a sessão acabou de verdade e o relatório dela
+      // existe. Voltar para a tela de convite esconderia do aluno o que foi
+      // medido — é o critério de relatório parcial da ticket 11.
+      await abrirTelaEAguardar(SESSAO_EM_ANDAMENTO);
+
+      clicar('encerrar-sessao');
+      httpMock
+        .expectOne(`${API}/sessoes/${SESSAO_EM_ANDAMENTO.id}/encerrar`)
+        .flush({}, { status: 409, statusText: 'Conflict' });
+      fixture.detectChanges();
+
+      expect(navegar).toHaveBeenCalledWith(['/relatorio', SESSAO_EM_ANDAMENTO.id]);
+      expect(texto()).not.toContain('Não foi possível encerrar');
+    });
   });
 
   describe('webcam', () => {

@@ -890,6 +890,105 @@ a:hover {
   height: 180px;
 }
 
+/* --- relatório de autopercepção (ticket 11) ----------------------------- */
+
+.carregando {
+  margin: 0;
+  padding: 2.5rem 0;
+  color: var(--tinta-500);
+  text-align: center;
+}
+
+.relatorio__cabecalho h1 {
+  margin: 0 0 0.35rem;
+}
+
+.relatorio__quando {
+  margin: 0;
+  color: var(--tinta-500);
+  font-size: 0.92rem;
+}
+
+/* As seções do relatório se separam por linha, e não por cartões soltos: é um
+   documento para ler de cima a baixo, não um painel para varrer com o olho. */
+.relatorio__grafico,
+.relatorio__indicadores,
+.relatorio__alertas,
+.relatorio__recomendacoes {
+  margin-top: 1.75rem;
+  padding-top: 1.5rem;
+  border-top: 1px solid var(--linha);
+}
+
+.relatorio__grafico h2,
+.relatorio__indicadores h2,
+.relatorio__alertas h2,
+.relatorio__recomendacoes h2 {
+  margin: 0 0 0.9rem;
+  font-size: 1rem;
+  color: var(--tinta-700);
+}
+
+.relatorio__legenda {
+  margin: 0.6rem 0 0;
+  color: var(--tinta-400);
+  font-size: 0.8rem;
+}
+
+/* O "/100" é contexto da escala, não o número: sem o contraste menor ele
+   competiria com o índice que o aluno veio ler. */
+.de-cem {
+  margin-left: 0.1rem;
+  color: var(--tinta-400);
+  font-size: 0.8rem;
+  font-weight: 500;
+}
+
+/* Só a queda ganha cor. Uma seta para cada tendência transformaria oscilação
+   normal em veredito, e o relatório não avalia o aluno. */
+.tendencia--queda {
+  margin-left: 0.4rem;
+  color: var(--alerta-700);
+  font-size: 0.85rem;
+}
+
+.lista-alertas,
+.lista-recomendacoes {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  display: grid;
+  gap: 0.6rem;
+}
+
+.lista-alertas li {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 0.75rem;
+  padding: 0.7rem 0.85rem;
+  border: 1px solid var(--linha);
+  border-radius: var(--raio-p);
+  font-size: 0.9rem;
+  color: var(--tinta-800);
+}
+
+.lista-alertas__contagem {
+  color: var(--tinta-500);
+  font-size: 0.82rem;
+  font-variant-numeric: tabular-nums;
+}
+
+.lista-recomendacoes li {
+  padding: 0.75rem 0.9rem;
+  border-left: 3px solid var(--marca-500);
+  border-radius: 0 var(--raio-p) var(--raio-p) 0;
+  background: var(--marca-050);
+  font-size: 0.9rem;
+  line-height: 1.5;
+  color: var(--tinta-800);
+}
+
 .rodape-tela {
   margin: 1.5rem auto 0;
   max-width: 1100px;

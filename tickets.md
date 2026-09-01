@@ -124,14 +124,9 @@ O payload do WebSocket passou a levar `mar`, que já era calculado no navegador 
 
 **Pendência conhecida:** `LIMIAR_MAR_BOCEJO` está em 0,30, escolhido a partir da distribuição observada no DAiSEE (p99,9 = 0,2884). O valor herdado de 0,60 disparava em 7 clipes de 8570 — bocejo nenhum. A Sprint 11 já reserva tempo para recalibrar thresholds de fadiga com dados reais de teste.
 
-## 9. Dashboard ao vivo
+## 9. ~~Dashboard ao vivo~~ — retirada em 27/08/2026, unida à Ticket 11
 
-**O que construir:** o estudante vê seu score de IEE evoluindo em tempo real durante a sessão.
-
-**Bloqueada por:** Ticket 7.
-
-- [ ] Gráfico do IEE atualizado em tempo real (chart.js) durante a sessão
-- [ ] Score numérico exibido ao vivo na interface
+Deixou de ser uma ticket. O número fica como marca da decisão, para que ninguém procure o que aconteceu com ele; o que havia de trabalho ali está na ticket 11.
 
 ## 10. Tratamento de condições adversas
 
@@ -159,12 +154,22 @@ O risco desta ticket não é deixar de detectar captura ruim — é alarmar em c
 
 **Bloqueada por:** Ticket 8.
 
-- [ ] Relatório gerado automaticamente ao encerrar a sessão
-- [ ] Inclui gráfico do IEE, indicadores-chave e alertas de fadiga registrados
-- [ ] Inclui recomendações básicas de autorregulação (pausas, mudança de estratégia)
-- [ ] Relatório parcial é gerado mesmo se a sessão for interrompida por erro (queda de conexão, falha do navegador)
+- [x] Relatório gerado automaticamente ao encerrar a sessão
+- [x] Inclui gráfico do IEE, indicadores-chave e alertas de fadiga registrados
+- [x] Inclui recomendações básicas de autorregulação (pausas, mudança de estratégia)
+- [x] Relatório parcial é gerado mesmo se a sessão for interrompida por erro (queda de conexão, falha do navegador)
 
-**O backend está pronto; falta a tela.** `GET /sessoes/{id}/relatorio` devolve indicadores, série para o gráfico, contagem de alertas por tipo e as recomendações. A regra vive em [`backend/app/relatorio.py`](./backend/app/relatorio.py), fora do FastAPI, com 19 testes.
+**O backend.** `GET /sessoes/{id}/relatorio` devolve indicadores, série para o gráfico, contagem de alertas por tipo e as recomendações. A regra vive em [`backend/app/relatorio.py`](./backend/app/relatorio.py), fora do FastAPI, com 19 testes.
+
+**A tela** está em [`frontend/src/app/pages/relatorio/`](./frontend/src/app/pages/relatorio/), na rota `/relatorio/:id`. Encerrar a sessão leva o aluno até ela — é assim que o relatório é "gerado automaticamente", sem que nada precise ser guardado. O id vai na URL, e não "o relatório da última sessão", porque é o mesmo endereço que o histórico da ticket 12 vai abrir.
+
+**A ticket 9 foi absorvida aqui.** O painel de score ao vivo chegou a existir e foi retirado do produto em 27/08/2026: um número de atenção na tela **compete com a tarefa que ele mede** — o aluno olha para o número, e o ato de olhar derruba o número. Pior, o gráfico vira a coisa mais interessante da tela justamente quando o objetivo declarado era o material de estudo. O MapFace é um **espelho retrospectivo**, não um monitor cardíaco: a leitura vale depois da sessão, com distância para virar conclusão. A história 20 foi para *Out of Scope* em [`spec-poc-iee.md`](./spec-poc-iee.md) com a mesma justificativa.
+
+O `GraficoIeeComponent` sobreviveu à mudança sem uma linha alterada, porque nunca soube de onde vinham os dados: nasceu para a série em memória do painel ao vivo e hoje desenha a série lida do banco. O que saiu foi o painel, não o desenho.
+
+**O que continua aparecendo durante a sessão**, e por quê: o preview da webcam, o FPS e o alerta de Incerteza de Captura. Nenhum é avaliação de desempenho; os três são diagnóstico do equipamento, e existem para que a sessão não termine num relatório vazio. A régua é essa — durante o estudo, só o que o aluno pode **agir a respeito agora**.
+
+Três decisões da tela que valem a defesa. **Trecho de captura incerta vira buraco no gráfico**, não ponto: o banco guarda o score daqueles instantes, mas os indicadores já os excluem, e desenhá-los faria a linha contradizer os números ao lado dela. **Sessão sem nenhuma leitura não mostra zeros** — uma sessão não medida (webcam negada) não é uma sessão ruim, e "índice médio 0" afirmaria que o aluno esteve disperso. E **encerrar leva ao relatório mesmo quando o backend já tinha encerrado a sessão** por inatividade: a sessão acabou de verdade, o relatório dela existe, e devolver o aluno à tela de convite esconderia o que acabou de ser medido.
 
 Três decisões que valem a defesa. O relatório é **calculado sob demanda, não guardado**: guardá-lo criaria uma segunda fonte de verdade que envelhece, e a ticket 13 teria de manter as duas em dia. **Sessão aberta também tem relatório** — não há caminho especial para o critério parcial, o relatório simplesmente não exige `fim` e se marca como `parcial`. E as recomendações relatam o observado antes de sugerir, sem afirmar nada sobre estado mental: há um teste que falha se o texto disser que o aluno estava desatento ou cansado, porque o sistema mede proxies comportamentais e o texto não pode prometer mais que isso.
 
@@ -187,7 +192,7 @@ A regra ficou repartida entre os módulos que já são donos de cada coisa: `ses
 
 Duas decisões que valem a defesa. **O resumo de todas as sessões sai numa consulta só**: montar o relatório completo de cada linha custaria uma consulta por sessão, o N+1 clássico, que numa lista de 50 vira 51 idas ao banco para calcular três números. Há um teste que conta as consultas e falha se alguém trocar isso por um laço. E **a sessão em andamento aparece na lista**, marcada como parcial: escondê-la criaria um buraco esquisito, em que o aluno encerra a sessão e ela aparece, como se tivesse nascido naquele instante.
 
-A tela depende do relatório da ticket 11 existir — é para ele que cada item da lista aponta.
+A tela depende do relatório da ticket 11 existir — é para ele que cada item da lista aponta. Esse bloqueio caiu: a rota `/relatorio/:id` já está de pé, e cada linha do histórico só precisa apontar para ela.
 
 ## 13. Sumarização e retenção de logs
 
