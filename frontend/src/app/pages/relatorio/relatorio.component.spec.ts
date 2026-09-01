@@ -201,6 +201,20 @@ describe('RelatorioComponent', () => {
     expect(texto()).toContain('não foi encerrada');
   });
 
+  it('não afirma a causa de a sessão estar aberta', () => {
+    // `parcial` só diz que a sessão não tem `fim`, e isso inclui a sessão que
+    // está correndo agora — alcançável pelo histórico da ticket 12. Dizer que
+    // o navegador caiu seria afirmar uma causa que não sabemos, o mesmo erro
+    // que a ticket 10 evita ao nomear o alerta de "incerteza".
+    montar('7');
+    responder(relatorio({ fim: null, parcial: true }));
+
+    const aviso = elemento('relatorio-parcial')?.textContent ?? '';
+    expect(aviso).not.toContain('caíram');
+    expect(aviso).not.toContain('navegador');
+    expect(aviso).not.toContain('conexão');
+  });
+
   it('não chama a sessão de parcial quando ela foi encerrada normalmente', () => {
     montar('7');
     responder();

@@ -41,6 +41,25 @@ export interface IndicadoresDoRelatorio {
   prop_captura_incerta: number;
 }
 
+/**
+ * Uma linha da lista de sessões passadas (ticket 12).
+ *
+ * Traz o suficiente para o aluno **escolher** qual relatório abrir. Uma lista
+ * só com datas o obrigaria a abrir sessão por sessão para lembrar como cada
+ * uma foi, que é o oposto de um histórico.
+ */
+export interface ItemDoHistorico {
+  id_sessao: number;
+  inicio: string;
+  fim: string | null;
+  /** `true` enquanto a sessão não foi encerrada — inclusive a que corre agora. */
+  parcial: boolean;
+  duracao_s: number;
+  n_leituras: number;
+  score_medio: number;
+  teve_fadiga: boolean;
+}
+
 export interface Relatorio {
   id_sessao: number;
   inicio: string;
@@ -78,11 +97,17 @@ function capturaIncerta(ponto: PontoDoRelatorio): boolean {
 }
 
 /**
- * O relatório de autopercepção de uma sessão (ticket 11).
+ * As leituras retrospectivas das sessões: o relatório de uma (ticket 11) e a
+ * lista de todas (ticket 12).
  *
- * Não guarda estado: o relatório é calculado sob demanda pelo backend, e um
- * cache aqui seria uma segunda fonte de verdade envelhecendo enquanto a ticket
- * 13 resume os logs por baixo.
+ * As duas moram juntas porque são a mesma coisa em duas granularidades — é a
+ * mesma divisão que o backend faz em `relatorio.py`. E nenhuma guarda estado:
+ * o relatório é calculado sob demanda, e um cache aqui seria uma segunda fonte
+ * de verdade envelhecendo enquanto a ticket 13 resume os logs por baixo.
+ *
+ * `SessaoService` fica de fora de propósito: ele é dono da sessão **viva** —
+ * heartbeat, encerramento, o signal que a tela observa. Ler o passado não
+ * mexe em nada disso.
  */
 @Injectable({ providedIn: 'root' })
 export class RelatorioService {
@@ -90,5 +115,10 @@ export class RelatorioService {
 
   buscar(idSessao: number): Observable<Relatorio> {
     return this.http.get<Relatorio>(`${API_URL}/sessoes/${idSessao}/relatorio`);
+  }
+
+  /** As sessões do aluno autenticado, da mais recente para a mais antiga. */
+  historico(): Observable<ItemDoHistorico[]> {
+    return this.http.get<ItemDoHistorico[]>(`${API_URL}/sessoes`);
   }
 }

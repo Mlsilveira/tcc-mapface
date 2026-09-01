@@ -183,8 +183,8 @@ Antes disso, `log_engajamento` passou a gravar `flag_fadiga`, `fator_fadiga`, `a
 
 **Bloqueada por:** Ticket 11.
 
-- [ ] Lista de sessões passadas do aluno autenticado — **backend pronto, falta a tela**
-- [ ] Acesso ao relatório completo de cada sessão anterior — **backend pronto, falta a tela**
+- [x] Lista de sessões passadas do aluno autenticado
+- [x] Acesso ao relatório completo de cada sessão anterior
 
 `GET /sessoes` devolve as sessões do aluno, da mais recente para a mais antiga, cada uma com duração, número de leituras, score médio e se houve fadiga — o suficiente para o aluno **escolher** qual relatório abrir. O relatório completo continua em `GET /sessoes/{id}/relatorio`, que a ticket 11 já entregou. 18 testes.
 
@@ -192,7 +192,15 @@ A regra ficou repartida entre os módulos que já são donos de cada coisa: `ses
 
 Duas decisões que valem a defesa. **O resumo de todas as sessões sai numa consulta só**: montar o relatório completo de cada linha custaria uma consulta por sessão, o N+1 clássico, que numa lista de 50 vira 51 idas ao banco para calcular três números. Há um teste que conta as consultas e falha se alguém trocar isso por um laço. E **a sessão em andamento aparece na lista**, marcada como parcial: escondê-la criaria um buraco esquisito, em que o aluno encerra a sessão e ela aparece, como se tivesse nascido naquele instante.
 
-A tela depende do relatório da ticket 11 existir — é para ele que cada item da lista aponta. Esse bloqueio caiu: a rota `/relatorio/:id` já está de pé, e cada linha do histórico só precisa apontar para ela.
+**A tela** está em [`frontend/src/app/pages/historico/`](./frontend/src/app/pages/historico/), na rota `/historico`, alcançável pelo cabeçalho da tela do estudante e da própria tela de relatório.
+
+Três decisões que valem a defesa. **Cada linha aponta para `/relatorio/:id`**, a mesma tela da ticket 11, sem variante "resumida": um segundo formato de relatório teria de ser mantido em dia com o primeiro e divergiria na primeira mudança. **A linha inteira é o link**, e não um "ver relatório" no canto — o alvo de clique acompanha o tamanho da informação que o aluno está lendo, e o leitor de tela anuncia "link" antes de qualquer número. E **a ordenação é do backend**: reordenar no cliente criaria uma segunda regra para manter em dia.
+
+Duas ausências propositais. Sessão sem leitura nenhuma mostra "sem medição" em vez de `0/100` — pelo mesmo motivo da ticket 11: "índice médio 0" afirmaria que o aluno esteve disperso, quando o que houve foi ausência de medição. E a sessão em andamento aparece marcada como não encerrada, **sem duração**: o backend manda `duracao_s: 0` porque ela não tem `fim`, e "00:00" ao lado de "não encerrada" seria contraditório.
+
+**O acesso ao histórico some durante a sessão**, e a razão é técnica antes de ser de produto: sair da tela de estudo destrói o `HomeComponent`, cujo `ngOnDestroy` desliga câmera, landmarks e telemetria — enquanto o heartbeat do `SessaoService`, que vive na raiz, continua mantendo a sessão viva no servidor. O aluno voltaria com um buraco sem leitura nenhuma no meio da sessão, e nada na tela diria isso. Enquanto a captura não sobreviver à troca de rota, a saída fica fechada.
+
+Isso também fecha o caminho pelo qual o aviso de relatório parcial era lido pela sessão que ainda está correndo. O texto do aviso deixou de afirmar a causa de qualquer jeito: `parcial` só diz que a sessão não tem `fim`, e dizer "o navegador caiu" seria inventar um motivo — o mesmo erro que a ticket 10 evita ao chamar o alerta de "incerteza".
 
 ## 13. Sumarização e retenção de logs
 

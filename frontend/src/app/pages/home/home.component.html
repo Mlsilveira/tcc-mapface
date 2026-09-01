@@ -2,9 +2,22 @@
   <header class="topo">
     <div class="topo__interno">
       <app-logo />
-      <button type="button" class="botao botao--fantasma" data-teste="sair" (click)="sair()">
-        Sair
-      </button>
+      <nav class="topo__acoes">
+        <!-- Some durante a sessão. Sair desta tela destrói o componente, e o
+             `ngOnDestroy` desliga câmera, landmarks e telemetria — enquanto o
+             heartbeat do SessaoService, que é raiz, mantém a sessão viva no
+             servidor. O aluno voltaria com um buraco sem leitura nenhuma no
+             meio da sessão, e sem nada na tela que dissesse isso. Enquanto a
+             captura não sobreviver à troca de rota, a saída fica fechada. -->
+        @if (sessaoAtiva() === null) {
+          <a class="botao botao--fantasma" data-teste="ir-para-historico" routerLink="/historico">
+            Minhas sessões
+          </a>
+        }
+        <button type="button" class="botao botao--fantasma" data-teste="sair" (click)="sair()">
+          Sair
+        </button>
+      </nav>
     </div>
   </header>
 

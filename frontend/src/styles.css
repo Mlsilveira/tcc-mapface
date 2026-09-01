@@ -989,6 +989,113 @@ a:hover {
   color: var(--tinta-800);
 }
 
+/* --- histórico de sessões (ticket 12) ----------------------------------- */
+
+/* Duas ações no cabeçalho em vez de uma: o histórico precisa estar alcançável
+   durante a sessão, sem que o aluno tenha de encerrá-la para chegar lá. */
+.topo__acoes {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.lista-sessoes {
+  margin: 1.25rem 0 0;
+  padding: 0;
+  list-style: none;
+  display: grid;
+  gap: 0.6rem;
+}
+
+/* A linha inteira é o link, e não um "ver relatório" no canto: o alvo de
+   clique acompanha o tamanho da informação que o aluno está lendo. */
+.sessao-passada {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  padding: 0.85rem 1rem;
+  border: 1px solid var(--linha);
+  border-radius: var(--raio-m);
+  background: var(--papel);
+  color: inherit;
+  text-decoration: none;
+  transition:
+    border-color 120ms ease,
+    box-shadow 120ms ease;
+}
+
+.sessao-passada:hover,
+.sessao-passada:focus-visible {
+  border-color: var(--marca-500);
+  box-shadow: var(--sombra-p);
+}
+
+.sessao-passada__quando {
+  display: grid;
+  gap: 0.15rem;
+  font-size: 0.85rem;
+  color: var(--tinta-500);
+}
+
+.sessao-passada__quando strong {
+  font-family: var(--fonte-titulo);
+  font-size: 0.95rem;
+  color: var(--tinta-900);
+}
+
+.sessao-passada__sinais {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+}
+
+.sessao-passada__score {
+  font-family: var(--fonte-titulo);
+  font-size: 1.05rem;
+  font-weight: 700;
+  color: var(--tinta-900);
+  font-variant-numeric: tabular-nums;
+}
+
+.sessao-passada__sem-score {
+  font-size: 0.82rem;
+  color: var(--tinta-400);
+}
+
+.selo-parcial,
+.selo-fadiga {
+  padding: 0.2rem 0.5rem;
+  border-radius: 999px;
+  font-size: 0.72rem;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.selo-parcial {
+  background: var(--marca-050);
+  color: var(--marca-700);
+}
+
+/* Âmbar, e não vermelho: é um sinal a observar, não um erro nem um diagnóstico. */
+.selo-fadiga {
+  background: var(--alerta-050);
+  color: var(--alerta-700);
+}
+
+@media (max-width: 560px) {
+  .sessao-passada {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+
+  .sessao-passada__sinais {
+    justify-content: flex-start;
+  }
+}
+
 .rodape-tela {
   margin: 1.5rem auto 0;
   max-width: 1100px;
