@@ -852,6 +852,14 @@ a:hover {
   color: var(--alerta-700);
 }
 
+/* O gráfico do IEE, usado pelo relatório de autopercepção. Altura fixa porque
+   o chart.js dimensiona pelo contêiner: sem ela, o canvas cresce a cada
+   repintura tentando caber em si mesmo. */
+.grafico {
+  position: relative;
+  height: 180px;
+}
+
 /* Incerteza de captura (ticket 10). Divide o desenho do aviso de FPS baixo
    porque é a mesma classe de mensagem — algo no ambiente atrapalhando a
    medição, com uma ação de saída —, mas ganha peso: enquanto ele aparece,
