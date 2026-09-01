@@ -148,6 +148,16 @@ Três decisões que valem a defesa. **Leitura incerta não alimenta nada** — n
 
 O risco desta ticket não é deixar de detectar captura ruim — é alarmar em captura boa, porque um alerta que aparece em sessão normal treina o aluno a ignorá-lo. Metade dos testes afirma que o alerta *não* dispara.
 
+### A ticket 10 foi implementada duas vezes
+
+Houve uma versão **client-side** (27/08, branch `descartada/ticket-10-client-side`) que media a luminância do quadro no navegador e nomeava a causa: `baixa-luz`, `reflexo-ocular`, `oclusao`. Ela foi descartada em favor da versão acima, e vale a pena registrar por quê — porque o argumento que a motivava não se sustentou.
+
+**A justificativa dela era privacidade**, e essa justificativa era falsa. O raciocínio era: só o navegador tem os pixels, então só ele pode distinguir "aluno de olhos semicerrados" de "sala escura", e por isso o julgamento tem de morar lá. Mas as duas versões atravessam a rede com um rótulo e nada mais — a client-side manda `MotivoDeIncerteza | null`, a atual manda `incerteza-de-captura`. A fronteira de privacidade é a mesma nas duas. A diferença real é que a versão atual **nunca precisou dos pixels**: ela decide a partir dos números que já subiam para calcular o IEE. Tocar em menos dado para chegar ao mesmo lugar é a posição mais forte, não a mais fraca.
+
+Somem-se três coisas. Os limiares da versão atual são **medidos** contra sessões reais de webcam de 28/08 (jitter mediano 0,034, p90 0,095, limiar 0,10); os da client-side (`LUMINANCIA_MINIMA = 0,16`, `ASSIMETRIA_MAXIMA = 0,45`) eram raciocinados, nunca confrontados com dado. Ler luminância por quadro custa CPU no cliente, contra a meta de ≤ 25% da ticket 16. E nomear a causa é exatamente o que a versão atual argumenta ser invenção: o produto não tem como saber se foi a luz ou o óculos, e prometer isso ao aluno é afirmar mais do que se mediu.
+
+**O que se perdeu, e é dívida real.** A versão atual detecta *instabilidade*, e uma sala uniformemente escura pode não produzir instabilidade nenhuma: o detector acha o rosto com confiança e devolve um EAR achatado e estável — que é a assinatura de "aluno sonolento". Esse é o falso negativo que a medição de luminância pegaria e o jitter não pega. Fica registrado como limitação conhecida, para a **ticket 16** medir: é justamente o critério "taxa de erro sob condições adversas ≤ 5%", e o cenário de baixa luz é o que precisa entrar no teste.
+
 ## 11. Relatório de autopercepção
 
 **O que construir:** ao encerrar a sessão, o estudante recebe um relatório com indicadores, alertas e recomendações.
@@ -253,3 +263,5 @@ O particionamento mensal previsto no spec **não** foi feito — é otimização
 - [ ] Latência do WebSocket medida (meta < 200 ms) e tempo de resposta do backend (meta < 100 ms)
 - [ ] Uptime medido em teste de estresse (meta 99,9%)
 - [ ] Taxa de erro sob condições adversas medida (meta ≤ 5%)
+
+**Cenário obrigatório: baixa luz uniforme.** É o falso negativo conhecido da ticket 10 — sem instabilidade para detectar, o alerta não dispara e o EAR achatado passa por sonolência. Se a taxa de erro estourar aí, a resposta candidata é a medição de luminância da versão descartada, que está em `descartada/ticket-10-client-side`.
