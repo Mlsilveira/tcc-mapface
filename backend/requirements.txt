@@ -1,6 +1,12 @@
 fastapi==0.115.0
 uvicorn[standard]==0.30.6
-sqlmodel==0.0.22
+# sqlmodel e pydantic são pinados como par. O sqlmodel declara apenas
+# `pydantic<3.0.0`, largo demais: numa instalação limpa o pip resolvia o pydantic
+# mais recente, que o sqlmodel 0.0.22 não suporta, e todo import de modelo morria
+# em "Field 'id' requires a type annotation". Ao mexer em um, revalidar o outro.
+# 0.0.34 é o último sqlmodel que ainda roda em Python 3.9 (0.0.35+ exige 3.10).
+sqlmodel==0.0.34
+pydantic==2.13.5
 bcrypt==5.0.0
 python-jose[cryptography]==3.3.0
 pydantic-settings==2.5.2
