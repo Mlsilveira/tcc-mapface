@@ -245,11 +245,42 @@ export class HomeComponent implements OnInit, OnDestroy {
     }
   }
 
+  /**
+   * Encerra a sessão e leva o aluno ao relatório dela (ticket 11).
+   *
+   * Não usa `executar` porque precisa do id **antes** de encerrar: o serviço
+   * esquece a sessão assim que o backend confirma, e ler o id depois disso
+   * devolveria `null`.
+   */
   encerrarSessao(): void {
-    this.executar(
-      () => this.sessaoService.encerrar(),
-      'Não foi possível encerrar a sessão de estudo. Tente novamente.',
-    );
+    const sessao = this.sessaoAtiva();
+    if (sessao === null) {
+      return;
+    }
+
+    this.erro = null;
+    this.aguardando = true;
+
+    this.sessaoService.encerrar().subscribe({
+      next: () => {
+        this.aguardando = false;
+        this.router.navigate(['/relatorio', sessao.id]);
+      },
+      error: () => {
+        this.aguardando = false;
+
+        // O serviço já esquece a sessão quando descobre que o servidor a
+        // encerrou primeiro — inatividade prolongada, JWT expirado. A sessão
+        // acabou de verdade e o relatório dela existe; devolver o aluno à tela
+        // de convite esconderia dele o que acabou de ser medido.
+        if (this.sessaoService.sessaoAtiva() === null) {
+          this.router.navigate(['/relatorio', sessao.id]);
+          return;
+        }
+
+        this.erro = 'Não foi possível encerrar a sessão de estudo. Tente novamente.';
+      },
+    });
   }
 
   sair(): void {

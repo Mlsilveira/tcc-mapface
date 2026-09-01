@@ -18,5 +18,14 @@ export const routes: Routes = [
     loadComponent: () => import('./pages/home/home.component').then((m) => m.HomeComponent),
     canActivate: [authGuard],
   },
+  {
+    // O id na URL, e não o relatório da "última" sessão: é o mesmo endereço que
+    // o histórico da ticket 12 vai abrir, e um relatório que o aluno pode
+    // guardar no favorito continua funcionando amanhã.
+    path: 'relatorio/:id',
+    loadComponent: () =>
+      import('./pages/relatorio/relatorio.component').then((m) => m.RelatorioComponent),
+    canActivate: [authGuard],
+  },
   { path: '**', redirectTo: 'login' },
 ];

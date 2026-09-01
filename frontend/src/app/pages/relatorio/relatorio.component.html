@@ -1,0 +1,138 @@
+<div class="aplicacao">
+  <header class="topo">
+    <div class="topo__interno">
+      <app-logo />
+      <button type="button" class="botao botao--fantasma" data-teste="voltar" (click)="voltar()">
+        Voltar
+      </button>
+    </div>
+  </header>
+
+  <main class="conteudo">
+    @if (carregando()) {
+      <p class="carregando" role="status" data-teste="carregando">Montando seu relatório…</p>
+    } @else if (erro()) {
+      <p class="erro-geral" role="alert" data-teste="erro">{{ erro() }}</p>
+    } @else {
+      <!-- Aninhado, e não um terceiro `@else if`: o `as` só vale no `@if`
+           primário de um bloco, e é ele que dá nome ao relatório lido. -->
+      @if (relatorio(); as dados) {
+        <section class="painel">
+          <div class="relatorio__cabecalho">
+            <h1>Relatório da sessão</h1>
+            <p class="relatorio__quando" data-teste="periodo">
+              {{ dados.inicio | date: 'dd/MM/yyyy' }}, das {{ dados.inicio | date: 'shortTime' }}
+              @if (dados.fim) {
+                às {{ dados.fim | date: 'shortTime' }}
+              }
+              · {{ duracao() }}
+            </p>
+          </div>
+
+          @if (dados.parcial) {
+            <!-- Critério de relatório parcial da ticket 11. `role="status"` e não
+                 `alert`: é uma ressalva sobre o que se está lendo, não uma
+                 emergência que deva interromper a leitura. -->
+            <p class="aviso" role="status" data-teste="relatorio-parcial">
+              <app-icone nome="olho" />
+              Esta sessão não foi encerrada — o navegador ou a conexão caíram antes. O relatório
+              descreve o que deu tempo de medir.
+            </p>
+          }
+
+          @if (semMedicao()) {
+            <p class="sem-rosto" data-teste="sem-medicao">
+              Nenhuma leitura foi registrada nesta sessão. Sem medição não há indicadores para
+              mostrar — a webcam pode não ter sido autorizada.
+            </p>
+          } @else {
+            <section class="relatorio__grafico">
+              <h2>Seu índice ao longo da sessão</h2>
+              <app-grafico-iee [serie]="serie()" />
+              <p class="relatorio__legenda">
+                Os trechos em branco são instantes em que a captura não foi confiável e nada foi
+                afirmado sobre eles.
+              </p>
+            </section>
+
+            <section class="relatorio__indicadores">
+              <h2>Indicadores</h2>
+              <dl class="metricas__grade">
+                <div>
+                  <dt>Índice médio</dt>
+                  <dd data-teste="score-medio">
+                    {{ dados.indicadores.score_medio | number: '1.0-0'
+                    }}<span class="de-cem">/100</span>
+                  </dd>
+                </div>
+                <div>
+                  <dt>Variação</dt>
+                  <dd data-teste="score-faixa">
+                    {{ dados.indicadores.score_minimo | number: '1.0-0' }} a
+                    {{ dados.indicadores.score_maximo | number: '1.0-0' }}
+                  </dd>
+                </div>
+                <div>
+                  <dt>Começo → fim</dt>
+                  <dd data-teste="tendencia">
+                    {{ dados.indicadores.score_inicio | number: '1.0-0' }} →
+                    {{ dados.indicadores.score_fim | number: '1.0-0' }}
+                    @if (queda() >= LIMIAR_DE_QUEDA) {
+                      <span class="tendencia--queda">↓ {{ queda() | number: '1.0-0' }}</span>
+                    }
+                  </dd>
+                </div>
+                <div>
+                  <dt>Rosto detectado</dt>
+                  <dd data-teste="presenca">{{ dados.indicadores.prop_com_rosto | percent }}</dd>
+                </div>
+                <div>
+                  <dt>Sessão com sinais de cansaço</dt>
+                  <dd data-teste="fadiga">{{ dados.indicadores.prop_com_fadiga | percent }}</dd>
+                </div>
+                <div>
+                  <dt>Captura instável</dt>
+                  <dd data-teste="captura-incerta">
+                    {{ dados.indicadores.prop_captura_incerta | percent }}
+                  </dd>
+                </div>
+              </dl>
+            </section>
+
+            @if (alertas().length > 0) {
+              <section class="relatorio__alertas" data-teste="alertas">
+                <h2>Alertas registrados</h2>
+                <!-- O número é de leituras, não de episódios: mede por quanto
+                     tempo o alerta esteve de pé, que é o que o gráfico mostra. -->
+                <ul class="lista-alertas">
+                  @for (alerta of alertas(); track alerta.nome) {
+                    <li>
+                      <span>{{ alerta.nome }}</span>
+                      <span class="lista-alertas__contagem">{{ alerta.leituras }} leituras</span>
+                    </li>
+                  }
+                </ul>
+              </section>
+            }
+          }
+
+          <section class="relatorio__recomendacoes">
+            <h2>O que observar</h2>
+            <ul class="lista-recomendacoes" data-teste="recomendacoes">
+              @for (recomendacao of dados.recomendacoes; track recomendacao) {
+                <li>{{ recomendacao }}</li>
+              }
+            </ul>
+            <p class="nota-privacidade">
+              <app-icone nome="cadeado" />
+              O MapFace mede sinais visuais de comportamento. Ele não avalia seu desempenho nem
+              diz nada sobre o seu estado mental.
+            </p>
+          </section>
+        </section>
+      }
+    }
+  </main>
+
+  <p class="rodape-tela">MapFace · Índice de Engajamento no Estudo</p>
+</div>

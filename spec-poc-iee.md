@@ -53,7 +53,7 @@ O backend calcula, a cada instante, o Índice de Engajamento no Estudo (IEE) —
 
 **Cálculo do IEE e alertas**
 
-20. Como estudante, quero ver meu score de IEE atualizado em tempo real durante a sessão, para ter uma noção contínua do meu comportamento.
+20. ~~Como estudante, quero ver meu score de IEE atualizado em tempo real durante a sessão, para ter uma noção contínua do meu comportamento.~~ — **retirada em 27/08/2026**, ver *Out of Scope*.
 21. Como estudante, quero que sinais prolongados de olhos fechados ou bocejos frequentes reduzam meu score via o fator de fadiga, para que padrões físicos associados a cansaço sejam refletidos no índice.
 22. Como estudante, quero que o sistema não afirme estar medindo meu estado emocional ou cognitivo real, para que eu entenda os limites do que está sendo medido (proxies comportamentais, não engajamento em sentido pleno).
 
@@ -106,6 +106,7 @@ O backend calcula, a cada instante, o Índice de Engajamento no Estudo (IEE) —
 
 ## Out of Scope
 
+- **Exibir o score do IEE ao aluno durante a sessão de estudo** (retirada da história 20 em 27/08/2026, depois de implementada e avaliada). Um score de atenção na tela compete com a tarefa que ele mede: o aluno olha para o número, e o ato de olhar derruba o número — a medição interfere no medido. O gráfico também passa a disputar atenção com o material de estudo, que era o objetivo declarado da sessão. O feedback do sistema é **retrospectivo por decisão de projeto**: as métricas alimentam o relatório de autopercepção do fim da sessão (história 29), onde o aluno as lê com distância suficiente para agir sobre elas. Durante a sessão aparecem apenas avisos **operacionais e acionáveis** — preview da webcam, FPS e o alerta de Incerteza de Captura (história 17) —, que são diagnóstico do equipamento e existem para que a sessão não termine num relatório vazio.
 - Medir as dimensões cognitiva ou emocional do engajamento — a visão computacional não acessa esses constructos; o sistema mede apenas proxies comportamentais visuais.
 - Qualquer forma de diagnóstico clínico (fadiga mental, TDAH, TEA ou outras condições de saúde).
 - Comparação sistemática entre Random Forest, LSTM, GRU e Transformers temporais — adiada para o TC2.
