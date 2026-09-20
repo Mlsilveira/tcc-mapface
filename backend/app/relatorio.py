@@ -27,6 +27,7 @@ class ResumoDaSessao:
     vale: Optional[float]
     pontos_medidos: int
     pontos_incertos: int
+    pontos_zerados: int
 
 
 def resumir(sessao: SessaoEstudo, serie: Sequence[LogEngajamento]) -> ResumoDaSessao:
@@ -39,10 +40,21 @@ def resumir(sessao: SessaoEstudo, serie: Sequence[LogEngajamento]) -> ResumoDaSe
     medidos: List[float] = [p.score for p in serie if p.score is not None]
     houve_medida = bool(medidos)
 
+    # Score zero é medição verdadeira — diferente da incerteza, que é a recusa
+    # de medir —, então continua dentro de `pontos_medidos` e da média.
+    #
+    # O que ele **não** diz é a causa. `calcular_iee` devolve 0.0 tanto no
+    # `P(t) = 0` (rosto ausente) quanto no `max(0.0, bruto - fadiga)` de um
+    # aluno presente que a fadiga zerou. Separar os dois exigiria um
+    # `rosto_detectado` em `log_engajamento`, que não existe; por isso o
+    # indicador se chama "zerados" e não "ausentes". Ver risk-spots.md.
+    zerados = [s for s in medidos if s == 0.0]
+
     return ResumoDaSessao(
         media=mean(medidos) if houve_medida else None,
         pico=max(medidos) if houve_medida else None,
         vale=min(medidos) if houve_medida else None,
         pontos_medidos=len(medidos),
         pontos_incertos=len(serie) - len(medidos),
+        pontos_zerados=len(zerados),
     )
