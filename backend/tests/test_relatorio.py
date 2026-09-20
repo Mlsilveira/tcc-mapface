@@ -90,3 +90,48 @@ class TestSeriesDegeneradas:
         assert resumo.vale is None
         assert resumo.pontos_medidos == 0
         assert resumo.pontos_incertos == 3
+
+
+class TestZeradoNaoEIncerto:
+    """Medir zero não é deixar de medir, e o relatório não pode confundir os dois.
+
+    `score = 0.0` é uma medição verdadeira. `score = None` é incerteza de
+    captura: havia rosto, mas as condições não sustentam número nenhum. Somar os
+    dois apagaria a distinção que a ticket 10 comprou.
+
+    O que o zero **não** diz é a causa. `calcular_iee` devolve 0.0 no `P(t) = 0`
+    (rosto ausente) e também no `max(0.0, bruto - fadiga)` de um aluno presente
+    que a fadiga zerou. `log_engajamento` não guarda `rosto_detectado`, então
+    nenhum indicador separa os dois com os dados de hoje — daí o nome
+    `pontos_zerados`, e não `pontos_ausentes`.
+    """
+
+    def test_incerteza_no_meio_nao_puxa_a_media(self):
+        # média de 80 e 40 = 60. Os nulos no meio não entram como zero.
+        serie = [
+            ponto(80.0, 0),
+            ponto(None, 1, alerta="baixa-luz"),
+            ponto(None, 2, alerta="baixa-luz"),
+            ponto(40.0, 3),
+        ]
+
+        resumo = relatorio.resumir(sessao(fim=3), serie)
+
+        assert resumo.media == pytest.approx(60.0)
+        assert resumo.pontos_medidos == 2
+        assert resumo.pontos_incertos == 2
+
+    def test_score_zerado_conta_separado_da_incerteza(self):
+        serie = [
+            ponto(80.0, 0),
+            ponto(0.0, 1),  # medição verdadeira que deu zero
+            ponto(None, 2, alerta="oclusao"),  # incerteza: recusa de medir
+        ]
+
+        resumo = relatorio.resumir(sessao(fim=2), serie)
+
+        assert resumo.pontos_zerados == 1
+        assert resumo.pontos_incertos == 1
+        # zero é medição, então continua dentro de `pontos_medidos` e da média
+        assert resumo.pontos_medidos == 2
+        assert resumo.media == pytest.approx(40.0)
