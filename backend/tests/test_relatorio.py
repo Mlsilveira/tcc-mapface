@@ -135,3 +135,42 @@ class TestZeradoNaoEIncerto:
         # zero é medição, então continua dentro de `pontos_medidos` e da média
         assert resumo.pontos_medidos == 2
         assert resumo.media == pytest.approx(40.0)
+
+
+class TestAlertas:
+    """O que o relatório conta ao aluno sobre o que saiu do normal na sessão.
+
+    A coluna `alerta` guarda **um rótulo só**, e qual deles depende do `score`:
+    sob incerteza é o motivo dela (`baixa-luz`, `reflexo-ocular`, `oclusao`,
+    `desconhecida`); havendo score, é o motivo dominante da fadiga
+    (`palpebras-pesadas`, `olhos-fechados-prolongados`, `bocejos`). Quem decide é
+    `_alerta_do`, em `routers/telemetria.py`.
+
+    Por isso o agrupamento é por `score is None`, não por rótulo. Misturar os
+    dois vocabulários numa lista só diria ao aluno que "a sala estava escura" e
+    "você bocejou" são a mesma espécie de acontecimento — uma é diagnóstico do
+    equipamento, a outra é observação sobre ele.
+    """
+
+    def test_separa_alertas_de_fadiga_dos_motivos_de_incerteza(self):
+        serie = [
+            ponto(70.0, 0, fadiga=10.0, alerta="bocejos"),
+            ponto(65.0, 1, fadiga=12.0, alerta="bocejos"),
+            ponto(60.0, 2, fadiga=20.0, alerta="palpebras-pesadas"),
+            ponto(None, 3, alerta="baixa-luz"),
+            ponto(None, 4, alerta="baixa-luz"),
+            ponto(None, 5, alerta="oclusao"),
+        ]
+
+        resumo = relatorio.resumir(sessao(fim=5), serie)
+
+        assert resumo.alertas_de_fadiga == {"bocejos": 2, "palpebras-pesadas": 1}
+        assert resumo.motivos_de_incerteza == {"baixa-luz": 2, "oclusao": 1}
+
+    def test_ponto_sem_alerta_nao_entra_em_nenhum_agrupamento(self):
+        serie = [ponto(80.0, 0), ponto(75.0, 1), ponto(None, 2)]
+
+        resumo = relatorio.resumir(sessao(fim=2), serie)
+
+        assert resumo.alertas_de_fadiga == {}
+        assert resumo.motivos_de_incerteza == {}
