@@ -4,9 +4,10 @@ Como `app/sessoes.py` e `app/analista.py`, este módulo não conhece HTTP, banco
 nem UI: recebe a sessão e a série já lidas e devolve os indicadores. É o seam
 que o relatório expõe ao aluno, e onde a regra é barata de testar.
 """
+from collections import Counter
 from dataclasses import dataclass
 from statistics import mean
-from typing import List, Optional, Sequence
+from typing import Dict, List, Optional, Sequence
 
 from app.models import LogEngajamento, SessaoEstudo
 
@@ -20,6 +21,9 @@ class ResumoDaSessao:
     permite ao relatório dizer "não deu para medir"; zero diria "o aluno estava
     aqui e desengajado", que é uma afirmação diferente e que estes dados não
     sustentam.
+
+    Os dois agrupamentos de alerta são separados de propósito: fadiga é
+    observação sobre o aluno, incerteza é diagnóstico do equipamento.
     """
 
     media: Optional[float]
@@ -28,6 +32,8 @@ class ResumoDaSessao:
     pontos_medidos: int
     pontos_incertos: int
     pontos_zerados: int
+    alertas_de_fadiga: Dict[str, int]
+    motivos_de_incerteza: Dict[str, int]
 
 
 def resumir(sessao: SessaoEstudo, serie: Sequence[LogEngajamento]) -> ResumoDaSessao:
@@ -50,6 +56,13 @@ def resumir(sessao: SessaoEstudo, serie: Sequence[LogEngajamento]) -> ResumoDaSe
     # indicador se chama "zerados" e não "ausentes". Ver risk-spots.md.
     zerados = [s for s in medidos if s == 0.0]
 
+    # O agrupamento é por `score is None`, não pelo texto do rótulo: é o `score`
+    # que decide qual vocabulário a coluna `alerta` está usando naquele ponto
+    # (ver `_alerta_do`, em routers/telemetria.py). Classificar pelo rótulo
+    # deixaria um motivo novo cair silenciosamente no balde errado.
+    fadiga = Counter(p.alerta for p in serie if p.score is not None and p.alerta)
+    incerteza = Counter(p.alerta for p in serie if p.score is None and p.alerta)
+
     return ResumoDaSessao(
         media=mean(medidos) if houve_medida else None,
         pico=max(medidos) if houve_medida else None,
@@ -57,4 +70,6 @@ def resumir(sessao: SessaoEstudo, serie: Sequence[LogEngajamento]) -> ResumoDaSe
         pontos_medidos=len(medidos),
         pontos_incertos=len(serie) - len(medidos),
         pontos_zerados=len(zerados),
+        alertas_de_fadiga=dict(fadiga),
+        motivos_de_incerteza=dict(incerteza),
     )
