@@ -6,18 +6,25 @@ que o relatório expõe ao aluno, e onde a regra é barata de testar.
 """
 from dataclasses import dataclass
 from statistics import mean
-from typing import List, Sequence
+from typing import List, Optional, Sequence
 
 from app.models import LogEngajamento, SessaoEstudo
 
 
 @dataclass(frozen=True)
 class ResumoDaSessao:
-    """Os indicadores que o relatório apresenta sobre uma sessão."""
+    """Os indicadores que o relatório apresenta sobre uma sessão.
 
-    media: float
-    pico: float
-    vale: float
+    `media`, `pico` e `vale` são `None` quando não houve nenhuma medida — sessão
+    que mal começou, ou sessão inteira em incerteza de captura. O `None` é o que
+    permite ao relatório dizer "não deu para medir"; zero diria "o aluno estava
+    aqui e desengajado", que é uma afirmação diferente e que estes dados não
+    sustentam.
+    """
+
+    media: Optional[float]
+    pico: Optional[float]
+    vale: Optional[float]
     pontos_medidos: int
     pontos_incertos: int
 
@@ -30,11 +37,12 @@ def resumir(sessao: SessaoEstudo, serie: Sequence[LogEngajamento]) -> ResumoDaSe
     como zero diria que o aluno não estava lá.
     """
     medidos: List[float] = [p.score for p in serie if p.score is not None]
+    houve_medida = bool(medidos)
 
     return ResumoDaSessao(
-        media=mean(medidos),
-        pico=max(medidos),
-        vale=min(medidos),
+        media=mean(medidos) if houve_medida else None,
+        pico=max(medidos) if houve_medida else None,
+        vale=min(medidos) if houve_medida else None,
         pontos_medidos=len(medidos),
         pontos_incertos=len(serie) - len(medidos),
     )
