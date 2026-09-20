@@ -55,3 +55,38 @@ class TestIndicadores:
         assert resumo.vale == pytest.approx(40.0)
         assert resumo.pontos_medidos == 3
         assert resumo.pontos_incertos == 0
+
+
+class TestSeriesDegeneradas:
+    """Sessões sem nada para medir.
+
+    As duas caem no mesmo caminho — nenhum ponto medido —, mas dizem coisas
+    diferentes ao aluno: uma sessão sem série é uma sessão que mal começou; uma
+    sessão inteiramente incerta é uma sessão em que a câmera não deu conta. Em
+    nenhuma das duas o indicador pode ser zero: zero é "o aluno estava aqui e
+    desengajado", que é uma afirmação que estes dados não sustentam.
+    """
+
+    def test_serie_vazia_nao_e_erro(self):
+        resumo = relatorio.resumir(sessao(fim=0), [])
+
+        assert resumo.media is None
+        assert resumo.pico is None
+        assert resumo.vale is None
+        assert resumo.pontos_medidos == 0
+        assert resumo.pontos_incertos == 0
+
+    def test_serie_inteiramente_incerta_nao_vira_zero(self):
+        serie = [
+            ponto(None, 0, alerta="baixa-luz"),
+            ponto(None, 1, alerta="baixa-luz"),
+            ponto(None, 2, alerta="reflexo-ocular"),
+        ]
+
+        resumo = relatorio.resumir(sessao(fim=2), serie)
+
+        assert resumo.media is None
+        assert resumo.pico is None
+        assert resumo.vale is None
+        assert resumo.pontos_medidos == 0
+        assert resumo.pontos_incertos == 3
