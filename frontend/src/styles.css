@@ -160,8 +160,12 @@ a:hover {
   font-size: 0.95rem;
   font-weight: 600;
   cursor: pointer;
-  transition: transform 0.15s ease, box-shadow 0.15s ease, background-color 0.15s ease,
-    border-color 0.15s ease, color 0.15s ease;
+  transition:
+    transform 0.15s ease,
+    box-shadow 0.15s ease,
+    background-color 0.15s ease,
+    border-color 0.15s ease,
+    color 0.15s ease;
 }
 
 .botao:disabled {
@@ -174,12 +178,16 @@ a:hover {
 .botao--primario {
   background: linear-gradient(180deg, var(--marca-500), var(--marca-600));
   color: #fff;
-  box-shadow: 0 1px 2px rgba(15, 23, 42, 0.12), 0 10px 22px -12px rgba(79, 70, 229, 0.9);
+  box-shadow:
+    0 1px 2px rgba(15, 23, 42, 0.12),
+    0 10px 22px -12px rgba(79, 70, 229, 0.9);
 }
 
 .botao--primario:hover:not(:disabled) {
   transform: translateY(-1px);
-  box-shadow: 0 2px 4px rgba(15, 23, 42, 0.12), 0 16px 28px -14px rgba(79, 70, 229, 0.95);
+  box-shadow:
+    0 2px 4px rgba(15, 23, 42, 0.12),
+    0 16px 28px -14px rgba(79, 70, 229, 0.95);
 }
 
 .botao--largo {
@@ -231,7 +239,8 @@ a:hover {
   color: var(--tinta-700);
 }
 
-.campo input {
+.campo input,
+.campo select {
   width: 100%;
   min-height: 48px;
   padding: 0 0.9rem;
@@ -241,14 +250,36 @@ a:hover {
   font-family: var(--fonte-corpo);
   font-size: 0.98rem;
   color: var(--tinta-900);
-  transition: border-color 0.15s ease, box-shadow 0.15s ease;
+  transition:
+    border-color 0.15s ease,
+    box-shadow 0.15s ease;
+}
+
+/* O <select> nativo desenha a própria seta e o próprio padding conforme o
+   sistema operacional; sem isto ele fica visivelmente mais baixo e com outra
+   fonte ao lado dos campos de texto da mesma coluna. */
+.campo select {
+  appearance: none;
+  padding-right: 2.4rem;
+  background-image:
+    linear-gradient(45deg, transparent 50%, var(--tinta-500) 50%),
+    linear-gradient(135deg, var(--tinta-500) 50%, transparent 50%);
+  background-position:
+    calc(100% - 1.15rem) 1.35rem,
+    calc(100% - 0.85rem) 1.35rem;
+  background-size:
+    5px 5px,
+    5px 5px;
+  background-repeat: no-repeat;
+  cursor: pointer;
 }
 
 .campo input::placeholder {
   color: var(--tinta-400);
 }
 
-.campo input:focus {
+.campo input:focus,
+.campo select:focus {
   outline: none;
   border-color: var(--marca-500);
   box-shadow: 0 0 0 4px rgba(79, 70, 229, 0.14);
@@ -344,7 +375,8 @@ a:hover {
   gap: 3rem;
   padding: 2.75rem 3rem;
   overflow: hidden;
-  background: radial-gradient(120% 90% at 8% 0%, #4338ca 0%, transparent 55%),
+  background:
+    radial-gradient(120% 90% at 8% 0%, #4338ca 0%, transparent 55%),
     radial-gradient(100% 80% at 100% 100%, #0f766e 0%, transparent 52%), #10142c;
   color: #fff;
 }
@@ -491,7 +523,6 @@ a:hover {
     gap: 1.25rem;
     padding: 1.75rem 1.5rem 2.25rem;
   }
-
 
   /* No celular o discurso longo empurraria o formulário para fora da tela;
      fica a marca e a frase-síntese. */
@@ -700,19 +731,6 @@ a:hover {
   font-size: 0.92rem;
 }
 
-/* Cronômetro da sessão. Tabular-nums impede que os dígitos mudem de largura a
-   cada segundo — sem isso o número inteiro treme enquanto conta. */
-.sessao__cronometro {
-  display: block;
-  margin-top: 0.35rem;
-  color: var(--tinta-900);
-  font-size: 1.75rem;
-  font-weight: 600;
-  font-variant-numeric: tabular-nums;
-  letter-spacing: 0.01em;
-  line-height: 1.1;
-}
-
 .selo-ativo {
   display: inline-flex;
   align-items: center;
@@ -760,10 +778,6 @@ a:hover {
 .preview video {
   display: block;
   width: 100%;
-  /* Fallback. A proporção de verdade vem do componente, medida do stream, e
-     chega como estilo inline — que ganha desta regra. O 4:3 aqui só reserva o
-     espaço entre a tela montar e o primeiro quadro chegar, para o layout não
-     pular. */
   aspect-ratio: 4 / 3;
   /* Teto de altura em qualquer largura: sem ele, num notebook de 720px de
      altura o preview em 4:3 come a tela inteira e as métricas ficam abaixo da
@@ -771,20 +785,7 @@ a:hover {
   max-height: 56vh;
   border-radius: var(--raio-m);
   background: #0b1120;
-  /* `contain` e não `cover`: o preview precisa mostrar **o quadro inteiro**.
-
-     Com a caixa acompanhando a proporção da câmera, os dois dariam no mesmo na
-     prática — mas `contain` é a rede de segurança para quando a proporção não
-     puder ser medida e o fallback 4:3 valer. Aí um quadro 16:9 com `cover`
-     perderia 25% da largura e apareceria ampliado em 1,33×, que foi como o
-     preview acabou colado no rosto numa máquina de teste.
-
-     Isso não é só estética: o MediaPipe lê o **quadro inteiro** do elemento,
-     não o recorte que o CSS desenha. Recortando, o aluno se enquadra olhando
-     para uma imagem que não corresponde ao que está sendo medido — veria o
-     rosto centralizado enquanto o algoritmo enxerga margens que ele não faz
-     ideia de que existem. */
-  object-fit: contain;
+  object-fit: cover;
   /* Espelhado: o aluno espera se ver como num espelho, não como numa filmagem.
      É só apresentação — as métricas saem dos landmarks, não deste elemento. */
   transform: scaleX(-1);
@@ -882,6 +883,115 @@ a:hover {
   color: var(--alerta-700);
 }
 
+/* O gráfico do IEE, usado pelo relatório de autopercepção. Altura fixa porque
+   o chart.js dimensiona pelo contêiner: sem ela, o canvas cresce a cada
+   repintura tentando caber em si mesmo. */
+.grafico {
+  position: relative;
+  height: 180px;
+}
+
+/* Incerteza de captura (ticket 10). Divide o desenho do aviso de FPS baixo
+   porque é a mesma classe de mensagem — algo no ambiente atrapalhando a
+   medição, com uma ação de saída —, mas ganha peso: enquanto ele aparece,
+   nenhum score está sendo gravado, e o aluno precisa notar. */
+.aviso--incerteza {
+  display: block;
+  border-left-color: var(--alerta-500);
+  border-left-width: 3px;
+  line-height: 1.45;
+}
+
+.aviso--incerteza strong {
+  font-weight: 700;
+}
+
+/* ==========================================================================
+   Método de estudo: a declaração e o ciclo (ticket 17)
+
+   Duas superfícies novas, e a segunda carrega uma regra que não é de gosto.
+   A tela da sessão não pode exibir nada derivado do comportamento medido do
+   aluno (AC-17-8), e **cor é exibição**: pintar "Foco" de verde e "Pausa" de
+   vermelho transformaria um estado declarado num juízo sobre ele, sem uma
+   palavra escrita. O ciclo inteiro fica no índigo da marca e no cinza da tinta,
+   que aqui significam "isto é informação", e o verde continua reservado ao selo
+   de "medindo agora" — o único lugar em que ele quer dizer "está vivo".
+   ========================================================================== */
+
+.declaracao {
+  display: grid;
+  gap: 0.9rem;
+  width: 100%;
+  max-width: 420px;
+  margin: 0 auto 0.4rem;
+  text-align: left;
+}
+
+/* O cartão do ciclo fica entre o cabeçalho e o corpo da sessão: acima do
+   preview porque é a única coisa da tela que pede uma ação com hora marcada, e
+   fora do painel de captura porque não tem nada a ver com o equipamento. */
+.ciclo {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.6rem 1.25rem;
+  margin: 0 0 1.25rem;
+  padding: 0.9rem 1.1rem;
+  border: 1px solid var(--linha);
+  border-radius: var(--raio-m);
+  background: var(--marca-050);
+}
+
+.ciclo__estado {
+  display: flex;
+  align-items: baseline;
+  gap: 0.5rem;
+  margin: 0;
+}
+
+.ciclo__tipo {
+  font-family: var(--fonte-titulo);
+  font-size: 1.05rem;
+  font-weight: 700;
+  color: var(--tinta-900);
+  letter-spacing: -0.01em;
+}
+
+.ciclo__metodo {
+  font-size: 0.84rem;
+  color: var(--tinta-500);
+}
+
+/* Tabular para o número não dançar de largura a cada minuto que passa. */
+.ciclo__cronometro {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  margin: 0;
+  font-family: var(--fonte-titulo);
+  font-size: 1.05rem;
+  font-weight: 700;
+  color: var(--marca-700);
+  font-variant-numeric: tabular-nums;
+}
+
+.ciclo__contador {
+  margin: 0;
+  font-size: 0.84rem;
+  color: var(--tinta-500);
+}
+
+.ciclo .botao {
+  margin-left: auto;
+}
+
+/* O aviso ocupa a linha inteira, abaixo dos outros: ele aparece só na virada, e
+   quando aparece é a informação mais importante do cartão. */
+.ciclo__aviso {
+  flex-basis: 100%;
+  margin: 0;
+}
+
 .rodape-tela {
   margin: 1.5rem auto 0;
   max-width: 1100px;
@@ -934,6 +1044,13 @@ a:hover {
 
   .sessao__cabecalho .botao {
     width: 100%;
+  }
+
+  /* Empurrado para a direita numa linha estreita, o botão de transição fica
+     espremido contra o cronômetro e vira um alvo de toque pequeno demais. */
+  .ciclo .botao {
+    width: 100%;
+    margin-left: 0;
   }
 }
 
@@ -1004,4 +1121,435 @@ a:hover {
 .sem-rosto .icone {
   width: 15px;
   height: 15px;
+}
+
+/* ==========================================================================
+   Relatório de autopercepção e histórico (tickets 11 e 12)
+
+   A tela da sessão é deliberadamente pobre em informação — o score não aparece
+   enquanto o aluno estuda. Toda a densidade do produto mora aqui, e a
+   hierarquia visual precisa carregar as distinções que o texto sozinho
+   perderia: tempo medido pesa mais que tempo de aba aberta; "não deu para
+   medir" nunca pode parecer um zero; e sinal físico observado (fadiga) não se
+   confunde com diagnóstico do equipamento (incerteza).
+   ========================================================================== */
+
+.topo__acoes {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+/* Cinza, e não o verde de "medindo agora": o verde é reservado ao que está
+   vivo, e uma sessão encerrada é exatamente o contrário disso. */
+.selo-encerrado {
+  display: inline-flex;
+  align-items: center;
+  padding: 0.3rem 0.7rem;
+  border-radius: 999px;
+  background: var(--marca-050);
+  color: var(--marca-700);
+  font-size: 0.78rem;
+  font-weight: 600;
+  letter-spacing: 0.01em;
+  text-transform: uppercase;
+}
+
+.relatorio {
+  display: grid;
+  gap: 1.6rem;
+}
+.relatorio h1 {
+  margin: 0.5rem 0 0.25rem;
+}
+.relatorio h2 {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  margin: 0 0 0.85rem;
+  font-size: 1rem;
+  color: var(--tinta-800);
+}
+.relatorio__quando {
+  margin: 0;
+  color: var(--tinta-500);
+  font-size: 0.92rem;
+}
+
+.indicadores {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  gap: 0.75rem;
+  margin: 0;
+}
+.indicador {
+  padding: 0.9rem 1rem;
+  border: 1px solid var(--linha);
+  border-radius: var(--raio-m);
+  background: #fff;
+}
+/* O tempo medido ocupa a primeira posição e recebe o único fundo de marca da
+   grade. É o número que responde "quanto disso foi estudo de verdade", e é o
+   que o relatório existia para corrigir. */
+.indicador--destaque {
+  background: var(--marca-050);
+  border-color: var(--marca-100);
+}
+.indicador dt {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  font-size: 0.82rem;
+  color: var(--tinta-500);
+}
+.indicador dd {
+  margin: 0.35rem 0 0;
+  font-family: var(--fonte-titulo);
+  font-size: 1.7rem;
+  font-weight: 700;
+  color: var(--tinta-900);
+  font-variant-numeric: tabular-nums;
+  line-height: 1.1;
+}
+.indicador__nota {
+  margin: 0.2rem 0 0;
+  font-size: 0.8rem;
+  color: var(--tinta-500);
+}
+
+.relatorio__grafico {
+  padding: 1rem 1.1rem 1.2rem;
+  border: 1px solid var(--linha);
+  border-radius: var(--raio-m);
+  background: #fff;
+}
+.relatorio__legenda {
+  margin: 0.75rem 0 0;
+  font-size: 0.85rem;
+  color: var(--tinta-500);
+  line-height: 1.5;
+}
+
+.relatorio__alertas {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+  gap: 1.1rem;
+}
+.lista-alertas {
+  display: grid;
+  gap: 0.45rem;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.lista-alertas li {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 0.75rem;
+  padding: 0.65rem 0.85rem;
+  border: 1px solid var(--linha);
+  border-left: 3px solid var(--alerta-500);
+  border-radius: var(--raio-p);
+  background: var(--alerta-050);
+}
+/* Âmbar para sinal observado no aluno, índigo para condição do equipamento. A
+   cor é o que impede "sua sala estava escura" de ser lido como um defeito
+   dele — são categorias diferentes de informação, não graus do mesmo alerta. */
+.lista-alertas--captura li {
+  border-left-color: var(--marca-500);
+  background: var(--marca-050);
+}
+.lista-alertas__nome {
+  font-weight: 600;
+  color: var(--tinta-800);
+  font-size: 0.9rem;
+}
+.lista-alertas__contagem {
+  color: var(--tinta-500);
+  font-size: 0.82rem;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+/* ── E02-S02 · O relatório por blocos ─────────────────────────────────────── */
+
+/* Método e assunto ficam sob a data, em corpo menor: são rótulo da sessão, não
+   indicador dela. Quando são traço, o traço precisa ler como ausência e não
+   como um valor — daí o tom de tinta-400. */
+.relatorio__contexto {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.25rem 1.6rem;
+  margin: 0.6rem 0 0;
+}
+.relatorio__contexto dt {
+  font-size: 0.72rem;
+  color: var(--tinta-400);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+.relatorio__contexto dd {
+  margin: 0.1rem 0 0;
+  font-weight: 600;
+  color: var(--tinta-800);
+  font-size: 0.92rem;
+}
+
+.relatorio__metodo {
+  display: grid;
+  gap: 1.1rem;
+}
+
+/* Cada bloco é uma faixa, e a barra à esquerda é o que distingue foco de pausa
+   sem precisar de cor de estado: verde continua reservado ao que está vivo. */
+.blocos {
+  display: grid;
+  gap: 0.45rem;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.bloco {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 0.3rem 1rem;
+  padding: 0.7rem 0.9rem;
+  border: 1px solid var(--linha);
+  border-left: 3px solid var(--marca-500);
+  border-radius: var(--raio-p);
+  background: #fff;
+}
+.bloco--pausa {
+  border-left-color: var(--tinta-400);
+  background: var(--fundo);
+}
+.bloco__titulo {
+  min-width: 9rem;
+  font-weight: 600;
+  color: var(--tinta-800);
+  font-size: 0.9rem;
+}
+/* As duas durações lado a lado ocupam o meio da faixa e crescem com ela: é a
+   comparação entre elas que informa, então elas não podem quebrar em linhas
+   separadas antes do resto. */
+.bloco__duracao {
+  flex: 1 1 14rem;
+  color: var(--tinta-500);
+  font-size: 0.85rem;
+  font-variant-numeric: tabular-nums;
+}
+.bloco__indice {
+  color: var(--tinta-700);
+  font-size: 0.85rem;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+/* O traço e a frase que o explica ficam em tom mais claro que um número: é uma
+   abstenção, e ela não pode competir visualmente com uma medida de verdade. */
+.bloco__indice--vazio {
+  color: var(--tinta-400);
+  white-space: normal;
+}
+
+/* A média dos blocos de foco é destaque de forma, e não de cor: verde está
+   reservado ao que está vivo e não pode virar decoração aqui, e um segundo
+   cartão índigo na mesma tela faria o aluno procurar qual dos dois é "o" número
+   da sessão. Sobra a borda de marca, que distingue sem competir. */
+.indicadores--metodo .indicador--destaque {
+  background: #fff;
+  border-color: var(--marca-100);
+  box-shadow: inset 3px 0 0 var(--marca-500);
+}
+
+.criterios {
+  display: grid;
+  gap: 0.75rem;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.criterio {
+  padding: 1rem 1.1rem;
+  border: 1px solid var(--linha);
+  border-radius: var(--raio-m);
+  background: #fff;
+}
+.criterio h3 {
+  margin: 0 0 0.35rem;
+  font-family: var(--fonte-titulo);
+  font-size: 1rem;
+  color: var(--tinta-900);
+}
+.criterio p {
+  margin: 0;
+  color: var(--tinta-700);
+  font-size: 0.92rem;
+  line-height: 1.6;
+}
+/* Mesma hierarquia de `.recomendacao__motivo`: a evidência sustenta a leitura e
+   vem depois dela, em corpo menor. */
+.criterio__detalhe {
+  margin-top: 0.5rem !important;
+  color: var(--tinta-500) !important;
+  font-size: 0.82rem !important;
+  font-variant-numeric: tabular-nums;
+}
+
+.recomendacoes {
+  display: grid;
+  gap: 0.75rem;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.recomendacao {
+  padding: 1rem 1.1rem;
+  border: 1px solid var(--linha);
+  border-radius: var(--raio-m);
+  background: #fff;
+}
+.recomendacao h3 {
+  margin: 0 0 0.35rem;
+  font-family: var(--fonte-titulo);
+  font-size: 1rem;
+  color: var(--tinta-900);
+}
+.recomendacao p {
+  margin: 0;
+  color: var(--tinta-700);
+  font-size: 0.92rem;
+  line-height: 1.6;
+}
+/* A evidência vem depois do conselho e em corpo menor: ela sustenta a
+   sugestão, mas quem lê primeiro quer saber o que fazer. */
+.recomendacao__motivo {
+  margin-top: 0.5rem !important;
+  color: var(--tinta-500) !important;
+  font-size: 0.82rem !important;
+}
+
+.estado-vazio {
+  display: grid;
+  justify-items: center;
+  gap: 0.85rem;
+  text-align: center;
+  padding: 1.5rem 0;
+}
+.estado-vazio__marca {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 52px;
+  height: 52px;
+  border-radius: 50%;
+  background: var(--marca-050);
+  color: var(--marca-600);
+}
+.estado-vazio__texto {
+  margin: 0;
+  max-width: 46ch;
+  color: var(--tinta-500);
+  line-height: 1.6;
+}
+
+.historico__intro {
+  margin: 0.4rem 0 1.4rem;
+  color: var(--tinta-500);
+  line-height: 1.6;
+}
+.historico {
+  display: grid;
+  gap: 0.6rem;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.historico__link {
+  display: flex;
+  align-items: center;
+  gap: 1.2rem;
+  padding: 0.9rem 1.1rem;
+  border: 1px solid var(--linha);
+  border-radius: var(--raio-m);
+  background: #fff;
+  color: inherit;
+  text-decoration: none;
+  transition:
+    border-color 0.15s ease,
+    box-shadow 0.15s ease;
+}
+.historico__link:hover,
+.historico__link:focus-visible {
+  border-color: var(--marca-500);
+  box-shadow: var(--sombra-p);
+}
+.historico__quando {
+  display: grid;
+  min-width: 7.5rem;
+}
+.historico__quando strong {
+  font-family: var(--fonte-titulo);
+  color: var(--tinta-900);
+}
+/* Histórico: o método entra sob o horário, na mesma família das outras linhas
+   secundárias da coluna. */
+.historico__metodo {
+  color: var(--tinta-700) !important;
+  font-weight: 600;
+}
+
+.historico__quando span {
+  color: var(--tinta-500);
+  font-size: 0.85rem;
+}
+.historico__numeros {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 1.4rem;
+  margin: 0;
+  flex: 1;
+}
+.historico__numeros dt {
+  font-size: 0.78rem;
+  color: var(--tinta-500);
+}
+.historico__numeros dd {
+  margin: 0.15rem 0 0;
+  font-family: var(--fonte-titulo);
+  font-weight: 700;
+  color: var(--tinta-900);
+  font-variant-numeric: tabular-nums;
+}
+.selo-parcial {
+  padding: 0.25rem 0.6rem;
+  border-radius: 999px;
+  background: var(--alerta-050);
+  color: var(--alerta-700);
+  font-size: 0.72rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+
+@media (max-width: 640px) {
+  .historico__link {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 0.75rem;
+  }
+  .bloco {
+    flex-direction: column;
+    gap: 0.2rem;
+  }
+  .bloco__duracao {
+    flex: 1 1 auto;
+  }
+  .historico__numeros {
+    gap: 1rem;
+  }
+  .indicador dd {
+    font-size: 1.45rem;
+  }
 }

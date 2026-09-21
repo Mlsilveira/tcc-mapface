@@ -1,6 +1,7 @@
 import { Injectable, InjectionToken, NgZone, OnDestroy, inject, signal } from '@angular/core';
 
-import { MetricasFaciais } from '../visao/metricas';
+import { LeituraDaCaptura } from '../visao/landmarks.service';
+import { AuthService } from '../services/auth.service';
 import { PayloadDeTelemetria, agregar } from './agregacao';
 
 /** URL do canal de telemetria. Deriva da API para não haver duas configurações. */
@@ -59,12 +60,13 @@ export const CRIADOR_DE_CANAL = new InjectionToken<CriadorDeCanal>('CriadorDeCan
 export class TelemetriaService implements OnDestroy {
   private readonly zone = inject(NgZone);
   private readonly criarCanal = inject(CRIADOR_DE_CANAL);
+  private readonly authService = inject(AuthService);
 
   private canal: CanalDeTelemetria | null = null;
-  private token: string | null = null;
-  private lerMetricas: (() => MetricasFaciais | null) | null = null;
+  private tokenInicial: string | null = null;
+  private lerCaptura: (() => LeituraDaCaptura) | null = null;
 
-  private janela: Array<MetricasFaciais | null> = [];
+  private janela: LeituraDaCaptura[] = [];
   private amostrador: ReturnType<typeof setInterval> | null = null;
   private amostrasNaJanela = 0;
   private reconexao: ReturnType<typeof setTimeout> | null = null;
@@ -74,12 +76,22 @@ export class TelemetriaService implements OnDestroy {
 
   private readonly scoreSignal = signal<number | null>(null);
   private readonly calibrandoSignal = signal(false);
-  private readonly capturaConfiavelSignal = signal(true);
   private readonly fadigaSignal = signal(0);
   private readonly motivosSignal = signal<readonly string[]>([]);
+  // `string`, e não `MotivoDeIncerteza`: o rótulo é o que o backend gravou, e
+  // ele inclui `desconhecida` para uma causa que o servidor ainda não conhece.
+  // Fingir aqui que só os três motivos existem faria o `Record` de mensagens
+  // devolver `undefined` sem que o compilador avisasse.
+  private readonly incertezaSignal = signal<string | null>(null);
   private readonly conectadoSignal = signal(false);
 
-  /** Último score devolvido pelo backend, ou `null`. */
+  /**
+   * Último score devolvido pelo backend, ou `null`.
+   *
+   * `null` cobre dois casos que a interface precisa distinguir: ainda não
+   * chegou nenhum score, e a última leitura foi descartada por incerteza de
+   * captura (ticket 10) — este último acompanhado de `incerteza`.
+   */
   readonly score = this.scoreSignal.asReadonly();
 
   /**
@@ -87,7 +99,7 @@ export class TelemetriaService implements OnDestroy {
    *
    * Nesse trecho o backend ainda mede contra uma referência genérica, porque a
    * baseline do aluno não fechou. O número é utilizável, mas não é comparável
-   * com o resto da sessão — e o gráfico da ticket 9 precisa poder dizer isso.
+   * com o resto da sessão, e o relatório precisa poder dizer isso.
    */
   readonly calibrando = this.calibrandoSignal.asReadonly();
 
@@ -103,28 +115,29 @@ export class TelemetriaService implements OnDestroy {
   readonly motivosDeFadiga = this.motivosSignal.asReadonly();
 
   /**
-   * Se dá para confiar na última leitura (ticket 10).
+   * Por que o backend se absteve de medir, ou `null` (ticket 10).
    *
-   * `false` quando a captura ficou instável — detecção piscando ou EAR saltando
-   * muito além do fisiológico. Começa em `true` porque o silêncio inicial não é
-   * motivo de alarme: sem leitura nenhuma, não há por que duvidar de nada.
+   * Vem do próprio backend, e não do `LandmarksService`, de propósito: o que a
+   * interface mostra tem que ser o que de fato aconteceu com o dado gravado. Um
+   * aviso local sobre uma leitura que subiu e virou score seria a interface
+   * contando uma história diferente da do banco.
    */
-  readonly capturaConfiavel = this.capturaConfiavelSignal.asReadonly();
+  readonly incerteza = this.incertezaSignal.asReadonly();
 
   readonly conectado = this.conectadoSignal.asReadonly();
 
   /**
    * Abre o canal e passa a enviar telemetria. Idempotente.
    *
-   * @param lerMetricas devolve a leitura corrente da captura, ou `null` sem rosto.
+   * @param lerCaptura devolve a leitura corrente e o veredito sobre ela.
    */
-  iniciar(token: string, lerMetricas: () => MetricasFaciais | null): void {
+  iniciar(token: string, lerCaptura: () => LeituraDaCaptura): void {
     if (this.canal !== null || this.reconexao !== null) {
       return;
     }
 
-    this.token = token;
-    this.lerMetricas = lerMetricas;
+    this.tokenInicial = token;
+    this.lerCaptura = lerCaptura;
     this.encerrado = false;
     this.delayDeReconexao = DELAY_INICIAL_DE_RECONEXAO_MS;
 
@@ -152,10 +165,30 @@ export class TelemetriaService implements OnDestroy {
     this.janela = [];
     this.scoreSignal.set(null);
     this.calibrandoSignal.set(false);
-    this.capturaConfiavelSignal.set(true);
     this.fadigaSignal.set(0);
     this.motivosSignal.set([]);
+    this.incertezaSignal.set(null);
     this.conectadoSignal.set(false);
+  }
+
+  /**
+   * A credencial mandada na abertura do canal — sempre a **corrente**.
+   *
+   * Não é o token recebido em `iniciar`, e a diferença deixou de ser teórica. O
+   * canal reconecta sozinho, com backoff, por quantas horas durar a sessão; a
+   * credencial, por sua vez, é trocada a cada renovação. Um retrato tirado no
+   * começo da sessão estaria vencido na primeira reconexão depois dos 30
+   * minutos — e como o servidor passou a reavaliar o `exp` do canal aberto, o
+   * desfecho não seria um erro visível: seria o servidor recusando, o cliente
+   * reconectando com o mesmo token morto, e um laço de reconexão silencioso
+   * até o fim da sessão, com a telemetria parada.
+   *
+   * O token de `iniciar` fica como recurso para quem não tem credencial
+   * armazenada — o caso dos testes, e o de qualquer chamador que queira
+   * autenticar o canal explicitamente.
+   */
+  private tokenDoCanal(): string | null {
+    return this.authService.getToken() ?? this.tokenInicial;
   }
 
   private conectar(): void {
@@ -166,7 +199,7 @@ export class TelemetriaService implements OnDestroy {
       // Autenticação pela primeira mensagem: WebSocket de navegador não manda
       // header `Authorization`, e token em query string vazaria para log de
       // servidor, proxy e histórico.
-      canal.send(JSON.stringify({ token: this.token }));
+      canal.send(JSON.stringify({ token: this.tokenDoCanal() }));
     };
 
     canal.onmessage = (evento) => this.zone.run(() => this.receber(evento.data));
@@ -177,11 +210,11 @@ export class TelemetriaService implements OnDestroy {
   private receber(bruto: string): void {
     type MensagemDeScore = {
       tipo?: string;
-      score?: number;
+      score?: number | null;
       calibrando?: boolean;
-      captura_confiavel?: boolean;
       fadiga?: number;
       motivos_fadiga?: string[];
+      incerteza?: string | null;
     };
 
     let mensagem: MensagemDeScore;
@@ -201,26 +234,35 @@ export class TelemetriaService implements OnDestroy {
       return;
     }
 
-    if (mensagem.tipo === 'score' && typeof mensagem.score === 'number') {
-      this.scoreSignal.set(mensagem.score);
-      // Ausente é tratado como "não está calibrando": um backend anterior à
-      // ticket 7 não manda o campo, e assumir calibração eterna deixaria o aviso
-      // preso na tela.
-      this.calibrandoSignal.set(mensagem.calibrando === true);
-      // Ausente é tratado como confiável, pela mesma razão de `calibrando`: um
-      // backend anterior à ticket 10 não manda o campo, e assumir incerteza
-      // eterna deixaria o aviso preso na tela.
-      this.capturaConfiavelSignal.set(mensagem.captura_confiavel !== false);
-      this.fadigaSignal.set(typeof mensagem.fadiga === 'number' ? mensagem.fadiga : 0);
-      this.motivosSignal.set(
-        Array.isArray(mensagem.motivos_fadiga) ? mensagem.motivos_fadiga : [],
-      );
+    if (mensagem.tipo !== 'score') {
+      return;
     }
+
+    // `score: null` é a abstenção da ticket 10, e é uma mensagem válida — não
+    // um campo faltando. Só um tipo inesperado (string, objeto) é descartado.
+    const score = mensagem.score;
+    if (typeof score !== 'number' && score !== null) {
+      return;
+    }
+
+    this.scoreSignal.set(score);
+    this.incertezaSignal.set(mensagem.incerteza ?? null);
+    // Ausente é tratado como "não está calibrando": um backend anterior à
+    // ticket 7 não manda o campo, e assumir calibração eterna deixaria o aviso
+    // preso na tela.
+    this.calibrandoSignal.set(mensagem.calibrando === true);
+    this.fadigaSignal.set(typeof mensagem.fadiga === 'number' ? mensagem.fadiga : 0);
+    this.motivosSignal.set(Array.isArray(mensagem.motivos_fadiga) ? mensagem.motivos_fadiga : []);
   }
 
   private aoCair(): void {
     this.autenticado = false;
     this.conectadoSignal.set(false);
+    // O alerta de incerteza pede uma **ação** do aluno ("acenda uma luz"), e a
+    // queda pode durar os 30 s do backoff. Mantê-lo na tela sem canal para
+    // confirmar que a condição passou faria o aluno mexer na iluminação de novo
+    // à toa. O score congelado é ruim; um pedido congelado é pior.
+    this.incertezaSignal.set(null);
     this.canal = null;
     this.pararTemporizadores();
     this.janela = [];
@@ -260,7 +302,7 @@ export class TelemetriaService implements OnDestroy {
   }
 
   private amostrar(): void {
-    this.janela.push(this.lerMetricas?.() ?? null);
+    this.janela.push(this.lerCaptura?.() ?? { metricas: null, incerteza: null });
     this.amostrasNaJanela += 1;
 
     // Enviar aqui, e não num temporizador próprio, é o que garante que a

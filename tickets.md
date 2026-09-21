@@ -124,14 +124,21 @@ O payload do WebSocket passou a levar `mar`, que já era calculado no navegador 
 
 **Pendência conhecida:** `LIMIAR_MAR_BOCEJO` está em 0,30, escolhido a partir da distribuição observada no DAiSEE (p99,9 = 0,2884). O valor herdado de 0,60 disparava em 7 clipes de 8570 — bocejo nenhum. A Sprint 11 já reserva tempo para recalibrar thresholds de fadiga com dados reais de teste.
 
-## 9. Dashboard ao vivo
+## 9. Dashboard ao vivo — ~~descartada~~, absorvida pela Ticket 11
 
-**O que construir:** o estudante vê seu score de IEE evoluindo em tempo real durante a sessão.
+**Decisão de 27/08/2026.** A ticket foi implementada e depois **retirada do produto**. O painel mostrava o score do IEE e o gráfico atualizando durante a sessão; nada disso chega ao aluno enquanto ele estuda.
 
-**Bloqueada por:** Ticket 7.
+**Por quê.** Um score de atenção na tela **compete com a tarefa que ele mede**. O aluno olha para o número, e o ato de olhar derruba o número — a medição interfere no medido. Pior: o gráfico se torna a coisa mais interessante da tela justamente quando o objetivo declarado era o material de estudo. Some-se a isso o custo de manter uma camada de tempo real que não entregava valor proporcional.
 
-- [ ] Gráfico do IEE atualizado em tempo real (chart.js) durante a sessão
-- [ ] Score numérico exibido ao vivo na interface
+O MapFace é um **espelho retrospectivo**, não um monitor cardíaco. O valor está em olhar para a sessão depois que ela terminou, com distância suficiente para tirar conclusões — que é exatamente o que o relatório da ticket 11 faz.
+
+**O que sobrou.** O `GraficoIeeComponent` continua no código e é o gráfico do relatório: ele nunca soube de onde vinham os dados, então sobreviveu à mudança sem alteração. O que saiu foi o painel na tela de sessão e a série em memória — o relatório lê a série do banco, que é onde ela de fato mora.
+
+**O que continua aparecendo durante a sessão**, e por quê: o preview da webcam, o FPS e o alerta de Incerteza de Captura (ticket 10). Nenhum é avaliação de desempenho; os três são diagnóstico do equipamento, e existem para que a sessão não termine num relatório vazio. A régua é essa — durante o estudo, só o que o aluno pode **agir a respeito agora**.
+
+**Impacto no spec:** a história 20 ("ver meu score de IEE atualizado em tempo real durante a sessão") foi movida para *Out of Scope* em [`spec-poc-iee.md`](./spec-poc-iee.md), com a mesma justificativa.
+
+**Revisitada em 21/09/2026 (ticket 17).** O cronômetro do método de estudo entrou na tela da sessão, e isso é uma mudança de escopo deliberada — não um alargamento da exceção de "diagnóstico de equipamento", onde um cronômetro não cabe. A razão que sustenta é a que estava implícita aqui o tempo todo: o problema do score era o **laço de realimentação**, e o cronômetro não tem laço nenhum, porque nada do que ele mostra vem da medição. A régua virou *nada na tela é derivado do comportamento medido do aluno* — mais precisa que a anterior, e o score continua fora. Esta ticket segue descartada.
 
 ## 10. Tratamento de condições adversas
 
@@ -141,17 +148,13 @@ O payload do WebSocket passou a levar `mar`, que já era calculado no navegador 
 
 - [x] Alerta de "Incerteza de Captura" em cenários de baixa luz, óculos reflexivos ou oclusão
 - [x] O alerta não é registrado como score corrompido no banco
-- [x] Score zera quando o rosto fica ausente por tempo prolongado — entregue na ticket 7 pelo `P(t) = 0`
+- [x] Score zera quando o rosto fica ausente por tempo prolongado
 
-Implementado em [`backend/app/qualidade.py`](./backend/app/qualidade.py), com o aviso na tela de sessão. 36 testes.
+O julgamento mora no navegador ([`qualidade.ts`](./frontend/src/app/core/visao/qualidade.ts)), porque é onde a imagem existe: dos quatro números que sobem por segundo é impossível separar "aluno de olhos semicerrados" de "sala escura e detector chutando o contorno da pálpebra". O que atravessa a rede é o **veredito**, não a evidência — a luminância medida morre no cliente, e a fronteira de privacidade não se move.
 
-**Não afirmamos a causa.** A ticket lista baixa luz, óculos reflexivos e oclusão, mas nada do que chega ao backend distingue os três — só coordenadas numéricas. O que dá para afirmar é que a captura ficou instável, e é isso que o nome do alerta diz. Prometer o diagnóstico da causa seria inventar.
+Três sinais, com precedência causal (pouca luz *produz* os outros dois, então vem primeiro): luminância média do quadro, taxa de detecção dentro da janela e assimetria entre os olhos. A assimetria é o que denuncia reflexo de óculos: as duas pálpebras descem juntas ao piscar, mas só uma lente reflete.
 
-Dois sinais, **calibrados contra as sessões reais de webcam de 28/08**: sumiços breves e repetidos do rosto (quem se levanta produz uma ausência longa e única; landmarks que não se firmam produzem piscadas de detecção — nas sessões boas houve *zero*), e jitter mediano do EAR entre leituras vizinhas (0,034 nas sessões boas, com p90 de 0,095; o limiar é 0,10). A **mediana** e não a média, para que um bocejo isolado não dispare o alerta.
-
-Três decisões que valem a defesa. **Leitura incerta não alimenta nada** — nem a calibração, que fixaria uma baseline ruim para a sessão inteira, nem a fadiga, onde um EAR saltando produziria microssonos que nunca aconteceram. **A leitura é gravada e marcada, não descartada**: é assim que o critério "não registrar score corrompido" se cumpre sem abrir um buraco na série — o relatório exclui as incertas dos indicadores, então uma câmera ruim vira "a captura falhou em 30% da sessão" em vez de "você esteve disperso em 30% da sessão". E a **sumarização separa leituras confiáveis das duvidosas** dentro do mesmo minuto, para as médias e proporções continuarem exatas depois de resumir.
-
-O risco desta ticket não é deixar de detectar captura ruim — é alarmar em captura boa, porque um alerta que aparece em sessão normal treina o aluno a ignorá-lo. Metade dos testes afirma que o alerta *não* dispara.
+Duas distinções que valem a defesa. **Ausência não é incerteza:** rosto ausente é uma medição verdadeira (o `P(t) = 0` do spec) e zera o score; incerteza é a recusa de afirmar qualquer coisa, e grava `score = NULL` com o motivo em `alerta`. E a leitura incerta **não entra em lugar nenhum** — não calibra a baseline da ticket 7, não conta como pálpebra fechada no PERCLOS da ticket 8, não vira ponto na série. Contar ausência de informação como olho fechado transformaria "a luz apagou" em "o aluno cochilou".
 
 ## 11. Relatório de autopercepção
 
@@ -159,18 +162,26 @@ O risco desta ticket não é deixar de detectar captura ruim — é alarmar em c
 
 **Bloqueada por:** Ticket 8.
 
-- [ ] Relatório gerado automaticamente ao encerrar a sessão
-- [ ] Inclui gráfico do IEE, indicadores-chave e alertas de fadiga registrados
-- [ ] Inclui recomendações básicas de autorregulação (pausas, mudança de estratégia)
-- [ ] Relatório parcial é gerado mesmo se a sessão for interrompida por erro (queda de conexão, falha do navegador)
+- [x] Relatório gerado automaticamente ao encerrar a sessão
+- [x] Inclui gráfico do IEE, indicadores-chave e alertas de fadiga registrados
+- [x] Inclui recomendações básicas de autorregulação (pausas, mudança de estratégia)
+- [x] Relatório parcial é gerado mesmo se a sessão for interrompida por erro (queda de conexão, falha do navegador)
+- [x] A duração exibida reflete presença real do estudante, não tempo de aba aberta *(AC-11-5, acrescentada em 19/09/2026)*
 
-**O backend está pronto; falta a tela.** `GET /sessoes/{id}/relatorio` devolve indicadores, série para o gráfico, contagem de alertas por tipo e as recomendações. A regra vive em [`backend/app/relatorio.py`](./backend/app/relatorio.py), fora do FastAPI, com 19 testes.
+O relatório sai em `GET /sessoes/{id}/relatorio`, e só para sessão **encerrada**. Recusar a sessão em andamento não é limitação técnica — a série está lá e os indicadores sairiam. É a decisão da ticket 9 defendida na borda: servir o relatório enquanto a sessão roda devolveria o dashboard ao vivo por uma porta lateral, bastando deixar a segunda aba aberta.
 
-Três decisões que valem a defesa. O relatório é **calculado sob demanda, não guardado**: guardá-lo criaria uma segunda fonte de verdade que envelhece, e a ticket 13 teria de manter as duas em dia. **Sessão aberta também tem relatório** — não há caminho especial para o critério parcial, o relatório simplesmente não exige `fim` e se marca como `parcial`. E as recomendações relatam o observado antes de sugerir, sem afirmar nada sobre estado mental: há um teste que falha se o texto disser que o aluno estava desatento ou cansado, porque o sistema mede proxies comportamentais e o texto não pode prometer mais que isso.
+**A AC-11-5 é a que mudou mais código.** A única duração disponível era `fim − inicio`, e `fim` vinha da varredura de inatividade, que observa `ultima_atividade` — atualizada pelo heartbeat do navegador a cada 60 s **enquanto a aba estiver aberta**, inclusive com o aluno na cozinha. Aba aberta virava tempo de estudo. A correção troca a fonte da evidência: quem prova presença é a série do IEE, porque cada ponto de `log_engajamento` só existe porque a captura estava rodando. `app/presenca.py` soma os intervalos entre pontos consecutivos e descarta inteiro qualquer vão maior que o limite de inatividade — o mesmo limite da varredura, não uma quarta constante, para que o relatório não contradiga o encerramento automático.
 
-Antes disso, `log_engajamento` passou a gravar `flag_fadiga`, `fator_fadiga`, `alerta_gerado`, `direcao_olhar`, `ear` e `mar` — a ticket 8 calculava a fadiga e a descartava.
+O relatório mostra as **duas** durações lado a lado. "2h de sessão aberta, 40min medidos" ensina algo sobre a tarde que nenhum dos dois números diria sozinho.
 
-**Atenção ao atualizar:** não há Alembic, então um `app.db` anterior a essa mudança quebra com `no such column`. Ver a seção de schema no [README](./README.md).
+Quatro decisões que valem a defesa:
+
+- **Sessão de outro aluno responde 404, não 403.** Um 403 confirmaria que aquela sessão existe, e os ids são sequenciais. Há teste exigindo que sessão inexistente e sessão alheia devolvam **a mesma resposta**, byte a byte.
+- **O relatório parcial (AC-11-4) não precisou de caminho próprio.** Quem cai por queda de conexão ou navegador fechado não clica em "Encerrar"; quem fecha a sessão é a varredura. O que faltava era dizer isso ao aluno — daí a coluna `encerramento` (`manual` / `inatividade`), e o selo "Relatório parcial" quando o fim foi inferido, não observado. Sessão anterior a esta ticket fica com `NULL` e é tratada como não-parcial: a migração acrescenta coluna, nunca inventa valor para linha antiga.
+- **As recomendações não afirmam estado interno.** `app/recomendacoes.py` concentra cada frase que o aluno lê sobre si mesmo, e um teste parametrizado varre todas as recomendações possíveis proibindo "você estava cansado", "você se distraiu" e parentes. O sistema mede abertura ocular, orientação da cabeça e abertura da boca; o texto diz o que foi *observado* e o que ele *pode fazer*, e deixa a interpretação com ele. É a história 22 do spec aplicada ao único lugar onde o produto escreve frases sobre uma pessoa.
+- **Média nula vira um traço, nunca zero.** Na tela, no histórico e no DTO. Zero diria "o aluno estava aqui e desengajado"; o que houve foi ausência de medição. É a distinção que a ticket 10 comprou, e o relatório era exatamente onde ela se perderia sem que nenhum teste anterior percebesse.
+
+**Limitação conhecida:** o indicador se chama `pontos_zerados`, e não `pontos_ausentes`. `calcular_iee` termina em `max(0, bruto − fadiga)`, então `score = 0` tem duas causas — `P(t) = 0` (rosto ausente) e aluno presente cuja fadiga zerou o score — e `log_engajamento` não guarda `rosto_detectado`. Separar de verdade exige coluna nova e migração.
 
 ## 12. Histórico de sessões
 
@@ -178,16 +189,14 @@ Antes disso, `log_engajamento` passou a gravar `flag_fadiga`, `fator_fadiga`, `a
 
 **Bloqueada por:** Ticket 11.
 
-- [ ] Lista de sessões passadas do aluno autenticado — **backend pronto, falta a tela**
-- [ ] Acesso ao relatório completo de cada sessão anterior — **backend pronto, falta a tela**
+- [x] Lista de sessões passadas do aluno autenticado
+- [x] Acesso ao relatório completo de cada sessão anterior
 
-`GET /sessoes` devolve as sessões do aluno, da mais recente para a mais antiga, cada uma com duração, número de leituras, score médio e se houve fadiga — o suficiente para o aluno **escolher** qual relatório abrir. O relatório completo continua em `GET /sessoes/{id}/relatorio`, que a ticket 11 já entregou. 18 testes.
+`GET /sessoes/historico` devolve as sessões encerradas do aluno, da mais recente para a mais antiga, com o resumo de cada uma — quando, quanto tempo de captura, média e quantos alertas. A série **não** vai junto: a lista inteira com a curva de cada sessão transformaria a tela de histórico no download de todo o histórico.
 
-A regra ficou repartida entre os módulos que já são donos de cada coisa: `sessoes.listar` conhece `sessao_estudo`, `telemetria.agregar_por_sessao` conhece `log_engajamento`, e `relatorio.historico` combina os dois sem tocar no banco — por isso continua testável sem subir banco nenhum.
+A rota é declarada antes de `/{id_sessao}/relatorio` de propósito — o FastAPI casa na ordem de registro, e uma dinâmica declarada antes engoliria `historico` como se fosse um id. Há teste travando isso.
 
-Duas decisões que valem a defesa. **O resumo de todas as sessões sai numa consulta só**: montar o relatório completo de cada linha custaria uma consulta por sessão, o N+1 clássico, que numa lista de 50 vira 51 idas ao banco para calcular três números. Há um teste que conta as consultas e falha se alguém trocar isso por um laço. E **a sessão em andamento aparece na lista**, marcada como parcial: escondê-la criaria um buraco esquisito, em que o aluno encerra a sessão e ela aparece, como se tivesse nascido naquele instante.
-
-A tela depende do relatório da ticket 11 existir — é para ele que cada item da lista aponta.
+**O que a tela deliberadamente não faz é traçar tendência entre sessões.** Comparar a média de terça com a de quinta pressupõe que as duas medem a mesma coisa, e não medem: a baseline é recalibrada a cada sessão e o ambiente muda. Oferecer a linha do tempo é útil; desenhar uma seta para cima em cima dela seria afirmar mais do que o dado sustenta.
 
 ## 13. Sumarização e retenção de logs
 
@@ -196,15 +205,57 @@ A tela depende do relatório da ticket 11 existir — é para ele que cada item 
 **Bloqueada por:** Ticket 11.
 
 - [x] Logs granulares (segundo a segundo) sumarizados em médias após o encerramento da sessão
-- [x] Indexação temporal em `horario_registro`
+- [x] Indexação/particionamento temporal em `horario_registro`
 
-Implementado em [`backend/app/retencao.py`](./backend/app/retencao.py), com 15 testes. Uma sessão de 150 leituras vira 3 linhas ao ser encerrada; o relatório continua reportando 150 leituras e desenha 3 pontos.
+`log_engajamento` é a tabela que cresce: um ponto por segundo, por aluno, por sessão. Uma turma de 30 alunos estudando duas horas por dia gera ~6,5 milhões de linhas por mês, e nada as apagava.
 
-Três decisões que valem a defesa. A sumarização **colapsa e não copia** — copiar para uma tabela de resumos mantendo as granulares não reduziria nada. Cada linha ganhou `n_leituras`, o peso do que ela representa, em vez de existir uma tabela separada: mantém **uma série só**, então o relatório continua lendo de um lugar e a única diferença é que a média virou ponderada. E a varredura é **preguiçosa**, no mesmo idioma de `sessoes.encerrar_inativas` — quem consulta é quem dispara, o que garante que uma sessão encerrada pela varredura de inatividade, que não passa por endpoint nenhum, também seja resumida sem precisar de scheduler.
+`app/sumarizacao.py` fecha isso em **duas operações, em dois momentos diferentes** — e a separação é a decisão que sustenta a ticket:
 
-O teste que mais importa aqui é `test_o_relatorio_diz_a_mesma_coisa_antes_e_depois`: se resumir mudasse os indicadores, o aluno veria a sessão mudar de nota sozinha algum tempo depois de encerrá-la.
+1. **No encerramento**, os indicadores são calculados sobre a série completa e congelados em `resumo_sessao`. Não é cache, é correção: média de médias não é média, e recalcular depois sobre a série já colapsada devolveria números *parecidos* com os certos. Parecido é a pior categoria de errado num relatório que o aluno compara com o da semana passada. Há teste com números escolhidos para separar os dois casos — média verdadeira 96,72, média de médias 49,17.
+2. **Passadas 24 horas**, os pontos por segundo são trocados por médias por minuto. Não imediatamente, e isso é deliberado: a sessão recém-encerrada é justamente a que o aluno abre em seguida, e uma curva por minuto de uma sessão de oito minutos tem oito pontos. Depois de um dia o valor da série muda de natureza — ninguém revisita o segundo 1.847 de uma terça, mas a forma da curva ainda diz algo.
 
-O particionamento mensal previsto no spec **não** foi feito — é otimização de volume que o SQLite da PoC não justifica, e que o RDS da ticket 15 faria de outro jeito.
+A varredura é **preguiçosa**, no mesmo molde de `encerrar_inativas`: roda quando o aluno abre o histórico, em vez de depender de um scheduler. A PoC segue sem processo de background, e o custo cai sobre quem se beneficia dele. Em produção com muitos alunos isso vira job — anotado para a ticket 15.
+
+O colapso preserva três coisas que as tickets 10 e 11 custaram a construir, cada uma com teste próprio: um minuto com alguma medida vira a média **só das medidas** (ponto incerto não entra como zero); um minuto inteiramente incerto sobrevive como ponto de `score` nulo (sem ele a curva ligaria os dois lados do buraco); e o rótulo que sobrevive é escolhido **dentro do mesmo vocabulário** — fadiga entre os pontos medidos, incerteza entre os não medidos —, porque uma linha com score e motivo de incerteza ninguém sabe interpretar.
+
+A indexação temporal saiu como índice em `horario_registro` e em `id_sessao`, que é como a série é sempre lida (recortada por sessão, em ordem cronológica). Particionamento de verdade é recurso do PostgreSQL e entra junto com a ticket 14; no SQLite da PoC o índice é o que existe.
+
+## 17. Ciclo de vida da sessão dirigido por presença
+
+> Numerada 17 por ser a mais nova, mas colocada aqui de propósito: ela vem **antes** da trilha de infraestrutura na sequência de trabalho. As tickets 14 a 16 seguem no fim por decisão de escopo, não por ordem.
+
+**O que construir:** a sessão de estudo deixa de ser mantida viva por "aba aberta" e passa a ser mantida viva por **rosto na câmera**, com o limite de ausência vindo do método de estudo que o aluno declarou.
+
+**Bloqueada por:** Ticket 10 (é `rosto_detectado`, já no payload, que vira a evidência).
+
+- [x] `app/metodos.py` — catálogo fechado dos métodos com assinatura temporal observável (Pomodoro, 52/17, Flow, Timeboxing, Sem método), tolerância de retorno e teto absoluto de ausência
+- [x] Colunas `metodo`, `assunto`, `meta_de_blocos`, `pausa_maxima_s` e `ultima_presenca` em `sessao_estudo`, com migração e testes
+- [x] `sessoes.registrar_presenca` escrita pelo canal de telemetria só quando há rosto
+- [x] `encerrar_inativas` com limite **por sessão**, vindo do método
+- [x] `sessao_inatividade_minutos` renomeada para `vao_maximo_da_serie_minutos`, com alias do nome antigo
+- [x] `POST /auth/renovar` com janela deslizante e teto absoluto na credencial, e reavaliação da expiração no WebSocket
+- [x] `InactivityService` suspenso enquanto houver sessão ativa; `sair()` encerra a sessão de verdade
+- [x] Tabela `bloco_estudo`, módulo puro `app/blocos.py` e os endpoints de transição
+- [x] **AC-17-6:** na tela inicial, o estudante escolhe o método, informa o assunto e, opcionalmente, a meta de blocos
+- [x] **AC-17-7:** o aplicativo conduz o método declarado — cronômetro do bloco, aviso da hora da pausa, transições registradas
+- [x] **AC-17-8:** nada na tela da sessão é derivado do comportamento medido do estudante
+- [x] **AC-17-9:** o relatório lê a sessão por blocos, com os indicadores de cada bloco de foco e as pausas fora da conta
+- [x] **AC-17-10:** a cadência declarada é comparada com a executada em **contagem**, nunca em razão, percentual ou nota
+- [x] **AC-17-11:** sessão sem método declarado abre com traço, sem seção de método inventada
+
+**A trava que não é de texto.** O risco desta ticket não era uma frase feia — era um número. `"aderência: 62%"` não afirma estado interno nenhum, é aritmética sobre carimbos de tempo, e teria passado em silêncio pelo teste parametrizado de tom que existe desde a ticket 11. Por isso o contrato de cadência é travado por **tipo**: ele carrega `duracao_alvo_s`, `duracoes_observadas_s`, `blocos_na_faixa`, `blocos_de_foco` e `meta_de_blocos`, e um teste varre os campos dos dois lados da rede recusando qualquer `float` que não seja duração nem média. Teste de string é conselho; teste de tipo é regra.
+
+As seis ACs acima nasceram no épico `E02-metodos-de-estudo` do `.wize/`, e não aqui — é a primeira vez neste projeto que o contrato de teste foi escrito **antes** do código. Os contratos estão em `.wize/implementation/tea/E02-metodos-de-estudo/`.
+
+**O bug que ela existe para matar.** `routers/telemetria.py` renovava a atividade da sessão a cada payload recebido — a 1 Hz. Só que o navegador manda payload válido mesmo sem rosto (`rosto_detectado: false`), porque há quadro de vídeo e não há rosto; só para de mandar quando a aba vai para segundo plano. Somado ao heartbeat de 60 s, que bate enquanto a aba existir, isso fazia **cadeira vazia com a janela aberta renovar a sessão indefinidamente**. O encerramento automático da ticket 4 era estruturalmente incapaz de disparar durante uma sessão monitorada, e o relatório contava a tarde inteira como estudo. A ticket 11 tratou o sintoma na duração exibida (`duracao_presente`); esta trata a causa.
+
+**Por que o limite é por sessão.** Avaliar quem usa Pomodoro pelo período inteiro de estudo penaliza exatamente o comportamento que o método prescreve: os cinco minutos em que o aluno está corretamente longe da tela entram na média e a derrubam. Se a pausa é parte do método, o sistema precisa saber qual método é. A pausa máxima é resolvida **no servidor**, a partir do catálogo — o cliente manda o código do método, nunca o número, senão "sessão que nunca encerra" viraria um campo de request. E nenhum método passa do teto de 20 minutos, que é a segunda linha de defesa contra parametrização torta.
+
+**As duas perguntas que pareciam uma.** "A sessão acabou?" e "este vão na série foi perda de captura?" compartilhavam uma constante enquanto a série era a única evidência de presença que existia. Desde que há `ultima_presenca`, não são a mesma pergunta: a primeira se responde com a coluna e o limite do método; a segunda, com a série e os 10 minutos de `presenca.limite_de_ausencia`. Separá-las é o que abre a janela em que uma pausa declarada de 17 minutos sai do tempo de estudo **sem** custar a sessão — antes, ou a pausa contava como estudo ou derrubava a sessão, e as duas respostas estavam erradas.
+
+**Incerteza não é ausência.** Luz baixa, reflexo no óculos e oclusão parcial estragam a medida do EAR sem tirar ninguém da frente da webcam. Achar o rosto é afirmação mais fraca e independente de medi-lo bem, então a presença é registrada mesmo sob incerteza. Exigir o contrário encerraria a sessão de quem estuda num quarto mal iluminado — a mesma confusão entre "não medi" e "não estava lá" que a ticket 10 existe para recusar.
+
+**Os métodos que ficaram de fora.** Feynman, active recall e SQ3R diferem por atividade cognitiva, e EAR, MAR e Head Pose não distinguem "explicar em voz alta" de "reler". Oferecê-los faria o sistema afirmar que mede o que não mede.
 
 ## 14. Infraestrutura como código (Terraform)
 
