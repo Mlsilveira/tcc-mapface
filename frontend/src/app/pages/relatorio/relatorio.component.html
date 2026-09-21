@@ -1,0 +1,287 @@
+<div class="aplicacao">
+  <header class="topo">
+    <div class="topo__interno">
+      <app-logo />
+      <nav class="topo__acoes">
+        <a class="botao botao--fantasma" routerLink="/historico" data-teste="ir-para-historico">
+          Minhas sessões
+        </a>
+        <a class="botao botao--fantasma" routerLink="/home" data-teste="voltar-para-home">
+          Nova sessão
+        </a>
+      </nav>
+    </div>
+  </header>
+
+  <main class="conteudo">
+    @if (carregando()) {
+      <section class="painel estado-vazio" data-teste="relatorio-carregando" role="status">
+        <p>Montando seu relatório…</p>
+      </section>
+    } @else if (erro() !== null) {
+      <section class="painel estado-vazio" data-teste="relatorio-erro">
+        <span class="estado-vazio__marca"><app-icone nome="bussola" /></span>
+        <h1>Não deu para abrir</h1>
+        <p role="alert">{{ erro() }}</p>
+        <a class="botao botao--primario" routerLink="/home">Voltar para o início</a>
+      </section>
+    } @else {
+      @if (relatorio(); as dados) {
+        <section class="painel relatorio">
+          <div class="relatorio__cabecalho">
+            <div>
+              <span class="selo-encerrado">Sessão encerrada</span>
+              <h1>Como foi sua sessão</h1>
+              <p class="relatorio__quando" data-teste="relatorio-quando">
+                {{ dados.inicio | date: 'dd/MM/yyyy' }}, das
+                {{ dados.inicio | date: 'shortTime' }}
+                @if (dados.fim) {
+                  às {{ dados.fim | date: 'shortTime' }}
+                }
+              </p>
+
+              <!-- AC-17-11: traço, e nunca "Sem método". O traço diz "não há
+                 informação"; "Sem método" diria que o aluno escolheu estudar
+                 sem método, que é o valor "livre" e uma coisa diferente. -->
+              <dl class="relatorio__contexto">
+                <div>
+                  <dt>Método</dt>
+                  <dd data-teste="relatorio-metodo">{{ dados.metodo_nome ?? '—' }}</dd>
+                </div>
+                <div>
+                  <dt>Assunto</dt>
+                  <dd data-teste="relatorio-assunto">{{ dados.assunto ?? '—' }}</dd>
+                </div>
+              </dl>
+            </div>
+          </div>
+
+          <!-- AC-11-4: a sessão que caiu ainda rende relatório, mas o aluno
+             precisa saber que o fim dela foi inferido, e não observado. -->
+          @if (dados.parcial) {
+            <p class="aviso aviso--incerteza" role="status" data-teste="relatorio-parcial">
+              <strong>Relatório parcial.</strong>
+              Esta sessão não foi encerrada por você — o navegador fechou, a conexão caiu ou o
+              computador suspendeu. O fim considerado é o último sinal que chegou aqui.
+            </p>
+          }
+
+          @if (semDados()) {
+            <p class="estado-vazio__texto" data-teste="relatorio-vazio">
+              Nenhuma leitura chegou ao servidor nesta sessão. Sem medições não há curva nem
+              indicadores — o que aparece abaixo é só o que dá para fazer na próxima.
+            </p>
+          } @else {
+            <dl class="indicadores" data-teste="relatorio-indicadores">
+              <div class="indicador indicador--destaque">
+                <dt>
+                  <app-icone nome="relogio" />
+                  Tempo medido
+                </dt>
+                <dd data-teste="relatorio-duracao">
+                  {{ duracao(dados.duracao_presente_s) }}
+                </dd>
+                <!-- As duas durações juntas são metade do valor do relatório: uma
+                   sozinha vira "você estudou 3 horas" para quem estudou 40 min. -->
+                <p class="indicador__nota" data-teste="relatorio-duracao-total">
+                  de {{ duracao(dados.duracao_total_s) }} com a sessão aberta
+                </p>
+              </div>
+
+              <div class="indicador">
+                <dt>Média do índice</dt>
+                @if (dados.media !== null) {
+                  <dd data-teste="relatorio-media">
+                    {{ dados.media | number: '1.0-0' }}
+                  </dd>
+                  <p class="indicador__nota">de 100</p>
+                } @else {
+                  <!-- Nunca "0" aqui. Zero diria que o aluno estava presente e
+                     desengajado; o que houve foi ausência de medição. -->
+                  <dd data-teste="relatorio-media">—</dd>
+                  <p class="indicador__nota">não foi possível medir</p>
+                }
+              </div>
+
+              <div class="indicador">
+                <dt>Pico</dt>
+                <dd data-teste="relatorio-pico">
+                  {{ dados.pico !== null ? (dados.pico | number: '1.0-0') : '—' }}
+                </dd>
+              </div>
+
+              <div class="indicador">
+                <dt>Vale</dt>
+                <dd data-teste="relatorio-vale">
+                  {{ dados.vale !== null ? (dados.vale | number: '1.0-0') : '—' }}
+                </dd>
+              </div>
+            </dl>
+
+            <section class="relatorio__grafico">
+              <h2>
+                <app-icone nome="grafico" />
+                Seu índice ao longo da sessão
+              </h2>
+              <div data-teste="relatorio-grafico">
+                <app-grafico-iee [serie]="serie()" />
+              </div>
+              @if (segundosIncertos() > 0) {
+                <p class="relatorio__legenda" data-teste="relatorio-incerteza">
+                  A linha quebra onde a captura não sustentou uma medição —
+                  {{ duracao(segundosIncertos()) }} no total. Esses trechos ficam de fora da média,
+                  em vez de entrarem como zero.
+                </p>
+              }
+            </section>
+
+            @if (dados.alertas_de_fadiga.length > 0 || dados.motivos_de_incerteza.length > 0) {
+              <section class="relatorio__alertas" data-teste="relatorio-alertas">
+                @if (dados.alertas_de_fadiga.length > 0) {
+                  <div>
+                    <h2>Sinais registrados</h2>
+                    <!-- Sinais *físicos observáveis*, não estados internos. A
+                       diferença é o que a história 22 do spec protege. -->
+                    <ul class="lista-alertas" data-teste="relatorio-fadiga">
+                      @for (alerta of dados.alertas_de_fadiga; track alerta.codigo) {
+                        <li>
+                          <span class="lista-alertas__nome">{{ alerta.nome }}</span>
+                          <span class="lista-alertas__contagem">
+                            {{ alerta.ocorrencias }}
+                            {{ alerta.ocorrencias === 1 ? 'registro' : 'registros' }}
+                          </span>
+                        </li>
+                      }
+                    </ul>
+                  </div>
+                }
+
+                @if (dados.motivos_de_incerteza.length > 0) {
+                  <div>
+                    <h2>Condições de captura</h2>
+                    <ul class="lista-alertas lista-alertas--captura" data-teste="relatorio-captura">
+                      @for (motivo of dados.motivos_de_incerteza; track motivo.codigo) {
+                        <li>
+                          <span class="lista-alertas__nome">{{ motivo.nome }}</span>
+                          <span class="lista-alertas__contagem">
+                            {{ motivo.ocorrencias }}
+                            {{ motivo.ocorrencias === 1 ? 'trecho' : 'trechos' }}
+                          </span>
+                        </li>
+                      }
+                    </ul>
+                  </div>
+                }
+              </section>
+            }
+          }
+
+          <!-- AC-17-9 e AC-17-10. A seção inteira só existe quando houve método
+             declarado: sessão anterior ao recurso não ganha seção de método,
+             cadência nem bloco, e o `null` que decide isso vem do backend. -->
+          @if (dados.metodo !== null) {
+            <section class="relatorio__metodo">
+              <h2>
+                <app-icone nome="relogio" />
+                Como a sessão foi conduzida
+              </h2>
+
+              @if (dados.blocos.length > 0) {
+                <ol class="blocos" data-teste="relatorio-blocos">
+                  @for (bloco of dados.blocos; track bloco.indice) {
+                    <li
+                      class="bloco"
+                      [class.bloco--pausa]="bloco.tipo === 'pausa'"
+                      data-teste="relatorio-bloco"
+                    >
+                      <span class="bloco__titulo">
+                        Bloco {{ bloco.indice }} · {{ bloco.tipo_nome }}
+                      </span>
+                      <!-- As duas durações lado a lado, como em toda a casa: a
+                         discrepância é informação para o aluno, não defeito. -->
+                      <span class="bloco__duracao">
+                        {{ duracao(bloco.duracao_s) }} declarados ·
+                        {{ duracao(bloco.duracao_com_captura_s) }} com captura
+                      </span>
+                      @if (bloco.media !== null) {
+                        <span class="bloco__indice">
+                          índice médio {{ bloco.media | number: '1.0-0' }}
+                        </span>
+                      } @else {
+                        <!-- Traço mais a frase que veio pronta do backend. Zero
+                           aqui diria "o aluno estava neste bloco e
+                           desengajado", que é outra afirmação. -->
+                        <span class="bloco__indice bloco__indice--vazio">
+                          — {{ bloco.observacao }}
+                        </span>
+                      }
+                    </li>
+                  }
+                </ol>
+
+                <dl class="indicadores indicadores--metodo" data-teste="relatorio-foco">
+                  <div class="indicador indicador--destaque">
+                    <dt>Índice médio nos blocos de foco</dt>
+                    @if (dados.media_de_foco !== null) {
+                      <dd data-teste="relatorio-media-foco">
+                        {{ dados.media_de_foco | number: '1.0-0' }}
+                      </dd>
+                    } @else {
+                      <dd data-teste="relatorio-media-foco">—</dd>
+                    }
+                    <p class="indicador__nota">as pausas ficam fora desta conta</p>
+                  </div>
+
+                  <div class="indicador">
+                    <dt>Tempo em foco</dt>
+                    <dd>{{ duracao(dados.duracao_de_foco_s) }}</dd>
+                  </div>
+
+                  <div class="indicador">
+                    <dt>Tempo em pausa</dt>
+                    <dd>{{ duracao(dados.duracao_de_pausa_s) }}</dd>
+                  </div>
+                </dl>
+              }
+
+              <!-- As frases nascem em `app/criterios.py`, onde o teste de tom as
+                 varre. Aqui só se renderiza o que chegou. -->
+              <ul class="criterios">
+                @for (criterio of dados.criterios; track criterio.codigo) {
+                  <li class="criterio" [attr.data-teste]="testeDoCriterio(criterio.codigo)">
+                    <h3>{{ criterio.titulo }}</h3>
+                    <p>{{ criterio.texto }}</p>
+                    <p class="criterio__detalhe">{{ criterio.detalhe }}</p>
+                  </li>
+                }
+              </ul>
+            </section>
+          }
+
+          <section class="relatorio__recomendacoes" data-teste="relatorio-recomendacoes">
+            <h2>
+              <app-icone nome="alvo" />
+              O que fazer com isso
+            </h2>
+            <ul class="recomendacoes">
+              @for (sugestao of dados.recomendacoes; track sugestao.codigo) {
+                <li class="recomendacao">
+                  <h3>{{ sugestao.titulo }}</h3>
+                  <p>{{ sugestao.texto }}</p>
+                  <p class="recomendacao__motivo">{{ sugestao.motivo }}</p>
+                </li>
+              }
+            </ul>
+          </section>
+
+          <p class="nota-privacidade">
+            <app-icone nome="cadeado" />
+            Tudo aqui vem de números calculados no seu navegador. Nenhuma imagem foi gravada.
+          </p>
+        </section>
+      }
+    }
+  </main>
+
+  <p class="rodape-tela">MapFace · Índice de Engajamento no Estudo</p>
+</div>
