@@ -31,8 +31,7 @@ from datetime import datetime, timedelta
 from statistics import median
 from typing import Deque, Dict, List, Optional, Tuple
 
-from app.config import settings
-from app.qualidade import CAPTURA_CONFIAVEL, DetectorDeIncerteza, Qualidade
+from app import metodos
 from app.tempo import agora_utc
 
 PESO_OCULAR = 0.6
@@ -96,25 +95,9 @@ FRACAO_OLHO_FECHADO = 0.5
 #: sonolência da literatura automotiva. Abaixo do limiar não há penalidade;
 #: acima da saturação a penalidade é máxima; entre os dois ela cresce linear.
 #: Piscar normalmente ocupa ~3–5% do tempo, então 15% já é pálpebra pesada.
-#:
-#: Medido numa sessão real de 92 s (28/08/2026), o piscar involuntário deu 3,3%
-#: — dentro do esperado. O que passava de 15% era o PERCLOS somado aos episódios
-#: longos, que já são cobrados pelo microssono; ver `_avaliar`.
 PERCLOS_LIMIAR = 0.15
 PERCLOS_SATURACAO = 0.40
 PENALIDADE_PERCLOS_MAX = 25.0
-
-#: Tempo máximo que uma única amostra pode representar.
-#:
-#: A telemetria chega a ~1 Hz, mas buracos acontecem — numa sessão real medida
-#: em 28/08, 12% dos intervalos passaram de 1,5 s, chegando a 4 s durante o
-#: aquecimento do MediaPipe. Sem este teto, a amostra anterior ao buraco tem seu
-#: estado esticado por todo ele: **uma piscada capturada antes de um intervalo de
-#: 4 segundos vira 4 segundos de olho fechado**, e sozinha dispara o microssono.
-#:
-#: Buraco é informação ausente, não estado que persistiu — é o mesmo princípio
-#: que faz ausência de rosto não contar como pálpebra fechada, aplicado ao tempo.
-INTERVALO_MAXIMO_ATRIBUIVEL = timedelta(seconds=1.5)
 
 #: Olho fechado por este tempo seguido não é piscada — é cochilo curto.
 DURACAO_MICROSSONO = timedelta(seconds=2)
@@ -122,18 +105,12 @@ PENALIDADE_MICROSSONO = 15.0
 
 #: MAR acima disto conta como boca aberta de bocejo.
 #:
-#: Calibrado contra **rosto real**, e não contra o DAiSEE. Um bocejo medido por
-#: webcam em 28/08 desenhou a curva 0,21 → 0,69 → 0,79 → **0,83** → 0,76 antes
-#: de voltar a 0,01 — ou seja, ultrapassou o 0,8 que a docstring de
-#: `ml/metricas.py` descreve como bocejo escancarado. A fórmula sempre esteve
-#: certa.
-#:
-#: O que enganou foi o DAiSEE, cujo máximo em ~24 h de vídeo é 0,746 e cuja
-#: mediana é 0,0036: aquele dataset não tem bocejos francos, provavelmente por
-#: enquadramento de sala de aula em vez de webcam próxima. O valor chegou a ser
-#: baixado para 0,30 por causa dele; com a evidência de rosto real, 0,50 ganha
-#: especificidade contra fala e riso sem perder o bocejo, que passa longe disso.
-LIMIAR_MAR_BOCEJO = 0.50
+#: **Provisório, e sabidamente mal calibrado.** O valor herdado da trilha ML
+#: (0,60) dispara em 7 clipes de 8570 do DAiSEE — bocejo nenhum seria detectado.
+#: 0,30 fica acima do p99,9 observado (0,2884) e abaixo do máximo do dataset
+#: (0,7460). A Sprint 11 do plano reserva tempo para recalibrar thresholds de
+#: fadiga com dados reais de teste; este é o primeiro da fila.
+LIMIAR_MAR_BOCEJO = 0.30
 
 #: Um bocejo precisa durar para não ser confundido com falar, rir ou beber água.
 #: Bocejos reais duram 4–6 s; dois segundos é folgado o suficiente para não
@@ -167,6 +144,24 @@ class Fadiga:
 SEM_FADIGA = Fadiga(fator=0.0, perclos=0.0, maior_fechamento_s=0.0, bocejos=0)
 
 
+#: Motivos de incerteza de captura que o navegador pode reportar (ticket 10).
+#: A lista é fechada: o rótulo vai para o banco, e aceitar string livre do
+#: cliente seria deixar o navegador escrever texto arbitrário em `log_engajamento`.
+MOTIVOS_DE_INCERTEZA = ("baixa-luz", "reflexo-ocular", "oclusao")
+
+#: Rótulo para uma incerteza reportada com motivo que este backend não conhece.
+#: A marca vale — o cliente afirmou que a leitura não é confiável, e essa é a
+#: parte que importa —, mas o texto dele não entra no banco.
+INCERTEZA_DESCONHECIDA = "desconhecida"
+
+
+def normalizar_incerteza(motivo: Optional[str]) -> Optional[str]:
+    """Reduz o motivo vindo do cliente a um rótulo conhecido, ou `None`."""
+    if not motivo:
+        return None
+    return motivo if motivo in MOTIVOS_DE_INCERTEZA else INCERTEZA_DESCONHECIDA
+
+
 @dataclass(frozen=True)
 class ResultadoIEE:
     """O score e o contexto que o produziu.
@@ -174,13 +169,17 @@ class ResultadoIEE:
     `calibrando` não é detalhe de implementação vazando: é a diferença entre um
     score medido contra o aluno e um score medido contra um rosto genérico, e
     quem consome tem o direito de saber qual dos dois recebeu.
+
+    `score is None` é a incerteza de captura da ticket 10 — e não é o mesmo que
+    `score = 0`. Zero significa "não havia rosto", que é uma medição; `None`
+    significa "havia rosto, mas as condições não sustentam nenhum número".
     """
 
-    score: float
+    score: Optional[float]
     calibrando: bool
     baseline: Baseline
     fadiga: Fadiga = SEM_FADIGA
-    qualidade: Qualidade = CAPTURA_CONFIAVEL
+    incerteza: Optional[str] = None
 
 
 def _entre_zero_e_um(valor: float) -> float:
@@ -290,102 +289,43 @@ class DetectorDeFadiga:
         while len(self._amostras) > 1 and self._amostras[0][0] < corte:
             self._amostras.popleft()
 
-    def _segmentos(self):
-        """(duração efetiva, estado, boca aberta, instante final, houve buraco).
+    def _intervalos(self):
+        """(duração em segundos, estado, boca aberta) entre amostras vizinhas.
 
         A duração entre duas amostras é atribuída ao estado da **primeira**: é o
-        que sabíamos durante aquele intervalo. Mas só até
-        `INTERVALO_MAXIMO_ATRIBUIVEL` — o excedente é tempo sobre o qual não
-        temos observação nenhuma, e não entra em conta alguma.
+        que sabíamos durante aquele intervalo.
         """
-        teto = INTERVALO_MAXIMO_ATRIBUIVEL.total_seconds()
-        amostras = list(self._amostras)
-        for (t0, estado, boca), (t1, _, _) in zip(amostras, amostras[1:]):
-            bruto = (t1 - t0).total_seconds()
-            yield min(bruto, teto), estado, boca, t1, bruto > teto
-
-    def _recencia(self, fim: datetime, agora: datetime) -> float:
-        """Peso de um episódio pelo quanto ele é recente, de 1 a 0.
-
-        Sem isto a penalidade é um degrau: um cochilo de quatro segundos cobra
-        os mesmos 15 pontos no segundo seguinte e 59 segundos depois, e some de
-        uma vez. Numa sessão real medida em 28/08, três episódios espaçados
-        deixaram 88 das 92 leituras com penalidade cheia — o número parava de
-        informar quando o aluno estava piorando ou se recuperando.
-        """
-        idade = (agora - fim).total_seconds()
-        return _entre_zero_e_um(1.0 - idade / self._janela.total_seconds())
+        for (t0, estado, boca), (t1, _, _) in zip(self._amostras, list(self._amostras)[1:]):
+            yield (t1 - t0).total_seconds(), estado, boca
 
     def _avaliar(self) -> Fadiga:
-        if len(self._amostras) < 2:
-            return SEM_FADIGA
+        observado = 0.0   # tempo com rosto — o denominador do PERCLOS
+        fechado = 0.0
+        maior_fechamento = 0.0
+        corrida_atual = 0.0
+        bocejos = 0
+        bocejo_atual = 0.0
 
-        agora = self._amostras[-1][0]
-        observado = 0.0          # tempo com rosto
-        fechado = 0.0            # tempo com pálpebra fechada
-        episodios_longos = []    # (duração, fim) dos fechamentos que viram microssono
-        bocejos_datados = []     # fim de cada bocejo confirmado
-        corrida, corrida_fim = 0.0, agora
-        maior_corrida = 0.0
-        bocejo_atual, bocejo_fim = 0.0, agora
-
-        def fecha_corrida():
-            nonlocal corrida, maior_corrida
-            maior_corrida = max(maior_corrida, corrida)
-            if corrida >= DURACAO_MICROSSONO.total_seconds():
-                episodios_longos.append((corrida, corrida_fim))
-            corrida = 0.0
-
-        def fecha_bocejo():
-            """Um bocejo é datado pelo **fim**, não pelo instante em que passa
-            dos 2 s. Datá-lo na largada faria um bocejo ainda em curso perder
-            peso enquanto acontece, que é o oposto do que deveria."""
-            nonlocal bocejo_atual
-            if bocejo_atual >= DURACAO_MINIMA_BOCEJO.total_seconds():
-                bocejos_datados.append(bocejo_fim)
-            bocejo_atual = 0.0
-
-        for duracao, estado, boca, fim, houve_buraco in self._segmentos():
+        for duracao, estado, boca in self._intervalos():
             if estado != AUSENTE:
                 observado += duracao
-
-            # **Olho fechado durante bocejo não é cochilo.** Gente fecha os olhos
-            # ao bocejar — numa sessão real de 28/08, o bocejo derrubou o EAR a
-            # 0,095 e o mesmo evento cobrou duas vezes: 8 pontos de bocejo mais
-            # 15 de microssono. É o mesmo erro de categoria já corrigido entre
-            # PERCLOS e microssono, agora entre bocejo e microssono: o
-            # fechamento aqui é parte do bocejo, que já está sendo cobrado.
-            if estado == FECHADO and not boca:
+            if estado == FECHADO:
                 fechado += duracao
-                corrida += duracao
-                corrida_fim = fim
+                corrida_atual += duracao
+                maior_fechamento = max(maior_fechamento, corrida_atual)
             else:
                 # Ausência interrompe a corrida: não dá para afirmar que a
                 # pálpebra continuou fechada enquanto o rosto sumiu.
-                fecha_corrida()
+                corrida_atual = 0.0
 
             if boca:
                 bocejo_atual += duracao
-                bocejo_fim = fim
+                if bocejo_atual >= DURACAO_MINIMA_BOCEJO.total_seconds() > bocejo_atual - duracao:
+                    bocejos += 1
             else:
-                fecha_bocejo()
+                bocejo_atual = 0.0
 
-            # Um buraco não deixa afirmar continuidade de coisa alguma.
-            if houve_buraco:
-                fecha_corrida()
-                fecha_bocejo()
-        fecha_corrida()
-        fecha_bocejo()
-
-        # **Um evento não é cobrado duas vezes.** Um fechamento de quatro
-        # segundos já é penalizado como microssono; deixá-lo também no PERCLOS
-        # faria a mesma pálpebra pagar dois preços — e foi o que inflou o PERCLOS
-        # a 15,2% na sessão real, quando o piscar involuntário dava 3,3%. O
-        # PERCLOS passa a medir o que sobra: o fechamento difuso.
-        tempo_longo = sum(duracao for duracao, _ in episodios_longos)
-        difuso = max(0.0, fechado - tempo_longo)
-        base = max(0.0, observado - tempo_longo)
-        perclos = difuso / base if base > 0 else 0.0
+        perclos = fechado / observado if observado > 0 else 0.0
 
         motivos: List[str] = []
         fator = 0.0
@@ -395,26 +335,19 @@ class DetectorDeFadiga:
             fator += PENALIDADE_PERCLOS_MAX * _entre_zero_e_um(excedente)
             motivos.append("palpebras-pesadas")
 
-        if episodios_longos:
-            # O episódio mais penalizante manda, e não a soma: dois cochilos não
-            # são o dobro de um: são o mesmo estado observado duas vezes.
-            fator += max(
-                PENALIDADE_MICROSSONO * self._recencia(fim, agora)
-                for _, fim in episodios_longos
-            )
+        if maior_fechamento >= DURACAO_MICROSSONO.total_seconds():
+            fator += PENALIDADE_MICROSSONO
             motivos.append("olhos-fechados-prolongados")
 
-        if bocejos_datados:
-            fator += sum(
-                PENALIDADE_POR_BOCEJO * self._recencia(fim, agora) for fim in bocejos_datados
-            )
+        if bocejos:
+            fator += PENALIDADE_POR_BOCEJO * bocejos
             motivos.append("bocejos")
 
         return Fadiga(
             fator=min(fator, FADIGA_MAXIMA),
             perclos=perclos,
-            maior_fechamento_s=maior_corrida,
-            bocejos=len(bocejos_datados),
+            maior_fechamento_s=maior_fechamento,
+            bocejos=bocejos,
             motivos=tuple(motivos),
         )
 
@@ -449,7 +382,6 @@ class AnalistaEngajamento:
         self._ultima_presenca: Optional[datetime] = None
         self._fadiga = DetectorDeFadiga()
         self._ultima_fadiga: Fadiga = SEM_FADIGA
-        self._incerteza = DetectorDeIncerteza()
 
     @property
     def baseline(self) -> Optional[Baseline]:
@@ -476,51 +408,53 @@ class AnalistaEngajamento:
         rosto_detectado: bool = True,
         agora: Optional[datetime] = None,
         mar: Optional[float] = None,
+        incerteza: Optional[str] = None,
     ) -> ResultadoIEE:
-        """Registra uma leitura e devolve o IEE do instante."""
-        agora = agora or agora_utc()
-        qualidade = self._incerteza.observar(
-            ear=ear, rosto_detectado=rosto_detectado, agora=agora
-        )
+        """Registra uma leitura e devolve o IEE do instante.
 
-        # **Leitura não confiável não alimenta nada.** Calibrar contra landmarks
-        # instáveis fixaria uma baseline ruim para a sessão inteira, e um EAR que
-        # salta produziria fechamentos e microssonos que nunca aconteceram. O
-        # buraco que isso abre nas janelas é tratado como tempo não observado,
-        # que é exatamente o que ele é.
-        if qualidade.confiavel:
-            if self._baseline is None:
-                self._acumular(ear, yaw, rosto_detectado, agora)
+        `incerteza` é o alerta da ticket 10, e o efeito dele é uniforme: a
+        leitura **não entra em lugar nenhum**. Não calibra, porque uma baseline
+        tirada de contornos mal detectados descreveria a má iluminação e não o
+        aluno; não alimenta o PERCLOS como olho aberto ou fechado, porque não se
+        sabe qual dos dois; e não vira score, porque um número derivado de
+        landmarks em que não se confia é precisamente o score enganoso que a
+        ticket 10 existe para não emitir.
+        """
+        agora = agora or agora_utc()
+        incerteza = normalizar_incerteza(incerteza)
+
+        # Sob incerteza a leitura é tratada como ausência de informação — que é
+        # o que o detector de fadiga já sabe representar, e o motivo de `AUSENTE`
+        # nunca ter sido sinônimo de `FECHADO`.
+        confiavel = incerteza is None
+        houve_rosto = rosto_detectado and confiavel
+
+        if self._baseline is None and confiavel:
+            self._acumular(ear, yaw, rosto_detectado, agora)
 
         baseline = self._baseline or BASELINE_PROVISORIA
-        if qualidade.confiavel:
-            self._ultima_fadiga = self._fadiga.observar(
-                agora=agora, ear=ear, baseline=baseline, mar=mar, rosto_detectado=rosto_detectado
-            )
-        else:
-            # **Captura duvidosa não afirma fadiga.** Manter o último valor
-            # medido congelaria uma penalidade que ninguém consegue mais
-            # verificar, e ela ficaria de pé pelo tempo que a captura levasse a
-            # melhorar. "Não sabemos" vale para tudo o que se derivaria daquela
-            # leitura, não só para o score.
-            #
-            # A janela do detector não é limpa: quando a captura voltar, o
-            # histórico anterior à instabilidade continua lá e a fadiga real
-            # reaparece — o buraco no meio é tratado como tempo não observado.
-            self._ultima_fadiga = SEM_FADIGA
+        self._ultima_fadiga = self._fadiga.observar(
+            agora=agora, ear=ear, baseline=baseline, mar=mar, rosto_detectado=houve_rosto
+        )
 
-        return ResultadoIEE(
-            score=calcular_iee(
+        score = (
+            None
+            if not confiavel
+            else calcular_iee(
                 ear=ear,
                 yaw=yaw,
                 baseline=baseline,
                 rosto_detectado=rosto_detectado,
                 fadiga=self._ultima_fadiga.fator,
-            ),
+            )
+        )
+
+        return ResultadoIEE(
+            score=score,
             calibrando=self._baseline is None,
             baseline=baseline,
             fadiga=self._ultima_fadiga,
-            qualidade=qualidade,
+            incerteza=incerteza,
         )
 
     # --- Calibração --------------------------------------------------------
@@ -594,9 +528,12 @@ class RegistroDeAnalistas:
         self._ultimo_uso: Dict[int, datetime] = {}
 
     def _limite(self) -> timedelta:
-        # Casado com a inatividade da sessão: enquanto a sessão pode estar viva,
-        # a baseline dela também precisa estar.
-        return self._validade or timedelta(minutes=settings.sessao_inatividade_minutos)
+        # Não é um relógio próprio: é derivação do teto de ausência. Nenhuma
+        # sessão sobrevive a mais que `metodos.TETO_DE_AUSENCIA` sem rosto na
+        # câmera, logo uma baseline mais velha que o teto nunca pode ser
+        # necessária. Amarrar ao teto, e não ao limite do método, é de propósito:
+        # o registro é global e não sabe de qual sessão virá o próximo acesso.
+        return self._validade or metodos.TETO_DE_AUSENCIA
 
     def obter(self, id_sessao: int, agora: Optional[datetime] = None) -> AnalistaEngajamento:
         agora = agora or agora_utc()

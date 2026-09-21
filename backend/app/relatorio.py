@@ -1,339 +1,206 @@
-"""Relatório de autopercepção da sessão de estudo (ticket 11).
+"""Resumo de uma sessão de estudo para o relatório de autopercepção (ticket 11).
 
-Como `sessoes.py` e `analista.py`, este módulo não conhece HTTP nem WebSocket:
-recebe a série de logs e devolve indicadores. É onde os testes batem.
-
-**O relatório é calculado sob demanda, não guardado.** Guardá-lo criaria uma
-segunda fonte de verdade que envelhece — e a ticket 13, que vai sumarizar os
-logs granulares depois da sessão, teria de manter as duas em dia. Calcular na
-hora custa uma varredura sobre alguns milhares de linhas de uma sessão, o que é
-barato, e garante que o relatório sempre descreve o que está no banco.
-
-**Sessão aberta também tem relatório.** É o critério de relatório parcial da
-ticket 11: se o navegador caiu ou a conexão morreu antes do encerramento formal,
-o aluno não pode perder o que já foi medido. Não há caminho especial para isso —
-o relatório simplesmente não exige `fim`, e se marca como `parcial`.
-
-O tom das recomendações é decisão de produto, não de implementação: o sistema
-**não diagnostica, não avalia e não julga**. As frases abaixo sugerem, não
-prescrevem, e nenhuma delas afirma algo sobre o estado mental do aluno — só
-relatam o que foi observado e oferecem uma ação possível.
+Como `app/sessoes.py` e `app/analista.py`, este módulo não conhece HTTP, banco
+nem UI: recebe a sessão e a série já lidas e devolve os indicadores. É o seam
+que o relatório expõe ao aluno, e onde a regra é barata de testar.
 """
+from collections import Counter
 from dataclasses import dataclass
-from datetime import datetime
-from typing import Dict, List, Optional, Sequence
+from datetime import timedelta
+from statistics import mean
+from typing import TYPE_CHECKING, Dict, List, Optional, Sequence, Tuple
 
-from app.models import LogEngajamento, SessaoEstudo
-from app.telemetria import AgregadoDaSessao
-from app.tempo import como_utc
+from app import presenca, recomendacoes
+from app.models import ENCERRAMENTO_POR_INATIVIDADE, LogEngajamento, SessaoEstudo
 
-#: Abaixo disto, a sessão teve engajamento médio baixo o bastante para valer uma
-#: sugestão de pausa. Não é diagnóstico: é o ponto em que a média deixa de ser
-#: explicável por variação normal de atenção ao longo de uma sessão.
-SCORE_BAIXO = 55.0
-
-#: Queda, em pontos, entre o primeiro e o último terço da sessão que caracteriza
-#: uma tendência — e não a oscilação normal de quem estuda.
-QUEDA_RELEVANTE = 15.0
-
-#: Fração da sessão com alerta de fadiga a partir da qual a fadiga deixa de ser
-#: episódica.
-FRACAO_FADIGA_ALTA = 0.30
-
-#: Abaixo desta fração de leituras com rosto, a medição cobriu pouco da sessão e
-#: os indicadores merecem ressalva explícita — em vez de serem apresentados como
-#: se descrevessem a sessão inteira.
-PRESENCA_BAIXA = 0.70
-
-#: Fração da sessão com captura incerta a partir da qual vale avisar o aluno.
-#: Abaixo disso é oscilação normal — uma nuvem passando, um movimento brusco —
-#: e transformar isso em recomendação seria ruído.
-CAPTURA_INCERTA_ALTA = 0.20
+if TYPE_CHECKING:  # pragma: no cover - só para o verificador de tipos
+    # Importado apenas para anotação, pelo mesmo motivo que `recomendacoes` faz
+    # o inverso: em tempo de execução é `app.criterios` que depende daqui, para
+    # reusar `resumir_serie` em cada bloco. Amarrar as duas direções faria um
+    # ciclo de import, e o preço dele seria pago na primeira vez que alguém
+    # importasse os módulos numa ordem diferente.
+    from app.criterios import Avaliacao
 
 
 @dataclass(frozen=True)
-class Indicadores:
-    """Os números que resumem uma sessão."""
+class ResumoDaSessao:
+    """Os indicadores que o relatório apresenta sobre uma sessão.
 
-    n_leituras: int
-    duracao_s: float
-    score_medio: float
-    score_minimo: float
-    score_maximo: float
-    #: Média do primeiro e do último terço, para enxergar tendência.
-    score_inicio: float
-    score_fim: float
-    prop_com_rosto: float
-    prop_com_fadiga: float
-    fadiga_maxima: float
-    desvio_olhar_medio: float
-    #: Fração da sessão em que a captura não foi confiável (ticket 10).
-    prop_captura_incerta: float
+    `media`, `pico` e `vale` são `None` quando não houve nenhuma medida — sessão
+    que mal começou, ou sessão inteira em incerteza de captura. O `None` é o que
+    permite ao relatório dizer "não deu para medir"; zero diria "o aluno estava
+    aqui e desengajado", que é uma afirmação diferente e que estes dados não
+    sustentam.
 
+    Os dois agrupamentos de alerta são separados de propósito: fadiga é
+    observação sobre o aluno, incerteza é diagnóstico do equipamento.
 
-@dataclass(frozen=True)
-class PontoDaSerie:
-    """Um instante do gráfico do IEE."""
-
-    horario: datetime
-    score: float
-    fadiga: float
-    alerta: Optional[str]
-
-
-@dataclass(frozen=True)
-class Relatorio:
-    id_sessao: int
-    inicio: datetime
-    fim: Optional[datetime]
-    #: `True` quando a sessão não foi encerrada formalmente.
-    parcial: bool
-    indicadores: Indicadores
-    serie: List[PontoDaSerie]
-    #: Quantas leituras registraram cada tipo de alerta.
-    alertas: Dict[str, int]
-    recomendacoes: List[str]
-
-
-def _media(valores: Sequence[float]) -> float:
-    return sum(valores) / len(valores) if valores else 0.0
-
-
-def _terco(valores: Sequence[float], final: bool) -> float:
-    """Média do primeiro ou do último terço da série.
-
-    Terços, e não primeiro-versus-último ponto: um único ponto é ruído, e a
-    pergunta que interessa — "o engajamento caiu ao longo da sessão?" — é sobre
-    tendência.
+    As duas durações também são separadas de propósito, e a comparação entre
+    elas é metade do valor do relatório: `duracao_total` é quanto tempo a sessão
+    ficou aberta, `duracao_presente` é quanto tempo houve captura de fato. Quem
+    abre o relatório e lê "2h de sessão, 40min medidos" aprende algo sobre a
+    própria tarde que nenhum dos dois números diria sozinho.
     """
-    if not valores:
-        return 0.0
-    tamanho = max(1, len(valores) // 3)
-    return _media(valores[-tamanho:] if final else valores[:tamanho])
+
+    media: Optional[float]
+    pico: Optional[float]
+    vale: Optional[float]
+    pontos_medidos: int
+    pontos_incertos: int
+    pontos_zerados: int
+    alertas_de_fadiga: Dict[str, int]
+    motivos_de_incerteza: Dict[str, int]
+    duracao_total: timedelta = timedelta(0)
+    duracao_presente: timedelta = timedelta(0)
 
 
-def _proporcao(logs: Sequence[LogEngajamento], criterio) -> float:
-    """Fração das leituras que satisfazem o critério, **ponderada**.
+@dataclass(frozen=True)
+class IndicadoresDaSerie:
+    """O que se pode dizer de um **trecho** de série, sem saber de que sessão é.
 
-    Depois da sumarização da ticket 13, uma linha pode representar um minuto
-    inteiro. Contar linhas trataria esse minuto como uma leitura só, e a
-    proporção passaria a depender de a sessão já ter sido resumida ou não —
-    o mesmo relatório mudaria de número sem nenhum dado ter mudado.
+    Extraído de `resumir` quando os blocos entraram (ticket 17): a mesma conta
+    passou a valer para a sessão inteira e para cada bloco de foco dentro dela, e
+    duas cópias dela divergiriam no dia em que alguém corrigisse uma só. A
+    diferença entre este tipo e `ResumoDaSessao` é exatamente o que **não** cabe
+    num trecho: as duas durações, que dependem de `inicio` e `fim` da sessão.
     """
-    total = sum(log.n_leituras for log in logs)
-    if total == 0:
-        return 0.0
-    return sum(log.n_leituras for log in logs if criterio(log)) / total
+
+    media: Optional[float]
+    pico: Optional[float]
+    vale: Optional[float]
+    pontos_medidos: int
+    pontos_incertos: int
+    pontos_zerados: int
+    alertas_de_fadiga: Dict[str, int]
+    motivos_de_incerteza: Dict[str, int]
 
 
-def _indicadores(logs: Sequence[LogEngajamento]) -> Indicadores:
-    # **Os indicadores de score descrevem só o que foi bem medido.** Uma câmera
-    # instável produz scores baixos que não são sobre o aluno, e incluí-los faria
-    # o relatório dizer "você esteve disperso" quando o certo é "a captura
-    # falhou". A proporção de captura incerta vai separada, como indicador
-    # próprio, para o aluno saber o quanto da sessão está fora da conta.
-    confiaveis = [log for log in logs if log.captura_confiavel]
-    scores = [log.score for log in confiaveis]
-    com_rosto = [log for log in confiaveis if log.direcao_olhar is not None]
-    total_leituras = sum(log.n_leituras for log in logs)
+def resumir_serie(serie: Sequence[LogEngajamento]) -> IndicadoresDaSerie:
+    """Os indicadores de um trecho de série, do tamanho que ele for.
 
-    if logs:
-        duracao = (como_utc(logs[-1].horario_registro) - como_utc(logs[0].horario_registro))
-        duracao_s = duracao.total_seconds()
-    else:
-        duracao_s = 0.0
+    Pontos com `score` nulo são a incerteza da ticket 10 e não entram nas
+    estatísticas: não dá para afirmar nada sobre aquele segundo, e tratá-los
+    como zero diria que o aluno não estava lá.
+    """
+    medidos: List[float] = [p.score for p in serie if p.score is not None]
+    houve_medida = bool(medidos)
 
-    def media_ponderada(selecionados: Sequence[LogEngajamento], valor) -> float:
-        peso = sum(log.n_leituras for log in selecionados)
-        if peso == 0:
-            return 0.0
-        return sum(valor(log) * log.n_leituras for log in selecionados) / peso
+    # Score zero é medição verdadeira — diferente da incerteza, que é a recusa
+    # de medir —, então continua dentro de `pontos_medidos` e da média.
+    #
+    # O que ele **não** diz é a causa. `calcular_iee` devolve 0.0 tanto no
+    # `P(t) = 0` (rosto ausente) quanto no `max(0.0, bruto - fadiga)` de um
+    # aluno presente que a fadiga zerou. Separar os dois exigiria um
+    # `rosto_detectado` em `log_engajamento`, que não existe; por isso o
+    # indicador se chama "zerados" e não "ausentes". Ver risk-spots.md.
+    zerados = [s for s in medidos if s == 0.0]
 
-    return Indicadores(
-        n_leituras=total_leituras,
-        duracao_s=duracao_s,
-        score_medio=media_ponderada(confiaveis, lambda log: log.score),
-        score_minimo=min(scores) if scores else 0.0,
-        score_maximo=max(scores) if scores else 0.0,
-        score_inicio=_terco(scores, final=False),
-        score_fim=_terco(scores, final=True),
-        prop_com_rosto=_proporcao(logs, lambda log: log.direcao_olhar is not None),
-        prop_com_fadiga=_proporcao(logs, lambda log: log.flag_fadiga),
-        prop_captura_incerta=_proporcao(logs, lambda log: not log.captura_confiavel),
-        fadiga_maxima=max((log.fator_fadiga for log in confiaveis), default=0.0),
-        # Só faz sentido sobre as leituras em que havia rosto: incluir as outras
-        # como zero puxaria a média para "olhando de frente" justamente nos
-        # instantes em que não havia para onde olhar.
-        desvio_olhar_medio=media_ponderada(com_rosto, lambda log: abs(log.direcao_olhar)),
+    # O agrupamento é por `score is None`, não pelo texto do rótulo: é o `score`
+    # que decide qual vocabulário a coluna `alerta` está usando naquele ponto
+    # (ver `_alerta_do`, em routers/telemetria.py). Classificar pelo rótulo
+    # deixaria um motivo novo cair silenciosamente no balde errado.
+    fadiga = Counter(p.alerta for p in serie if p.score is not None and p.alerta)
+    incerteza = Counter(p.alerta for p in serie if p.score is None and p.alerta)
+
+    return IndicadoresDaSerie(
+        media=mean(medidos) if houve_medida else None,
+        pico=max(medidos) if houve_medida else None,
+        vale=min(medidos) if houve_medida else None,
+        pontos_medidos=len(medidos),
+        pontos_incertos=len(serie) - len(medidos),
+        pontos_zerados=len(zerados),
+        alertas_de_fadiga=dict(fadiga),
+        motivos_de_incerteza=dict(incerteza),
     )
 
 
-def _contar_alertas(logs: Sequence[LogEngajamento]) -> Dict[str, int]:
-    """Quantas leituras registraram cada tipo de alerta.
+def resumir(sessao: SessaoEstudo, serie: Sequence[LogEngajamento]) -> ResumoDaSessao:
+    """Indicadores da sessão a partir da série gravada.
 
-    Conta **leituras**, não episódios. Um cochilo de quatro segundos aparece em
-    várias leituras seguidas, e a janela de fadiga o mantém vivo por um minuto —
-    então este número mede *por quanto tempo o alerta esteve de pé*, que é o que
-    o gráfico mostra. Contar episódios distintos exigiria reprocessar a série
-    inteira pelo detector, e é trabalho da ticket 13, ao sumarizar.
+    Assinatura e comportamento **intocados** pela ticket 17: o que mudou é que a
+    aritmética mora em `resumir_serie` e esta função acrescenta a ela o que só a
+    sessão sabe, que são as duas durações. Decomposição, não redesenho —
+    `test_relatorio.py` continua valendo sem uma linha de edição, e
+    `test_criterios.py` tem um teste afirmando que as duas concordam.
     """
-    contagem: Dict[str, int] = {}
-    for log in logs:
-        if not log.alerta_gerado:
-            continue
-        for alerta in log.alerta_gerado.split(","):
-            contagem[alerta] = contagem.get(alerta, 0) + 1
-    return contagem
+    indicadores = resumir_serie(serie)
 
-
-def _recomendacoes(ind: Indicadores, alertas: Dict[str, int]) -> List[str]:
-    """Sugestões de autorregulação a partir do que foi observado.
-
-    Cada frase relata o observado antes de sugerir, de propósito: uma sugestão
-    sem o dado que a motivou é um palpite, e o aluno não tem como avaliar se faz
-    sentido para ele. Nenhuma afirma nada sobre estado mental — o sistema mede
-    proxies comportamentais visuais, e o texto não pode prometer mais que isso.
-    """
-    frases: List[str] = []
-
-    if ind.n_leituras == 0:
-        return ["Não houve medição nesta sessão — a webcam pode não ter sido autorizada."]
-
-    # Vem primeiro de propósito: se a captura falhou em boa parte da sessão, é a
-    # primeira coisa que o aluno precisa saber antes de ler qualquer indicador —
-    # e a ação que ela sugere (arrumar a luz, tirar o obstáculo) é a única que
-    # melhora as próximas sessões.
-    if ind.prop_captura_incerta > CAPTURA_INCERTA_ALTA:
-        frases.append(
-            f"Em {ind.prop_captura_incerta:.0%} da sessão a captura ficou instável, e "
-            "esses trechos ficaram de fora dos indicadores. Luz de frente e sem "
-            "contraluz costuma resolver; óculos com reflexo e algo cobrindo parte do "
-            "rosto também atrapalham."
-        )
-
-    if ind.prop_com_rosto < PRESENCA_BAIXA:
-        frases.append(
-            f"Seu rosto foi detectado em {ind.prop_com_rosto:.0%} do tempo, então os "
-            "indicadores abaixo descrevem só essa parte da sessão."
-        )
-
-    if alertas.get("olhos-fechados-prolongados"):
-        frases.append(
-            "Houve momentos de olhos fechados por vários segundos seguidos. "
-            "Se você se sentir cansado, uma pausa curta costuma render mais que insistir."
-        )
-    elif ind.prop_com_fadiga > FRACAO_FADIGA_ALTA:
-        frases.append(
-            f"Sinais de cansaço apareceram em {ind.prop_com_fadiga:.0%} da sessão. "
-            "Considere uma pausa antes do próximo bloco de estudo."
-        )
-
-    if alertas.get("bocejos"):
-        frases.append("Bocejos foram registrados — vale observar se o horário de estudo está favorecendo você.")
-
-    queda = ind.score_inicio - ind.score_fim
-    if queda >= QUEDA_RELEVANTE:
-        frases.append(
-            f"Seu índice caiu cerca de {queda:.0f} pontos entre o começo e o fim da sessão. "
-            "Trocar de assunto ou de formato de estudo pode ajudar a retomar."
-        )
-
-    if ind.desvio_olhar_medio > 20:
-        frases.append(
-            "Sua cabeça esteve bastante virada em relação à sua posição neutra. "
-            "Se houver algo disputando sua atenção por perto, afastá-lo pode ajudar."
-        )
-
-    if not frases and ind.score_medio >= SCORE_BAIXO:
-        frases.append("Sessão estável, sem sinais relevantes de dispersão ou cansaço.")
-    elif not frases:
-        frases.append(
-            "O índice ficou baixo sem um motivo isolado que se destaque. "
-            "Vale observar se o ambiente ou o horário estão ajudando."
-        )
-
-    return frases
+    return ResumoDaSessao(
+        media=indicadores.media,
+        pico=indicadores.pico,
+        vale=indicadores.vale,
+        pontos_medidos=indicadores.pontos_medidos,
+        pontos_incertos=indicadores.pontos_incertos,
+        pontos_zerados=indicadores.pontos_zerados,
+        alertas_de_fadiga=indicadores.alertas_de_fadiga,
+        motivos_de_incerteza=indicadores.motivos_de_incerteza,
+        duracao_total=presenca.duracao_total(sessao.inicio, sessao.fim),
+        # Os pontos incertos entram como evidência de presença junto com os
+        # medidos: incerteza é a recusa de afirmar um *score*, não a afirmação
+        # de que não havia ninguém ali. Uma sala escura não esvazia a cadeira.
+        duracao_presente=presenca.duracao_presente(
+            sessao.inicio, sessao.fim, (p.horario_registro for p in serie)
+        ),
+    )
 
 
 @dataclass(frozen=True)
-class ItemDoHistorico:
-    """Uma linha da lista de sessões passadas (ticket 12).
+class RelatorioDaSessao:
+    """O relatório inteiro: o que foi medido, a curva e o que fazer a respeito.
 
-    Traz o suficiente para o aluno **escolher** qual relatório abrir. Uma lista
-    só com datas o obrigaria a abrir sessão por sessão para lembrar como cada
-    uma foi, que é o oposto de um histórico.
+    `parcial` é a AC-11-4. Uma sessão que o aluno encerrou tem `fim` no instante
+    do clique; uma que caiu — queda de conexão, navegador fechado, máquina
+    suspensa — é fechada pela varredura de inatividade, e o `fim` dela é o
+    último sinal recebido. O relatório sai nos dois casos, mas só no segundo ele
+    precisa avisar que o fim da sessão foi inferido, e não observado.
+
+    Sessão anterior à ticket 11 não tem `encerramento` gravado, e é tratada como
+    não-parcial: sem a marca não dá para afirmar que foi interrompida, e marcar
+    todas as antigas como parciais seria inventar uma informação que o banco não
+    tem.
     """
 
-    id_sessao: int
-    inicio: datetime
-    fim: Optional[datetime]
+    sessao: SessaoEstudo
+    resumo: ResumoDaSessao
+    serie: Sequence[LogEngajamento]
+    recomendacoes: Tuple[recomendacoes.Recomendacao, ...]
     parcial: bool
-    duracao_s: float
-    n_leituras: int
-    score_medio: float
-    teve_fadiga: bool
+
+    #: A leitura da sessão pelo método declarado, ou `None` quando não houve
+    #: método (AC-17-11). O `None` atravessa até a tela de propósito: sessão com
+    #: `metodo IS NULL` é anterior ao recurso, e uma seção de método vazia diria
+    #: ao aluno que ele escolheu estudar sem método — que é `"livre"`, uma
+    #: escolha, e não a ausência de uma.
+    avaliacao: Optional["Avaliacao"] = None
 
 
-def historico(
-    sessoes: Sequence[SessaoEstudo], agregados: Dict[int, AgregadoDaSessao]
-) -> List[ItemDoHistorico]:
-    """Combina sessões e seus agregados numa lista para a tela de histórico.
+def montar(
+    sessao: SessaoEstudo,
+    serie: Sequence[LogEngajamento],
+    resumo: Optional[ResumoDaSessao] = None,
+    avaliacao: Optional["Avaliacao"] = None,
+) -> RelatorioDaSessao:
+    """Junta indicadores, curva, critérios do método e recomendações numa peça só.
 
-    Função pura: recebe o que já foi lido do banco. Quem consulta é o router,
-    e é por isso que este módulo continua testável sem subir banco nenhum.
+    `resumo` é opcional porque ele pode vir congelado de `resumo_sessao`
+    (ticket 13) em vez de ser recalculado: depois que a série é colapsada em
+    médias por minuto, recalcular daria números diferentes dos que o aluno viu
+    no dia seguinte à sessão.
 
-    A duração vem de `inicio`/`fim` da sessão, e não do intervalo entre a
-    primeira e a última leitura: uma sessão em que a webcam foi negada tem
-    duração real e nenhuma leitura, e mostrar zero ali seria mentir sobre o
-    tempo que o aluno passou na tela.
+    `avaliacao` chega pronta, de `criterios.avaliar`, em vez de ser construída
+    aqui. Não é preferência de estilo: `app.criterios` precisa de
+    `resumir_serie` para cada bloco, e chamá-lo daqui fecharia um ciclo de
+    import entre os dois módulos. O composto continua sendo um só — quem monta
+    o relatório junta as quatro peças —, e nenhuma decisão sobre método vazou
+    para a borda HTTP: `avaliar` devolve `None` sozinho quando não houve método.
     """
-    itens: List[ItemDoHistorico] = []
-    for sessao in sessoes:
-        inicio = como_utc(sessao.inicio)
-        fim = como_utc(sessao.fim) if sessao.fim else None
-        agregado = agregados.get(sessao.id)
+    resumo = resumo if resumo is not None else resumir(sessao, serie)
 
-        itens.append(
-            ItemDoHistorico(
-                id_sessao=sessao.id,
-                inicio=inicio,
-                fim=fim,
-                parcial=sessao.fim is None,
-                duracao_s=(fim - inicio).total_seconds() if fim else 0.0,
-                n_leituras=agregado.n_leituras if agregado else 0,
-                score_medio=agregado.score_medio if agregado else 0.0,
-                teve_fadiga=agregado.teve_fadiga if agregado else False,
-            )
-        )
-    return itens
-
-
-def montar(sessao: SessaoEstudo, logs: Sequence[LogEngajamento]) -> Relatorio:
-    """Monta o relatório de uma sessão a partir da série gravada.
-
-    Função pura sobre os dados: não consulta o banco, não sabe de HTTP, e por
-    isso os testes conseguem montar sessões improváveis — vazia, interrompida,
-    toda sem rosto — sem subir aplicação nenhuma.
-    """
-    ordenados = sorted(logs, key=lambda log: como_utc(log.horario_registro))
-    indicadores = _indicadores(ordenados)
-    alertas = _contar_alertas(ordenados)
-
-    return Relatorio(
-        id_sessao=sessao.id,
-        inicio=como_utc(sessao.inicio),
-        fim=como_utc(sessao.fim) if sessao.fim else None,
-        parcial=sessao.fim is None,
-        indicadores=indicadores,
-        serie=[
-            PontoDaSerie(
-                horario=como_utc(log.horario_registro),
-                score=log.score,
-                fadiga=log.fator_fadiga,
-                alerta=log.alerta_gerado,
-            )
-            for log in ordenados
-        ],
-        alertas=alertas,
-        recomendacoes=_recomendacoes(indicadores, alertas),
+    return RelatorioDaSessao(
+        sessao=sessao,
+        resumo=resumo,
+        serie=serie,
+        recomendacoes=recomendacoes.recomendar(resumo),
+        parcial=sessao.encerramento == ENCERRAMENTO_POR_INATIVIDADE,
+        avaliacao=avaliacao,
     )

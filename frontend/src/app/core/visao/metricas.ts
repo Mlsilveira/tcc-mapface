@@ -25,6 +25,14 @@ export interface MetricasFaciais {
   ear: number;
   mar: number;
   cabeca: AngulosDaCabeca;
+  /**
+   * Quanto os dois olhos discordam entre si, como fração da abertura média
+   * (0 = simétricos). Não é uma medida de atenção: é uma medida de **confiança
+   * na medição**, usada pela ticket 10. Rostos reais são levemente assimétricos;
+   * um olho lido como quase fechado enquanto o outro está aberto é quase sempre
+   * o contorno da pálpebra perdido — reflexo no óculos, sombra, oclusão parcial.
+   */
+  assimetriaOcular: number;
 }
 
 /**
@@ -93,11 +101,45 @@ export function calcularEAROlho(
   return (distancia(p2, p6, aspecto) + distancia(p3, p5, aspecto)) / (2 * largura);
 }
 
+/** EAR de cada olho, na ordem em que a assimetria da ticket 10 precisa deles. */
+export function calcularEARPorOlho(
+  landmarks: ReadonlyArray<Ponto>,
+  aspecto: number,
+): { direito: number; esquerdo: number } {
+  return {
+    direito: calcularEAROlho(landmarks, INDICES_OLHO_DIREITO, aspecto),
+    esquerdo: calcularEAROlho(landmarks, INDICES_OLHO_ESQUERDO, aspecto),
+  };
+}
+
 /** EAR médio dos dois olhos. */
 export function calcularEAR(landmarks: ReadonlyArray<Ponto>, aspecto: number): number {
-  const direito = calcularEAROlho(landmarks, INDICES_OLHO_DIREITO, aspecto);
-  const esquerdo = calcularEAROlho(landmarks, INDICES_OLHO_ESQUERDO, aspecto);
+  const { direito, esquerdo } = calcularEARPorOlho(landmarks, aspecto);
   return (direito + esquerdo) / 2;
+}
+
+/**
+ * Discordância entre os dois olhos, normalizada pela abertura média.
+ *
+ * Normalizar é o que torna o número comparável: uma diferença absoluta de 0,05
+ * é ruído num olho bem aberto (EAR ~0,30) e é o olho inteiro numa piscada
+ * (EAR ~0,05). Piscar não infla a assimetria porque as duas pálpebras descem
+ * juntas — o que a infla é uma delas ser perdida pelo detector.
+ */
+export function calcularAssimetriaOcular(
+  landmarks: ReadonlyArray<Ponto>,
+  aspecto: number,
+): number {
+  const { direito, esquerdo } = calcularEARPorOlho(landmarks, aspecto);
+  const media = (direito + esquerdo) / 2;
+
+  if (media === 0) {
+    // Os dois olhos degenerados: não há assimetria a medir, e o caso já é
+    // tratado como ausência de leitura mais acima.
+    return 0;
+  }
+
+  return Math.abs(direito - esquerdo) / media;
 }
 
 /**
@@ -178,5 +220,6 @@ export function calcularMetricas(
     ear: calcularEAR(landmarks, aspecto),
     mar: calcularMAR(landmarks, aspecto),
     cabeca: extrairAngulosDaCabeca(matriz),
+    assimetriaOcular: calcularAssimetriaOcular(landmarks, aspecto),
   };
 }

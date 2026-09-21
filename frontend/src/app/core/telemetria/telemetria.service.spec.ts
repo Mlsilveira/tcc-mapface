@@ -1,6 +1,11 @@
+import { provideHttpClient } from '@angular/common/http';
+import { HttpTestingController, provideHttpClientTesting } from '@angular/common/http/testing';
 import { TestBed, discardPeriodicTasks, fakeAsync, tick } from '@angular/core/testing';
 
+import { AuthService } from '../services/auth.service';
+import { LeituraDaCaptura } from '../visao/landmarks.service';
 import { MetricasFaciais } from '../visao/metricas';
+import { MotivoDeIncerteza } from '../visao/qualidade';
 import {
   CRIADOR_DE_CANAL,
   CanalDeTelemetria,
@@ -12,7 +17,7 @@ import {
 const TOKEN = 'jwt-de-teste';
 
 function leitura(ear: number, yaw = 0): MetricasFaciais {
-  return { ear, mar: 0.05, cabeca: { yaw, pitch: 0, roll: 0 } };
+  return { ear, mar: 0.05, cabeca: { yaw, pitch: 0, roll: 0 }, assimetriaOcular: 0 };
 }
 
 class CanalFalso implements CanalDeTelemetria {
@@ -59,6 +64,12 @@ class CanalFalso implements CanalDeTelemetria {
 describe('TelemetriaService', () => {
   let service: TelemetriaService;
   let metricasAtuais: MetricasFaciais | null;
+  let incertezaAtual: MotivoDeIncerteza | null;
+
+  const capturaAtual = (): LeituraDaCaptura => ({
+    metricas: metricasAtuais,
+    incerteza: incertezaAtual,
+  });
 
   function canal(indice = 0): CanalFalso {
     return CanalFalso.abertos[indice];
@@ -66,7 +77,7 @@ describe('TelemetriaService', () => {
 
   /** Conecta, abre e conclui o handshake de autenticação. */
   function conectarEAutenticar(): CanalFalso {
-    service.iniciar(TOKEN, () => metricasAtuais);
+    service.iniciar(TOKEN, capturaAtual);
     canal().abrir();
     canal().receber({ tipo: 'autenticado' });
     return canal();
@@ -75,18 +86,28 @@ describe('TelemetriaService', () => {
   beforeEach(() => {
     CanalFalso.abertos = [];
     metricasAtuais = leitura(0.3);
+    incertezaAtual = null;
+    // Sem credencial armazenada, o canal autentica com o token passado em
+    // `iniciar` — que é o que a maioria destes testes exercita.
+    localStorage.clear();
 
     TestBed.configureTestingModule({
-      providers: [{ provide: CRIADOR_DE_CANAL, useValue: (url: string) => new CanalFalso(url) }],
+      providers: [
+        provideHttpClient(),
+        provideHttpClientTesting(),
+        { provide: CRIADOR_DE_CANAL, useValue: (url: string) => new CanalFalso(url) },
+      ],
     });
 
     service = TestBed.inject(TelemetriaService);
   });
 
+  afterEach(() => localStorage.clear());
+
   it('manda o token como primeira mensagem, e nada antes disso', fakeAsync(() => {
     // Token em query string vazaria para log de servidor e proxy; a primeira
     // mensagem é o único lugar limpo num WebSocket de navegador.
-    service.iniciar(TOKEN, () => metricasAtuais);
+    service.iniciar(TOKEN, capturaAtual);
     canal().abrir();
 
     expect(canal().payloads).toEqual([{ token: TOKEN }]);
@@ -96,7 +117,7 @@ describe('TelemetriaService', () => {
   }));
 
   it('não envia telemetria enquanto o servidor não confirmar a autenticação', fakeAsync(() => {
-    service.iniciar(TOKEN, () => metricasAtuais);
+    service.iniciar(TOKEN, capturaAtual);
     canal().abrir();
 
     tick(INTERVALO_DE_ENVIO_MS * 2);
@@ -239,33 +260,6 @@ describe('TelemetriaService', () => {
     discardPeriodicTasks();
   }));
 
-  it('expõe a incerteza de captura e a retira quando ela passa (ticket 10)', fakeAsync(() => {
-    const aberto = conectarEAutenticar();
-
-    aberto.receber({ tipo: 'score', score: 40, captura_confiavel: false });
-    expect(service.capturaConfiavel()).toBeFalse();
-
-    // Incerteza é estado, não sentença: a captura melhora e o aviso sai.
-    aberto.receber({ tipo: 'score', score: 90, captura_confiavel: true });
-    expect(service.capturaConfiavel()).toBeTrue();
-
-    service.parar();
-    discardPeriodicTasks();
-  }));
-
-  it('trata score sem o campo de confiabilidade como confiável', fakeAsync(() => {
-    // Backend anterior à ticket 10: assumir incerteza eterna deixaria o aviso
-    // preso na tela pelo resto da sessão.
-    const aberto = conectarEAutenticar();
-
-    aberto.receber({ tipo: 'score', score: 82.5 });
-
-    expect(service.capturaConfiavel()).toBeTrue();
-
-    service.parar();
-    discardPeriodicTasks();
-  }));
-
   it('reconecta sozinho quando a conexão cai', fakeAsync(() => {
     // Critério da ticket 6: uma instabilidade momentânea de rede não pode
     // interromper a sessão de estudo inteira.
@@ -293,6 +287,30 @@ describe('TelemetriaService', () => {
     canal(1).abrir();
 
     expect(canal(1).payloads).toEqual([{ token: TOKEN }]);
+
+    service.parar();
+    discardPeriodicTasks();
+  }));
+
+  it('reconecta com a credencial renovada, e não com a do início da sessão', fakeAsync(() => {
+    // O canal fica aberto por horas e reconecta sozinho; a credencial é trocada
+    // a cada renovação. Com um retrato tirado no começo da sessão, a primeira
+    // reconexão depois dos 30 minutos mandaria um token morto — e como o
+    // servidor passou a reavaliar o `exp` do canal aberto, isso não daria erro
+    // visível: daria um laço de reconexão silencioso, com a telemetria parada
+    // pelo resto da sessão.
+    conectarEAutenticar();
+
+    TestBed.inject(AuthService).renovar().subscribe();
+    TestBed.inject(HttpTestingController)
+      .expectOne('http://localhost:8000/auth/renovar')
+      .flush({ access_token: 'jwt-renovado', token_type: 'bearer' });
+
+    canal().cair();
+    tick(DELAY_INICIAL_DE_RECONEXAO_MS);
+    canal(1).abrir();
+
+    expect(canal(1).payloads).toEqual([{ token: 'jwt-renovado' }]);
 
     service.parar();
     discardPeriodicTasks();
@@ -353,14 +371,74 @@ describe('TelemetriaService', () => {
     discardPeriodicTasks();
   }));
 
-  it('nunca envia landmarks — só ear, yaw, mar e presença de rosto', fakeAsync(() => {
+  it('leva o veredito de incerteza junto com a janela (ticket 10)', fakeAsync(() => {
+    conectarEAutenticar();
+
+    incertezaAtual = 'baixa-luz';
+    tick(INTERVALO_DE_ENVIO_MS);
+
+    expect(canal().payloads.at(-1)!['incerteza']).toBe('baixa-luz');
+
+    service.parar();
+    discardPeriodicTasks();
+  }));
+
+  it('aceita score nulo acompanhado do motivo da abstenção (ticket 10)', fakeAsync(() => {
+    // `score: null` não é campo faltando: é o backend dizendo que não dá para
+    // medir. Descartar a mensagem deixaria o último score bom congelado na tela,
+    // que é justamente o número enganoso que a ticket 10 evita.
+    const aberto = conectarEAutenticar();
+
+    aberto.receber({ tipo: 'score', score: 82.5 });
+    aberto.receber({ tipo: 'score', score: null, incerteza: 'baixa-luz' });
+
+    expect(service.score()).toBeNull();
+    expect(service.incerteza()).toBe('baixa-luz');
+
+    service.parar();
+    discardPeriodicTasks();
+  }));
+
+  it('tira o alerta de incerteza assim que volta a medir', fakeAsync(() => {
+    const aberto = conectarEAutenticar();
+
+    aberto.receber({ tipo: 'score', score: null, incerteza: 'oclusao' });
+    aberto.receber({ tipo: 'score', score: 91 });
+
+    expect(service.incerteza()).toBeNull();
+    expect(service.score()).toBe(91);
+
+    service.parar();
+    discardPeriodicTasks();
+  }));
+
+  it('descarta mensagem de score com tipo inesperado', fakeAsync(() => {
+    const aberto = conectarEAutenticar();
+
+    aberto.receber({ tipo: 'score', score: 70 });
+    aberto.receber({ tipo: 'score', score: 'abacaxi' });
+
+    expect(service.score()).toBe(70);
+
+    service.parar();
+    discardPeriodicTasks();
+  }));
+
+  it('nunca envia landmarks — só ear, yaw, mar, presença de rosto e incerteza', fakeAsync(() => {
     // A fronteira de privacidade, afirmada no ponto exato onde os dados saem
-    // do navegador. `mar` entrou na ticket 8 para a detecção de bocejo.
+    // do navegador. `mar` entrou na ticket 8 para a detecção de bocejo;
+    // `incerteza` na ticket 10, e é rótulo, não medida.
     conectarEAutenticar();
     tick(INTERVALO_DE_ENVIO_MS * 2);
 
     for (const payload of canal().payloads.slice(1)) {
-      expect(Object.keys(payload).sort()).toEqual(['ear', 'mar', 'rosto_detectado', 'yaw']);
+      expect(Object.keys(payload).sort()).toEqual([
+        'ear',
+        'incerteza',
+        'mar',
+        'rosto_detectado',
+        'yaw',
+      ]);
     }
 
     service.parar();
