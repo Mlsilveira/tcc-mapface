@@ -25,6 +25,9 @@ app.add_middleware(
 
 app.include_router(auth.router)
 app.include_router(sessoes.router)
+# O catálogo de métodos mora no mesmo módulo, mas não sob `/sessoes`: ele não é
+# um recurso da sessão, e sim o vocabulário que ela declara.
+app.include_router(sessoes.router_metodos)
 app.include_router(telemetria.router)
 
 
