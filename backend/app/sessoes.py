@@ -15,19 +15,23 @@ neste projeto: lá se responde "esta declaração é válida? este ponto cai den
 do bloco?", aqui se responde "qual linha abrir, qual fechar e em que
 transação".
 """
+import logging
 from datetime import datetime, timedelta
 from typing import List, Optional
 
 from sqlmodel import Session, col, select
 
-from app import analista, blocos, metodos, presenca, sumarizacao
+from app import analista, blocos, metodos, observabilidade, presenca, sumarizacao
 from app.models import (
     ENCERRAMENTO_MANUAL,
     ENCERRAMENTO_POR_INATIVIDADE,
     BlocoEstudo,
     SessaoEstudo,
 )
+from app.observabilidade import registrar
 from app.tempo import agora_utc, como_utc
+
+logger = observabilidade.obter_logger("sessoes")
 
 
 class SessaoAtivaJaExiste(Exception):
@@ -99,6 +103,13 @@ def encerrar_inativas(db: Session, agora: Optional[datetime] = None) -> List[Ses
     caminho em que esquecer disso seria mais fácil e mais caro: a sessão
     derrubada por queda de conexão é exatamente a que ninguém fecha a mão, e ela
     ficaria para sempre com um bloco aberto dentro de uma sessão encerrada.
+
+    **Cada encerramento vira uma linha de log** (§2.3). É o único jeito de
+    distinguir, depois do fato, "o aluno fechou a aba" de "o WebSocket caiu e a
+    varredura recolheu a sessão" — as duas produzem exatamente a mesma sessão
+    encerrada no banco, e só a segunda é um defeito a investigar. A linha leva
+    ids e durações; **não leva `assunto` nem `meta`**, que são texto escrito
+    pelo aluno, nem e-mail. Ver o docstring de `app.observabilidade`.
     """
     agora = agora or agora_utc()
 
@@ -114,6 +125,21 @@ def encerrar_inativas(db: Session, agora: Optional[datetime] = None) -> List[Ses
         sessao.encerramento = ENCERRAMENTO_POR_INATIVIDADE
         db.add(sessao)
         _fechar_bloco_aberto(db, sessao.id, sessao.fim)
+        registrar(
+            logger,
+            logging.INFO,
+            "sessão encerrada por ausência",
+            {
+                "id_sessao": sessao.id,
+                "id_aluno": sessao.id_aluno,
+                "metodo": sessao.metodo,
+                "fim": como_utc(sessao.fim).isoformat(),
+                "limite_de_ausencia_s": limite_de_ausencia_da(sessao).total_seconds(),
+                "duracao_total_s": presenca.duracao_total(
+                    sessao.inicio, sessao.fim
+                ).total_seconds(),
+            },
+        )
 
     if encerradas:
         db.commit()
