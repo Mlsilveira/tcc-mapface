@@ -3,6 +3,7 @@ import { TestBed } from '@angular/core/testing';
 import {
   CameraService,
   FalhaDeCamera,
+  MENSAGENS_DE_FALHA_DE_CAMERA,
   MotivoFalhaDeCamera,
   RESTRICOES_DE_VIDEO,
   traduzirFalhaDeCamera,
@@ -10,6 +11,7 @@ import {
 
 interface TrilhaFalsa {
   readyState: MediaStreamTrackState;
+  getSettings: () => MediaTrackSettings;
   stop: jasmine.Spy;
 }
 
@@ -17,6 +19,10 @@ function criarTrilhaFalsa(readyState: MediaStreamTrackState = 'live'): TrilhaFal
   const trilha: TrilhaFalsa = {
     readyState,
     stop: jasmine.createSpy('stop'),
+    // O dublê precisa honrar a interface que substitui: `getSettings` faz parte
+    // de `MediaStreamTrack`, e o serviço a consulta para medir a proporção.
+    // 640x480 é o que uma webcam comum entrega.
+    getSettings: () => ({ width: 640, height: 480 }),
   };
   trilha.stop.and.callFake(() => (trilha.readyState = 'ended'));
   return trilha;
@@ -192,5 +198,179 @@ describe('CameraService', () => {
     service.ngOnDestroy();
 
     expect(trilha.stop).toHaveBeenCalled();
+  });
+});
+
+/**
+ * Quando o dispositivo escolhido pelo navegador não inicia, o serviço tenta os
+ * outros antes de desistir.
+ *
+ * Isto não é hipótese: numa máquina de teste com três câmeras — uma webcam USB,
+ * a câmera virtual do OBS e um celular exposto como câmera do Windows — o
+ * Chrome elegeu a USB, que estava travada em `NotReadableError`, e a sessão não
+ * começava. Havia uma câmera funcionando o tempo todo.
+ */
+describe('CameraService — dispositivo alternativo', () => {
+  let service: CameraService;
+  let getUserMedia: jasmine.Spy;
+  let enumerateDevices: jasmine.Spy;
+  const mediaDevicesOriginal = Object.getOwnPropertyDescriptor(navigator, 'mediaDevices');
+
+  const NAO_INICIA = Object.assign(new Error('Could not start video source'), {
+    name: 'NotReadableError',
+  });
+
+  function dispositivo(deviceId: string, label: string): MediaDeviceInfo {
+    return { deviceId, label, kind: 'videoinput', groupId: 'g' } as MediaDeviceInfo;
+  }
+
+  beforeEach(() => {
+    TestBed.configureTestingModule({});
+    service = TestBed.inject(CameraService);
+
+    getUserMedia = jasmine.createSpy('getUserMedia');
+    enumerateDevices = jasmine.createSpy('enumerateDevices').and.resolveTo([]);
+    Object.defineProperty(navigator, 'mediaDevices', {
+      value: { getUserMedia, enumerateDevices },
+      configurable: true,
+    });
+  });
+
+  afterEach(() => {
+    if (mediaDevicesOriginal) {
+      Object.defineProperty(navigator, 'mediaDevices', mediaDevicesOriginal);
+    }
+  });
+
+  it('usa a segunda câmera quando a escolhida pelo navegador não inicia', async () => {
+    const funcionando = criarStreamFalso(criarTrilhaFalsa());
+    enumerateDevices.and.resolveTo([
+      dispositivo('usb', 'GENERAL WEBCAM'),
+      dispositivo('celular', 'S24 Ultra (Câmera Virtual do Windows)'),
+    ]);
+    getUserMedia.and.callFake((restricoes: MediaStreamConstraints) => {
+      const video = restricoes.video as MediaTrackConstraints;
+      const id = (video?.deviceId as { exact?: string } | undefined)?.exact;
+      return id === 'celular' ? Promise.resolve(funcionando) : Promise.reject(NAO_INICIA);
+    });
+
+    expect(await service.solicitarAcesso()).toBe(funcionando);
+    expect(service.stream()).toBe(funcionando);
+  });
+
+  it('desiste com o diagnóstico original quando nenhuma câmera inicia', async () => {
+    enumerateDevices.and.resolveTo([dispositivo('a', 'A'), dispositivo('b', 'B')]);
+    getUserMedia.and.rejectWith(NAO_INICIA);
+
+    await expectAsync(service.solicitarAcesso()).toBeRejectedWithError(
+      MENSAGENS_DE_FALHA_DE_CAMERA['webcam-ocupada'],
+    );
+  });
+
+  it('não tenta outras câmeras quando o aluno negou a permissão', async () => {
+    // Negar é decisão sobre a origem inteira: trocar de dispositivo não muda
+    // nada, e insistir seria pedir permissão de novo por outro caminho.
+    enumerateDevices.and.resolveTo([dispositivo('a', 'A')]);
+    getUserMedia.and.rejectWith(
+      Object.assign(new Error('denied'), { name: 'NotAllowedError' }),
+    );
+
+    await expectAsync(service.solicitarAcesso()).toBeRejectedWithError(
+      MENSAGENS_DE_FALHA_DE_CAMERA['permissao-negada'],
+    );
+    expect(enumerateDevices).not.toHaveBeenCalled();
+  });
+
+  it('preserva as restrições de vídeo ao trocar de dispositivo', async () => {
+    // Sem isso, a câmera alternativa viria sem a negociação de resolução e taxa
+    // que o cálculo de EAR/HP/MAR assume.
+    enumerateDevices.and.resolveTo([dispositivo('unica', 'Única')]);
+    const funcionando = criarStreamFalso(criarTrilhaFalsa());
+    let chamadaComId: MediaTrackConstraints | null = null;
+    getUserMedia.and.callFake((restricoes: MediaStreamConstraints) => {
+      const video = restricoes.video as MediaTrackConstraints;
+      if ((video?.deviceId as { exact?: string } | undefined)?.exact) {
+        chamadaComId = video;
+        return Promise.resolve(funcionando);
+      }
+      return Promise.reject(NAO_INICIA);
+    });
+
+    await service.solicitarAcesso();
+
+    const esperado = RESTRICOES_DE_VIDEO.video as MediaTrackConstraints;
+    expect(chamadaComId!.width).toEqual(esperado.width);
+    expect(chamadaComId!.frameRate).toEqual(esperado.frameRate);
+  });
+});
+
+describe('CameraService — proporção da câmera', () => {
+  let service: CameraService;
+  let getUserMedia: jasmine.Spy;
+  const mediaDevicesOriginal = Object.getOwnPropertyDescriptor(navigator, 'mediaDevices');
+
+  function streamCom(ajustes: MediaTrackSettings): MediaStream {
+    const trilha = {
+      readyState: 'live' as MediaStreamTrackState,
+      stop: jasmine.createSpy('stop'),
+      getSettings: () => ajustes,
+    };
+    return {
+      getTracks: () => [trilha],
+      getVideoTracks: () => [trilha],
+    } as unknown as MediaStream;
+  }
+
+  beforeEach(() => {
+    TestBed.configureTestingModule({});
+    service = TestBed.inject(CameraService);
+    getUserMedia = jasmine.createSpy('getUserMedia');
+    Object.defineProperty(navigator, 'mediaDevices', {
+      value: { getUserMedia, enumerateDevices: () => Promise.resolve([]) },
+      configurable: true,
+    });
+  });
+
+  afterEach(() => {
+    if (mediaDevicesOriginal) {
+      Object.defineProperty(navigator, 'mediaDevices', mediaDevicesOriginal);
+    }
+  });
+
+  it('começa sem proporção conhecida', () => {
+    expect(service.proporcao()).toBeNull();
+  });
+
+  it('usa o aspectRatio que a câmera reporta', async () => {
+    getUserMedia.and.resolveTo(streamCom({ width: 1280, height: 720, aspectRatio: 16 / 9 }));
+
+    await service.solicitarAcesso();
+
+    expect(service.proporcao()).toBeCloseTo(16 / 9, 6);
+  });
+
+  it('deriva a proporção de largura e altura quando o navegador não reporta', async () => {
+    getUserMedia.and.resolveTo(streamCom({ width: 640, height: 480 }));
+
+    await service.solicitarAcesso();
+
+    expect(service.proporcao()).toBeCloseTo(4 / 3, 6);
+  });
+
+  it('fica nula quando não há como medir, deixando o CSS usar o fallback', async () => {
+    getUserMedia.and.resolveTo(streamCom({}));
+
+    await service.solicitarAcesso();
+
+    expect(service.proporcao()).toBeNull();
+  });
+
+  it('esquece a proporção ao encerrar', async () => {
+    getUserMedia.and.resolveTo(streamCom({ width: 1280, height: 720 }));
+    await service.solicitarAcesso();
+
+    service.encerrar();
+
+    expect(service.proporcao()).toBeNull();
   });
 });
