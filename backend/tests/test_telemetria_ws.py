@@ -318,11 +318,17 @@ def test_cliente_sem_o_campo_de_incerteza_continua_medido(client, com_sessao_ati
     assert resposta["incerteza"] is None
 
 
-def test_telemetria_conta_como_atividade_da_sessao(client, com_sessao_ativa, session):
+def _ultima_presenca(session, id_sessao):
     from app.models import SessaoEstudo
 
+    session.expire_all()
+    return session.get(SessaoEstudo, id_sessao).ultima_presenca
+
+
+def test_payload_com_rosto_registra_presenca(client, com_sessao_ativa, session):
+    """Rosto na câmera é o que mantém a sessão viva."""
     id_sessao = _id_da_sessao_ativa(client, com_sessao_ativa)
-    antes = session.get(SessaoEstudo, id_sessao).ultima_atividade
+    assert _ultima_presenca(session, id_sessao) is None
 
     with client.websocket_connect("/telemetria") as ws:
         ws.send_json({"token": com_sessao_ativa})
@@ -330,9 +336,233 @@ def test_telemetria_conta_como_atividade_da_sessao(client, com_sessao_ativa, ses
         ws.send_json({"ear": 0.30, "yaw": 0.0, "rosto_detectado": True})
         ws.receive_json()
 
-    session.expire_all()
-    depois = session.get(SessaoEstudo, id_sessao).ultima_atividade
+    assert _ultima_presenca(session, id_sessao) is not None
 
-    # Quem está mandando telemetria está estudando. Sem isso, uma sessão de
-    # estudo silenciosa seria encerrada por "inatividade" no meio da medição.
-    assert depois > antes
+
+def test_payload_sem_rosto_nao_registra_presenca(client, com_sessao_ativa, session):
+    """A correção inteira do ciclo de vida da sessão está aqui.
+
+    `agregacao.ts` devolve um payload **válido** com `rosto_detectado: false`
+    sempre que há quadro de vídeo sem rosto — só devolve `null` quando não há
+    quadro nenhum. Enquanto quem renovava a sessão era "chegou payload", cadeira
+    vazia com a aba em primeiro plano mantinha a sessão viva a 1 Hz, para
+    sempre, e o relatório contava a tarde inteira como estudo.
+
+    O ponto ainda é gravado na série: ele é a evidência de que a captura estava
+    rodando, e o score zero dele é uma medida legítima. O que ele não é, e nunca
+    foi, é prova de que alguém estava ali.
+    """
+    id_sessao = _id_da_sessao_ativa(client, com_sessao_ativa)
+
+    with client.websocket_connect("/telemetria") as ws:
+        ws.send_json({"token": com_sessao_ativa})
+        ws.receive_json()
+        ws.send_json({"ear": 0.0, "yaw": 0.0, "rosto_detectado": False})
+        ws.receive_json()
+
+    assert _ultima_presenca(session, id_sessao) is None
+
+
+def test_incerteza_de_captura_nao_desqualifica_a_presenca(client, com_sessao_ativa, session):
+    """Incerteza é sobre o score, não sobre estar lá.
+
+    Luz baixa, reflexo no óculos e oclusão parcial estragam a medida do EAR sem
+    tirar ninguém da frente da webcam. Tratar incerteza como ausência encerraria
+    a sessão de quem estuda num quarto mal iluminado — a mesma confusão entre
+    "não medi" e "não estava lá" que a ticket 10 existe para recusar.
+    """
+    id_sessao = _id_da_sessao_ativa(client, com_sessao_ativa)
+
+    with client.websocket_connect("/telemetria") as ws:
+        ws.send_json({"token": com_sessao_ativa})
+        ws.receive_json()
+        ws.send_json(
+            {"ear": 0.30, "yaw": 0.0, "rosto_detectado": True, "incerteza": "baixa-luz"}
+        )
+        resposta = ws.receive_json()
+
+    assert resposta["score"] is None
+    assert _ultima_presenca(session, id_sessao) is not None
+
+
+def _token_que_vence_em(segundos: int, emitido_em=None):
+    """Um token legítimo, com validade curta, para exercitar a reavaliação."""
+    from datetime import datetime, timedelta, timezone
+
+    from jose import jwt
+
+    from app.config import settings
+
+    emissao = emitido_em or datetime.now(timezone.utc)
+    return jwt.encode(
+        {
+            "sub": PAYLOAD_ALUNO["email"],
+            "iat": emissao,
+            "exp": emissao + timedelta(seconds=segundos),
+        },
+        settings.secret_key,
+        algorithm=settings.algorithm,
+    )
+
+
+def _relogio_do_canal(monkeypatch, instante_inicial):
+    """Substitui o relógio do handler para poder avançar o tempo no teste.
+
+    O relógio que valida assinatura e `exp` dentro do `jwt.decode` continua
+    sendo o real — é ele que prova que o token estava vivo na conexão.
+    """
+    from app.routers import telemetria as router_telemetria
+
+    relogio = {"agora": instante_inicial}
+    monkeypatch.setattr(router_telemetria, "agora_utc", lambda: relogio["agora"])
+    return relogio
+
+
+def test_websocket_com_token_expirado_e_fechado_no_minuto_seguinte(
+    client, com_sessao_ativa, monkeypatch
+):
+    """O buraco que a renovação de credencial torna explorável.
+
+    O canal autentica na **primeira mensagem** e, até aqui, nunca reavaliava. Isso
+    era invisível enquanto nenhuma sessão passava de 30 minutos: o heartbeat
+    tomava 401, o cliente desmontava tudo e o WebSocket caía junto. Com sessões
+    de horas, um WebSocket aberto seria um canal autenticado de vida ilimitada —
+    imune à expiração do token e imune ao logout.
+
+    A reavaliação é **uma vez por minuto**, e não a cada payload: o loop roda a
+    1 Hz por aluno e custo por payload é preocupação declarada deste projeto. Daí
+    o que o teste afirma ser "fechado no minuto seguinte", e não "fechado no
+    primeiro payload depois de vencer".
+    """
+    from datetime import datetime, timedelta, timezone
+
+    t0 = datetime.now(timezone.utc)
+    token = _token_que_vence_em(30)
+    relogio = _relogio_do_canal(monkeypatch, t0)
+
+    with client.websocket_connect("/telemetria") as ws:
+        ws.send_json({"token": token})
+        assert ws.receive_json() == {"tipo": "autenticado"}
+
+        # Dentro do primeiro minuto: nada é reconferido, e o canal responde.
+        ws.send_json({"ear": 0.30, "yaw": 0.0, "rosto_detectado": True})
+        assert ws.receive_json()["tipo"] == "score"
+
+        # O token venceu aos 30 s; a conferência acontece aos 60 s.
+        relogio["agora"] = t0 + timedelta(seconds=90)
+        ws.send_json({"ear": 0.30, "yaw": 0.0, "rosto_detectado": True})
+
+        assert ws.receive_json() == {"tipo": "erro", "motivo": "nao-autenticado"}
+
+
+def test_websocket_com_token_valido_sobrevive_a_reavaliacao(
+    client, com_sessao_ativa, monkeypatch
+):
+    """O par do teste acima, e não é redundante com ele.
+
+    Sem este, fechar o canal incondicionalmente na primeira conferência passaria
+    — e derrubaria exatamente a sessão longa que a renovação de credencial foi
+    construída para permitir.
+    """
+    from datetime import datetime, timedelta, timezone
+
+    t0 = datetime.now(timezone.utc)
+    token = _token_que_vence_em(30 * 60)
+    relogio = _relogio_do_canal(monkeypatch, t0)
+
+    with client.websocket_connect("/telemetria") as ws:
+        ws.send_json({"token": token})
+        ws.receive_json()
+
+        relogio["agora"] = t0 + timedelta(seconds=90)
+        ws.send_json({"ear": 0.30, "yaw": 0.0, "rosto_detectado": True})
+
+        assert ws.receive_json()["tipo"] == "score"
+
+
+def test_expiracao_e_conferida_uma_vez_por_minuto_e_nao_a_cada_payload(
+    client, com_sessao_ativa, monkeypatch
+):
+    """A cadência da conferência é parte do contrato, não detalhe interno.
+
+    O canal recebe um payload por segundo por aluno, e cada um já paga um
+    `INSERT` com `commit`. Conferir a validade a cada payload seria barato em
+    isolamento e caro como hábito — o princípio de custo por payload deste
+    projeto existe para não acumular "só mais uma coisinha".
+    """
+    from datetime import datetime, timezone
+
+    from app.security import expiracao_do_token
+
+    chamadas = {"total": 0}
+    t0 = datetime.now(timezone.utc)
+    _relogio_do_canal(monkeypatch, t0)
+
+    from app.routers import telemetria as router_telemetria
+
+    def contando(token):
+        chamadas["total"] += 1
+        return expiracao_do_token(token)
+
+    monkeypatch.setattr(router_telemetria, "expiracao_do_token", contando)
+
+    with client.websocket_connect("/telemetria") as ws:
+        ws.send_json({"token": _token_que_vence_em(30 * 60)})
+        ws.receive_json()
+
+        for _ in range(5):
+            ws.send_json({"ear": 0.30, "yaw": 0.0, "rosto_detectado": True})
+            ws.receive_json()
+
+    # Uma leitura do token, na entrada. Os cinco payloads seguintes, com o
+    # relógio parado, não produzem nenhuma outra.
+    assert chamadas["total"] == 1
+
+
+def test_recusa_token_de_aluno_removido(client, com_sessao_ativa, session):
+    # Assinatura válida e prazo em dia, mas a conta não existe mais: o canal não
+    # pode ser aceito só por o token ser bem formado.
+    from sqlmodel import select
+
+    from app.models import Aluno
+
+    token = _token_que_vence_em(30 * 60)
+    session.delete(session.exec(select(Aluno).where(Aluno.email == PAYLOAD_ALUNO["email"])).first())
+    session.commit()
+
+    with client.websocket_connect("/telemetria") as ws:
+        ws.send_json({"token": token})
+        resposta = ws.receive_json()
+
+    assert resposta == {"tipo": "erro", "motivo": "nao-autenticado"}
+
+
+def test_canal_sem_validade_conhecida_e_fechado_na_conferencia(
+    client, com_sessao_ativa, monkeypatch
+):
+    """Token sem `exp` legível fecha junto com o expirado.
+
+    Um canal cuja validade não dá para afirmar não é um canal válido. A
+    alternativa — deixá-lo aberto por não saber — daria vida ilimitada
+    justamente a quem apresentou a credencial menos verificável.
+    """
+    from datetime import datetime, timedelta, timezone
+
+    from jose import jwt
+
+    from app.config import settings
+
+    token_sem_prazo = jwt.encode(
+        {"sub": PAYLOAD_ALUNO["email"]}, settings.secret_key, algorithm=settings.algorithm
+    )
+    t0 = datetime.now(timezone.utc)
+    relogio = _relogio_do_canal(monkeypatch, t0)
+
+    with client.websocket_connect("/telemetria") as ws:
+        ws.send_json({"token": token_sem_prazo})
+        assert ws.receive_json() == {"tipo": "autenticado"}
+
+        relogio["agora"] = t0 + timedelta(seconds=90)
+        ws.send_json({"ear": 0.30, "yaw": 0.0, "rosto_detectado": True})
+
+        assert ws.receive_json() == {"tipo": "erro", "motivo": "nao-autenticado"}
