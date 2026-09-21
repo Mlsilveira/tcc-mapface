@@ -1,5 +1,8 @@
+import { provideHttpClient } from '@angular/common/http';
+import { HttpTestingController, provideHttpClientTesting } from '@angular/common/http/testing';
 import { TestBed, discardPeriodicTasks, fakeAsync, tick } from '@angular/core/testing';
 
+import { AuthService } from '../services/auth.service';
 import { LeituraDaCaptura } from '../visao/landmarks.service';
 import { MetricasFaciais } from '../visao/metricas';
 import { MotivoDeIncerteza } from '../visao/qualidade';
@@ -84,13 +87,22 @@ describe('TelemetriaService', () => {
     CanalFalso.abertos = [];
     metricasAtuais = leitura(0.3);
     incertezaAtual = null;
+    // Sem credencial armazenada, o canal autentica com o token passado em
+    // `iniciar` — que é o que a maioria destes testes exercita.
+    localStorage.clear();
 
     TestBed.configureTestingModule({
-      providers: [{ provide: CRIADOR_DE_CANAL, useValue: (url: string) => new CanalFalso(url) }],
+      providers: [
+        provideHttpClient(),
+        provideHttpClientTesting(),
+        { provide: CRIADOR_DE_CANAL, useValue: (url: string) => new CanalFalso(url) },
+      ],
     });
 
     service = TestBed.inject(TelemetriaService);
   });
+
+  afterEach(() => localStorage.clear());
 
   it('manda o token como primeira mensagem, e nada antes disso', fakeAsync(() => {
     // Token em query string vazaria para log de servidor e proxy; a primeira
@@ -275,6 +287,30 @@ describe('TelemetriaService', () => {
     canal(1).abrir();
 
     expect(canal(1).payloads).toEqual([{ token: TOKEN }]);
+
+    service.parar();
+    discardPeriodicTasks();
+  }));
+
+  it('reconecta com a credencial renovada, e não com a do início da sessão', fakeAsync(() => {
+    // O canal fica aberto por horas e reconecta sozinho; a credencial é trocada
+    // a cada renovação. Com um retrato tirado no começo da sessão, a primeira
+    // reconexão depois dos 30 minutos mandaria um token morto — e como o
+    // servidor passou a reavaliar o `exp` do canal aberto, isso não daria erro
+    // visível: daria um laço de reconexão silencioso, com a telemetria parada
+    // pelo resto da sessão.
+    conectarEAutenticar();
+
+    TestBed.inject(AuthService).renovar().subscribe();
+    TestBed.inject(HttpTestingController)
+      .expectOne('http://localhost:8000/auth/renovar')
+      .flush({ access_token: 'jwt-renovado', token_type: 'bearer' });
+
+    canal().cair();
+    tick(DELAY_INICIAL_DE_RECONEXAO_MS);
+    canal(1).abrir();
+
+    expect(canal(1).payloads).toEqual([{ token: 'jwt-renovado' }]);
 
     service.parar();
     discardPeriodicTasks();

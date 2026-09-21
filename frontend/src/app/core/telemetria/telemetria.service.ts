@@ -1,6 +1,7 @@
 import { Injectable, InjectionToken, NgZone, OnDestroy, inject, signal } from '@angular/core';
 
 import { LeituraDaCaptura } from '../visao/landmarks.service';
+import { AuthService } from '../services/auth.service';
 import { PayloadDeTelemetria, agregar } from './agregacao';
 
 /** URL do canal de telemetria. Deriva da API para não haver duas configurações. */
@@ -59,9 +60,10 @@ export const CRIADOR_DE_CANAL = new InjectionToken<CriadorDeCanal>('CriadorDeCan
 export class TelemetriaService implements OnDestroy {
   private readonly zone = inject(NgZone);
   private readonly criarCanal = inject(CRIADOR_DE_CANAL);
+  private readonly authService = inject(AuthService);
 
   private canal: CanalDeTelemetria | null = null;
-  private token: string | null = null;
+  private tokenInicial: string | null = null;
   private lerCaptura: (() => LeituraDaCaptura) | null = null;
 
   private janela: LeituraDaCaptura[] = [];
@@ -97,7 +99,7 @@ export class TelemetriaService implements OnDestroy {
    *
    * Nesse trecho o backend ainda mede contra uma referência genérica, porque a
    * baseline do aluno não fechou. O número é utilizável, mas não é comparável
-   * com o resto da sessão — e o gráfico da ticket 9 precisa poder dizer isso.
+   * com o resto da sessão, e o relatório precisa poder dizer isso.
    */
   readonly calibrando = this.calibrandoSignal.asReadonly();
 
@@ -134,7 +136,7 @@ export class TelemetriaService implements OnDestroy {
       return;
     }
 
-    this.token = token;
+    this.tokenInicial = token;
     this.lerCaptura = lerCaptura;
     this.encerrado = false;
     this.delayDeReconexao = DELAY_INICIAL_DE_RECONEXAO_MS;
@@ -169,6 +171,26 @@ export class TelemetriaService implements OnDestroy {
     this.conectadoSignal.set(false);
   }
 
+  /**
+   * A credencial mandada na abertura do canal — sempre a **corrente**.
+   *
+   * Não é o token recebido em `iniciar`, e a diferença deixou de ser teórica. O
+   * canal reconecta sozinho, com backoff, por quantas horas durar a sessão; a
+   * credencial, por sua vez, é trocada a cada renovação. Um retrato tirado no
+   * começo da sessão estaria vencido na primeira reconexão depois dos 30
+   * minutos — e como o servidor passou a reavaliar o `exp` do canal aberto, o
+   * desfecho não seria um erro visível: seria o servidor recusando, o cliente
+   * reconectando com o mesmo token morto, e um laço de reconexão silencioso
+   * até o fim da sessão, com a telemetria parada.
+   *
+   * O token de `iniciar` fica como recurso para quem não tem credencial
+   * armazenada — o caso dos testes, e o de qualquer chamador que queira
+   * autenticar o canal explicitamente.
+   */
+  private tokenDoCanal(): string | null {
+    return this.authService.getToken() ?? this.tokenInicial;
+  }
+
   private conectar(): void {
     const canal = this.criarCanal(URL_DA_TELEMETRIA);
     this.canal = canal;
@@ -177,7 +199,7 @@ export class TelemetriaService implements OnDestroy {
       // Autenticação pela primeira mensagem: WebSocket de navegador não manda
       // header `Authorization`, e token em query string vazaria para log de
       // servidor, proxy e histórico.
-      canal.send(JSON.stringify({ token: this.token }));
+      canal.send(JSON.stringify({ token: this.tokenDoCanal() }));
     };
 
     canal.onmessage = (evento) => this.zone.run(() => this.receber(evento.data));
