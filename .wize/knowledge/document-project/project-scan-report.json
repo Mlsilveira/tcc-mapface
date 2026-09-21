@@ -1,0 +1,78 @@
+{
+  "workflow_version": "0.3.1",
+  "timestamps": {
+    "started": "2026-09-19T16:58:17.782Z",
+    "last_updated": "2026-09-19T16:58:18.011Z"
+  },
+  "mode": "initial_scan",
+  "scan_level": "deep",
+  "project_root": "/Users/matheussilveira/Documents/TCC",
+  "project_knowledge": "/Users/matheussilveira/Documents/TCC/.wize/knowledge/document-project",
+  "completed_steps": [
+    {
+      "step": "classify",
+      "status": "completed",
+      "timestamp": "2026-09-19T16:58:17.783Z",
+      "summary": "Classified as backend, web"
+    },
+    {
+      "step": "scan",
+      "status": "completed",
+      "timestamp": "2026-09-19T16:58:18.008Z",
+      "summary": "5 batches scanned"
+    },
+    {
+      "step": "generate",
+      "status": "completed",
+      "timestamp": "2026-09-19T16:58:18.011Z",
+      "summary": "Generated 7 files"
+    }
+  ],
+  "current_step": "completed",
+  "findings": {
+    "project_classification": {
+      "repository_type": "multi-part",
+      "parts_count": 2,
+      "primary_language": "unknown",
+      "architecture_type": "backend"
+    },
+    "batches_completed": [
+      {
+        "path": "/Users/matheussilveira/Documents/TCC/.git-ticket3",
+        "files_scanned": 82,
+        "summary": "49690 LOC"
+      },
+      {
+        "path": "/Users/matheussilveira/Documents/TCC/.specify",
+        "files_scanned": 20,
+        "summary": "50761 LOC"
+      },
+      {
+        "path": "/Users/matheussilveira/Documents/TCC/backend",
+        "files_scanned": 2269,
+        "summary": "7039204 LOC"
+      },
+      {
+        "path": "/Users/matheussilveira/Documents/TCC/frontend",
+        "files_scanned": 545,
+        "summary": "1867530 LOC"
+      },
+      {
+        "path": "/Users/matheussilveira/Documents/TCC/ml",
+        "files_scanned": 11659,
+        "summary": "35695588 LOC"
+      }
+    ]
+  },
+  "outputs_generated": [
+    "project-scan-report.json",
+    "overview.md",
+    "architecture-snapshot.md",
+    "conventions.md",
+    "dependencies.md",
+    "risk-spots.md",
+    "open-questions.md",
+    "index.md"
+  ],
+  "resume_instructions": "Scan complete"
+}
