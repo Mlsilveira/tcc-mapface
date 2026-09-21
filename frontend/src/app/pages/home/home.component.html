@@ -2,9 +2,14 @@
   <header class="topo">
     <div class="topo__interno">
       <app-logo />
-      <button type="button" class="botao botao--fantasma" data-teste="sair" (click)="sair()">
-        Sair
-      </button>
+      <nav class="topo__acoes">
+        <a class="botao botao--fantasma" routerLink="/historico" data-teste="ir-para-historico">
+          Minhas sessões
+        </a>
+        <button type="button" class="botao botao--fantasma" data-teste="sair" (click)="sair()">
+          Sair
+        </button>
+      </nav>
     </div>
   </header>
 
@@ -14,7 +19,7 @@
         <div class="sessao__cabecalho">
           <div>
             <span class="selo-ativo">Medindo agora</span>
-            <h1>Sessão de estudo</h1>
+            <h1>{{ sessao.assunto || 'Sessão de estudo' }}</h1>
             <p class="sessao__desde" data-teste="sessao-em-andamento">
               Sessão em andamento desde {{ sessao.inicio | date: 'shortTime' }}.
             </p>
@@ -30,6 +35,48 @@
             {{ aguardando ? 'Encerrando…' : 'Encerrar sessão' }}
           </button>
         </div>
+
+        <!-- O ciclo do método (AC-17-7). Tudo que aparece aqui sai do método que
+             o aluno declarou e do relógio de parede; nada atravessa a medição.
+             Sessão sem método declarado não renderiza este bloco: ela não tem
+             ciclo para conduzir, e inventar um lhe daria um bloco que nunca
+             existiu. -->
+        @if (blocoCorrente(); as bloco) {
+          <section class="ciclo">
+            <p class="ciclo__estado" data-teste="estado-do-bloco">
+              <span class="ciclo__tipo">{{ bloco.tipo === 'foco' ? 'Foco' : 'Pausa' }}</span>
+              @if (sessao.metodo_nome) {
+                <span class="ciclo__metodo">{{ sessao.metodo_nome }}</span>
+              }
+            </p>
+
+            @if (cronometro(); as restante) {
+              <p class="ciclo__cronometro" data-teste="cronometro">
+                <app-icone nome="relogio" />
+                {{ restante }}
+              </p>
+            }
+
+            @if (contadorDeBlocos(); as contador) {
+              <p class="ciclo__contador" data-teste="contador-de-blocos">{{ contador }}</p>
+            }
+
+            <button
+              type="button"
+              class="botao botao--fantasma"
+              data-teste="transicao-de-bloco"
+              (click)="alternarBloco()"
+            >
+              {{ acaoDoBloco() }}
+            </button>
+
+            @if (avisoDeTransicao(); as aviso) {
+              <p class="aviso ciclo__aviso" role="status" data-teste="aviso-de-pausa">
+                {{ aviso }}
+              </p>
+            }
+          </section>
+        }
 
         <div class="sessao__corpo">
           <!-- O preview existe para o aluno confirmar que a webcam está funcionando.
@@ -120,6 +167,73 @@
             <span>O relatório da sessão é só seu.</span>
           </li>
         </ol>
+
+        <!-- A declaração do método (AC-17-6). Os três campos são opcionais e o
+             corpo do POST também pode ir vazio: estudar sem declarar nada
+             continua sendo um estado legítimo, e é o que o botão faz se nada
+             aqui for preenchido. -->
+        <div class="declaracao">
+          @if (carregandoCatalogo()) {
+            <p class="campo-dica" data-teste="catalogo-carregando">
+              Carregando os métodos de estudo…
+            </p>
+          } @else if (catalogoIndisponivel()) {
+            <!-- Bloquear o início porque um GET auxiliar caiu trocaria um recurso
+                 opcional por uma regressão no caminho principal. -->
+            <p class="campo-dica" data-teste="catalogo-indisponivel">
+              Não foi possível carregar os métodos agora. Você pode estudar assim mesmo — a sessão
+              começa sem método declarado.
+            </p>
+          } @else {
+            <div class="campo">
+              <label for="metodo">Método de estudo</label>
+              <select
+                id="metodo"
+                data-teste="escolher-metodo"
+                [value]="metodoEscolhido()"
+                (change)="escolherMetodo($event)"
+              >
+                <option value="">Não quero declarar</option>
+                @for (metodo of catalogo(); track metodo.codigo) {
+                  <option [value]="metodo.codigo">{{ metodo.nome }}</option>
+                }
+              </select>
+            </div>
+          }
+
+          <div class="campo">
+            <label for="assunto">Assunto</label>
+            <input
+              id="assunto"
+              type="text"
+              data-teste="campo-assunto"
+              autocomplete="off"
+              placeholder="Cálculo II, integrais por partes"
+              [attr.maxlength]="LIMITE_DO_ASSUNTO"
+              [value]="assunto()"
+              (input)="escreverAssunto($event)"
+            />
+            <p class="campo-dica">
+              Um rótulo curto para você reconhecer a sessão depois. Ninguém lê, ninguém analisa.
+            </p>
+          </div>
+
+          <div class="campo">
+            <label for="meta">Meta de blocos de foco</label>
+            <input
+              id="meta"
+              type="number"
+              inputmode="numeric"
+              data-teste="campo-meta"
+              min="1"
+              [attr.max]="META_MAXIMA_DE_BLOCOS"
+              placeholder="Opcional"
+              [value]="metaDeBlocos() ?? ''"
+              (input)="escreverMeta($event)"
+            />
+            <p class="campo-dica">Deixe em branco se não quiser contar blocos.</p>
+          </div>
+        </div>
 
         <button
           type="button"
