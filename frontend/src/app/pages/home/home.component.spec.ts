@@ -13,7 +13,13 @@ import { provideRouter, Router } from '@angular/router';
 import { signal } from '@angular/core';
 
 import { AuthService } from '../../core/services/auth.service';
-import { INTERVALO_ATIVIDADE_MS, Sessao } from '../../core/services/sessao.service';
+import { MetodoDeEstudo } from '../../core/services/metodo.service';
+import {
+  Bloco,
+  ESPERA_PARA_RETENTAR_MS,
+  INTERVALO_ATIVIDADE_MS,
+  Sessao,
+} from '../../core/services/sessao.service';
 import { TelemetriaService } from '../../core/telemetria/telemetria.service';
 import { LandmarksService, LeituraDaCaptura } from '../../core/visao/landmarks.service';
 import { MetricasFaciais } from '../../core/visao/metricas';
@@ -30,6 +36,61 @@ const SESSAO_EM_ANDAMENTO: Sessao = {
 };
 
 const SESSAO_ENCERRADA: Sessao = { ...SESSAO_EM_ANDAMENTO, fim: '2026-08-13T12:30:00Z' };
+
+/**
+ * `GET /metodos` como o servidor o entrega, com os três casos que mudam o
+ * comportamento da tela: um método que prescreve foco e tem pausa longa, um que
+ * não prescreve foco nenhum, e a escolha explícita de não usar método.
+ */
+const CATALOGO_DE_TESTE: MetodoDeEstudo[] = [
+  {
+    codigo: 'pomodoro',
+    nome: 'Pomodoro',
+    foco_s: 1500,
+    pausa_s: 300,
+    ciclos_ate_pausa_longa: 4,
+    pausa_longa_s: 900,
+  },
+  {
+    codigo: 'flow',
+    nome: 'Flow / Deep Work',
+    foco_s: null,
+    pausa_s: 300,
+    ciclos_ate_pausa_longa: null,
+    pausa_longa_s: null,
+  },
+  {
+    codigo: 'livre',
+    nome: 'Sem método',
+    foco_s: null,
+    pausa_s: 300,
+    ciclos_ate_pausa_longa: null,
+    pausa_longa_s: null,
+  },
+];
+
+/**
+ * A sessão legada: `metodo` ausente é "esta sessão é anterior ao recurso".
+ * É o mesmo objeto que os testes antigos usam, e continuar assim é de propósito
+ * — todos eles são, agora, o caso de compatibilidade.
+ */
+const SESSAO_SEM_METODO = SESSAO_EM_ANDAMENTO;
+
+const SESSAO_COM_POMODORO: Sessao = {
+  ...SESSAO_EM_ANDAMENTO,
+  metodo: 'pomodoro',
+  metodo_nome: 'Pomodoro',
+  assunto: 'Cálculo II',
+  meta_de_blocos: 4,
+};
+
+const SESSAO_COM_FLOW: Sessao = {
+  ...SESSAO_EM_ANDAMENTO,
+  metodo: 'flow',
+  metodo_nome: 'Flow / Deep Work',
+  assunto: 'Monografia',
+  meta_de_blocos: null,
+};
 
 function erroComNome(nome: string): Error {
   const erro = new Error(nome);
@@ -148,17 +209,85 @@ describe('HomeComponent', () => {
     fixture.detectChanges();
   }
 
-  /** Resolve o GET disparado no ngOnInit e renderiza o resultado. */
-  function abrirTela(sessao: Sessao | null): void {
+  /**
+   * Responde ao `GET /metodos` que a tela dispara no `ngOnInit`.
+   *
+   * O catálogo é buscado sempre, com ou sem sessão em andamento: depois de um
+   * F5 quem precisa dele é a tela da sessão, porque é de `foco_s` que sai o
+   * cronômetro. `'falha'` simula o catálogo indisponível (E1).
+   */
+  function responderCatalogo(catalogo: MetodoDeEstudo[] | 'falha' = CATALOGO_DE_TESTE): void {
+    const requisicao = httpMock.expectOne(`${API}/metodos`);
+    if (catalogo === 'falha') {
+      requisicao.flush({}, { status: 503, statusText: 'Service Unavailable' });
+    } else {
+      requisicao.flush(catalogo);
+    }
+  }
+
+  /** Resolve os GETs disparados no ngOnInit e renderiza o resultado. */
+  function abrirTela(
+    sessao: Sessao | null,
+    catalogo: MetodoDeEstudo[] | 'falha' = CATALOGO_DE_TESTE,
+  ): void {
     fixture.detectChanges();
+    responderCatalogo(catalogo);
     httpMock.expectOne(`${API}/sessoes/ativa`).flush(sessao);
     fixture.detectChanges();
+  }
+
+  /** O GET dos blocos que uma sessão com método dispara ao ser assumida. */
+  function responderBlocos(sessao: Sessao, blocos: Bloco[]): void {
+    httpMock.expectOne(`${API}/sessoes/${sessao.id}/blocos`).flush(blocos);
+    fixture.detectChanges();
+  }
+
+  /** Um bloco aberto que começou há `haSegundos`, ancorado no relógio do teste. */
+  function blocoAberto(tipo: 'foco' | 'pausa', indice: number, haSegundos = 0): Bloco {
+    return {
+      id: 100 + indice,
+      id_sessao: SESSAO_EM_ANDAMENTO.id,
+      indice,
+      tipo,
+      inicio: new Date(Date.now() - haSegundos * 1000).toISOString(),
+      fim: null,
+      origem: 'metodo',
+    };
+  }
+
+  /** O mesmo bloco, já fechado — a história que o servidor devolve depois do F5. */
+  function blocoFechado(tipo: 'foco' | 'pausa', indice: number, duracaoS: number): Bloco {
+    const fim = Date.now() - duracaoS * 1000;
+    return {
+      ...blocoAberto(tipo, indice),
+      inicio: new Date(fim - duracaoS * 1000).toISOString(),
+      fim: new Date(fim).toISOString(),
+    };
   }
 
   /** `abrirTela`, mas esperando a retomada da captura quando há sessão viva. */
   async function abrirTelaEAguardar(sessao: Sessao | null): Promise<void> {
     abrirTela(sessao);
     await fixture.whenStable();
+    fixture.detectChanges();
+  }
+
+  /**
+   * Clica em Sair e resolve o encerramento da sessão no backend.
+   *
+   * Sair com sessão aberta deixou de ser uma operação local: sem avisar o
+   * servidor, a sessão sobreviveria até a varredura de ausência e seria fechada
+   * como `"inatividade"`, carimbando o relatório como **parcial** — dizendo ao
+   * aluno que a sessão foi interrompida quando ele a encerrou de propósito.
+   */
+  function sair(resposta: Sessao | 'falha' = SESSAO_ENCERRADA): void {
+    clicar('sair');
+    const requisicao = httpMock.expectOne(`${API}/sessoes/${SESSAO_EM_ANDAMENTO.id}/encerrar`);
+    if (resposta === 'falha') {
+      requisicao.flush({}, { status: 500, statusText: 'Server Error' });
+    } else {
+      requisicao.flush(resposta);
+    }
     fixture.detectChanges();
   }
 
@@ -185,9 +314,9 @@ describe('HomeComponent', () => {
     telemetria = TestBed.inject(TelemetriaService) as unknown as TelemetriaServiceFalso;
     navegar = spyOn(TestBed.inject(Router), 'navigate').and.resolveTo(true);
 
-    getUserMedia = jasmine.createSpy('getUserMedia').and.callFake(() =>
-      Promise.resolve(streamDeTeste()),
-    );
+    getUserMedia = jasmine
+      .createSpy('getUserMedia')
+      .and.callFake(() => Promise.resolve(streamDeTeste()));
     Object.defineProperty(navigator, 'mediaDevices', {
       value: { getUserMedia },
       configurable: true,
@@ -246,16 +375,54 @@ describe('HomeComponent', () => {
       expect(botao('iniciar-sessao')).toBeTruthy();
     });
 
+    it('leva ao relatório da sessão recém-encerrada (AC-11-1)', async () => {
+      // O relatório é o fim da jornada: encerrar e ficar na mesma tela deixaria
+      // o aluno sem nada, embora a própria tela prometa o contrário.
+      await abrirTelaEAguardar(SESSAO_EM_ANDAMENTO);
+
+      clicar('encerrar-sessao');
+      httpMock
+        .expectOne(`${API}/sessoes/${SESSAO_EM_ANDAMENTO.id}/encerrar`)
+        .flush(SESSAO_ENCERRADA);
+      fixture.detectChanges();
+
+      expect(navegar).toHaveBeenCalledWith(['/relatorio', SESSAO_ENCERRADA.id]);
+    });
+
+    it('não leva ao relatório quando o encerramento falha', async () => {
+      // Mandar para o relatório de uma sessão que talvez continue aberta
+      // trocaria um erro claro por um 409 que o aluno não sabe interpretar.
+      await abrirTelaEAguardar(SESSAO_EM_ANDAMENTO);
+
+      clicar('encerrar-sessao');
+      httpMock
+        .expectOne(`${API}/sessoes/${SESSAO_EM_ANDAMENTO.id}/encerrar`)
+        .flush({}, { status: 500, statusText: 'Server Error' });
+      fixture.detectChanges();
+
+      expect(navegar).not.toHaveBeenCalledWith(['/relatorio', SESSAO_ENCERRADA.id]);
+    });
+
+    it('oferece o histórico a partir da tela de sessão', () => {
+      abrirTela(null);
+
+      const link = fixture.nativeElement.querySelector('[data-teste="ir-para-historico"]');
+      expect(link).toBeTruthy();
+      expect(link.getAttribute('href')).toBe('/historico');
+    });
+
     it('ressincroniza a tela quando o backend responde que já há sessão em andamento', async () => {
       // Cenário de duas abas: a aba antiga precisa passar a oferecer "Encerrar",
       // em vez de ficar travada num "Iniciar" que sempre falha.
       abrirTela(null);
 
       await clicarEAguardar('iniciar-sessao');
-      httpMock.expectOne({ method: 'POST', url: `${API}/sessoes` }).flush(
-        { detail: 'Já existe uma sessão de estudo em andamento' },
-        { status: 409, statusText: 'Conflict' },
-      );
+      httpMock
+        .expectOne({ method: 'POST', url: `${API}/sessoes` })
+        .flush(
+          { detail: 'Já existe uma sessão de estudo em andamento' },
+          { status: 409, statusText: 'Conflict' },
+        );
       httpMock.expectOne(`${API}/sessoes/ativa`).flush(SESSAO_EM_ANDAMENTO);
       fixture.detectChanges();
 
@@ -280,6 +447,7 @@ describe('HomeComponent', () => {
 
     it('avisa quando não consegue verificar se há sessão em andamento ao abrir a tela', () => {
       fixture.detectChanges();
+      responderCatalogo();
       httpMock
         .expectOne(`${API}/sessoes/ativa`)
         .flush({}, { status: 500, statusText: 'Server Error' });
@@ -404,7 +572,7 @@ describe('HomeComponent', () => {
     it('desliga a webcam ao sair', async () => {
       await abrirTelaEAguardar(SESSAO_EM_ANDAMENTO);
 
-      clicar('sair');
+      sair();
 
       expect(webcamLigada()).toBeFalse();
     });
@@ -419,10 +587,12 @@ describe('HomeComponent', () => {
       expect(webcamLigada()).toBeTrue();
 
       tick(INTERVALO_ATIVIDADE_MS);
-      httpMock.expectOne(`${API}/sessoes/${SESSAO_EM_ANDAMENTO.id}/atividade`).flush(
-        { detail: 'Esta sessão de estudo já foi encerrada' },
-        { status: 409, statusText: 'Conflict' },
-      );
+      httpMock
+        .expectOne(`${API}/sessoes/${SESSAO_EM_ANDAMENTO.id}/atividade`)
+        .flush(
+          { detail: 'Esta sessão de estudo já foi encerrada' },
+          { status: 409, statusText: 'Conflict' },
+        );
       fixture.detectChanges();
 
       expect(webcamLigada()).toBeFalse();
@@ -496,10 +666,12 @@ describe('HomeComponent', () => {
       fixture.detectChanges();
 
       tick(INTERVALO_ATIVIDADE_MS);
-      httpMock.expectOne(`${API}/sessoes/${SESSAO_EM_ANDAMENTO.id}/atividade`).flush(
-        { detail: 'Esta sessão de estudo já foi encerrada' },
-        { status: 409, statusText: 'Conflict' },
-      );
+      httpMock
+        .expectOne(`${API}/sessoes/${SESSAO_EM_ANDAMENTO.id}/atividade`)
+        .flush(
+          { detail: 'Esta sessão de estudo já foi encerrada' },
+          { status: 409, statusText: 'Conflict' },
+        );
       fixture.detectChanges();
 
       expect(landmarks.ativo).toBeFalse();
@@ -701,7 +873,7 @@ describe('HomeComponent', () => {
     it('fecha o canal ao sair', async () => {
       await comSessaoAtiva();
 
-      clicar('sair');
+      sair();
 
       expect(telemetria.parar).toHaveBeenCalled();
     });
@@ -722,12 +894,40 @@ describe('HomeComponent', () => {
       flushMicrotasks();
       fixture.detectChanges();
 
-      clicar('sair');
+      sair();
 
       tick(INTERVALO_ATIVIDADE_MS * 2);
       httpMock.expectNone(`${API}/sessoes/${SESSAO_EM_ANDAMENTO.id}/atividade`);
       discardPeriodicTasks();
     }));
+
+    it('encerra a sessão de estudo no backend antes de deslogar', async () => {
+      // Sem isto o servidor fecharia a sessão sozinho, mais tarde, marcando-a
+      // como interrompida — e o relatório sairia **parcial** para uma sessão que
+      // o aluno encerrou deliberadamente ao sair. O encerramento vai antes do
+      // logout porque precisa do token, que ainda é válido neste instante.
+      await abrirTelaEAguardar(SESSAO_EM_ANDAMENTO);
+
+      clicar('sair');
+
+      httpMock
+        .expectOne(`${API}/sessoes/${SESSAO_EM_ANDAMENTO.id}/encerrar`)
+        .flush(SESSAO_ENCERRADA);
+      expect(authService.estaAutenticado()).toBeFalse();
+      expect(navegar).toHaveBeenCalledWith(['/login']);
+    });
+
+    it('desloga mesmo quando o backend falha ao encerrar a sessão', async () => {
+      // O aluno pediu para sair, e sair é o que acontece. A sessão órfã é
+      // varrida depois; um logout que não desloga seria um problema pior que um
+      // relatório marcado como parcial.
+      await abrirTelaEAguardar(SESSAO_EM_ANDAMENTO);
+
+      sair('falha');
+
+      expect(authService.estaAutenticado()).toBeFalse();
+      expect(navegar).toHaveBeenCalledWith(['/login']);
+    });
 
     it('não desloga sozinho: só ao clicar em Sair', async () => {
       await abrirTelaEAguardar(SESSAO_EM_ANDAMENTO);
@@ -735,5 +935,473 @@ describe('HomeComponent', () => {
       expect(authService.estaAutenticado()).toBeTrue();
       expect(navegar).not.toHaveBeenCalled();
     });
+  });
+
+  // ==========================================================================
+  // Método de estudo, assunto e ciclo (ticket 17)
+  // ==========================================================================
+
+  function elemento(teste: string): HTMLElement | null {
+    return fixture.nativeElement.querySelector(`[data-teste="${teste}"]`);
+  }
+
+  function textoDe(teste: string): string {
+    return elemento(teste)?.textContent?.trim() ?? '';
+  }
+
+  function campo(teste: string): HTMLInputElement {
+    return elemento(teste) as HTMLInputElement;
+  }
+
+  function escrever(teste: string, valor: string): void {
+    const entrada = campo(teste);
+    entrada.value = valor;
+    entrada.dispatchEvent(new Event('input'));
+    fixture.detectChanges();
+  }
+
+  function escolherMetodo(codigo: string): void {
+    const escolha = elemento('escolher-metodo') as HTMLSelectElement;
+    escolha.value = codigo;
+    escolha.dispatchEvent(new Event('change'));
+    fixture.detectChanges();
+  }
+
+  /**
+   * Abre a tela numa sessão que declara método, respondendo a lista de blocos
+   * que o servidor tem sobre ela. É o caminho do F5: o estado do bloco corrente
+   * vem de `GET /sessoes/{id}/blocos`, nunca da memória da aba.
+   */
+  /**
+   * O sinal de atividade que o `SessaoService` manda de minuto em minuto.
+   *
+   * Todo teste que avança o relógio um minuto inteiro o encontra pelo caminho —
+   * ele é independente do ciclo, e continua batendo enquanto a sessão existe.
+   */
+  function absorverHeartbeat(): void {
+    httpMock
+      .expectOne(`${API}/sessoes/${SESSAO_EM_ANDAMENTO.id}/atividade`)
+      .flush(SESSAO_EM_ANDAMENTO);
+  }
+
+  function abrirCiclo(sessao: Sessao, blocos: Bloco[]): void {
+    abrirTela(sessao);
+    responderBlocos(sessao, blocos);
+    flushMicrotasks();
+    fixture.detectChanges();
+  }
+
+  describe('declaração do método e do assunto (AC-17-6)', () => {
+    it('renderiza o catálogo com os nomes legíveis, nunca os códigos', () => {
+      abrirTela(null);
+
+      const escolha = elemento('escolher-metodo') as HTMLSelectElement;
+      const rotulos = Array.from(escolha.options).map((opcao) => opcao.textContent!.trim());
+
+      expect(rotulos).toContain('Pomodoro');
+      expect(rotulos).toContain('Flow / Deep Work');
+      expect(rotulos).toContain('Sem método');
+
+      // Se o rótulo fosse igual ao código, `52-17` apareceria para o aluno — e o
+      // `metodo_nome` que o backend devolve estaria sendo ignorado.
+      for (const opcao of Array.from(escolha.options)) {
+        if (opcao.value !== '') {
+          expect(opcao.textContent!.trim()).not.toBe(opcao.value);
+        }
+      }
+    });
+
+    it('leva método, assunto e meta de blocos ao POST /sessoes', async () => {
+      abrirTela(null);
+
+      escolherMetodo('pomodoro');
+      escrever('campo-assunto', 'Cálculo II, integrais por partes');
+      escrever('campo-meta', '4');
+
+      await clicarEAguardar('iniciar-sessao');
+      const requisicao = httpMock.expectOne({ method: 'POST', url: `${API}/sessoes` });
+      expect(requisicao.request.body).toEqual({
+        metodo: 'pomodoro',
+        assunto: 'Cálculo II, integrais por partes',
+        meta_de_blocos: 4,
+      });
+      requisicao.flush(SESSAO_COM_POMODORO);
+      responderBlocos(SESSAO_COM_POMODORO, [blocoAberto('foco', 1)]);
+    });
+
+    it('começa sem declarar nada quando o aluno não preenche nada', async () => {
+      // Comportamento protegido: o corpo vazio é o caminho de "Sem método", e é
+      // o que as telas anteriores a este recurso mandam.
+      abrirTela(null);
+
+      await clicarEAguardar('iniciar-sessao');
+      const requisicao = httpMock.expectOne({ method: 'POST', url: `${API}/sessoes` });
+      expect(requisicao.request.body).toEqual({});
+      requisicao.flush(SESSAO_SEM_METODO);
+      fixture.detectChanges();
+    });
+
+    it('abre o primeiro bloco de foco assim que a sessão com método começa', async () => {
+      // Sem esta declaração, o primeiro bloco só nasceria na primeira pausa — e
+      // o relatório perderia a borda de abertura do ciclo inteiro.
+      abrirTela(null);
+      escolherMetodo('pomodoro');
+
+      await clicarEAguardar('iniciar-sessao');
+      httpMock.expectOne({ method: 'POST', url: `${API}/sessoes` }).flush(SESSAO_COM_POMODORO);
+      responderBlocos(SESSAO_COM_POMODORO, []);
+
+      const transicao = httpMock.expectOne(`${API}/sessoes/${SESSAO_COM_POMODORO.id}/blocos`);
+      expect(transicao.request.body).toEqual({ tipo: 'foco', origem: 'metodo' });
+      transicao.flush(blocoAberto('foco', 1));
+      fixture.detectChanges();
+
+      expect(textoDe('estado-do-bloco')).toContain('Foco');
+    });
+  });
+
+  describe('condução do ciclo (AC-17-7)', () => {
+    it('mostra o tempo restante do bloco e o desconta com o relógio', fakeAsync(() => {
+      abrirCiclo(SESSAO_COM_POMODORO, [blocoAberto('foco', 1)]);
+
+      expect(textoDe('cronometro')).toContain('25min');
+
+      tick(60 * 1000);
+      absorverHeartbeat();
+      fixture.detectChanges();
+
+      expect(textoDe('cronometro')).toContain('24min');
+      discardPeriodicTasks();
+    }));
+
+    it('avisa a hora da pausa na virada, e não antes', fakeAsync(() => {
+      abrirCiclo(SESSAO_COM_POMODORO, [blocoAberto('foco', 1, 1499)]);
+
+      expect(elemento('aviso-de-pausa')).toBeNull();
+
+      tick(1000);
+      fixture.detectChanges();
+
+      expect(textoDe('aviso-de-pausa')).toContain('Hora da pausa');
+      discardPeriodicTasks();
+    }));
+
+    it('registra a transição para a pausa, com a origem do método', fakeAsync(() => {
+      // O cronômetro já tinha zerado quando o aluno declarou: ele seguiu o
+      // plano, e é isso que `origem: "metodo"` afirma.
+      abrirCiclo(SESSAO_COM_POMODORO, [blocoAberto('foco', 1, 1500)]);
+
+      clicar('transicao-de-bloco');
+      const requisicao = httpMock.expectOne(`${API}/sessoes/${SESSAO_COM_POMODORO.id}/blocos`);
+      expect(requisicao.request.body).toEqual({ tipo: 'pausa', origem: 'metodo' });
+      requisicao.flush(blocoAberto('pausa', 2));
+      fixture.detectChanges();
+
+      expect(textoDe('estado-do-bloco')).toContain('Pausa');
+      discardPeriodicTasks();
+    }));
+
+    it('registra a volta ao foco, e marca como do aluno quando ele antecipa', fakeAsync(() => {
+      // A pausa ainda não tinha acabado. A distinção é a única coisa que separa
+      // "o método foi seguido" de "o método foi reescrito no meio".
+      abrirCiclo(SESSAO_COM_POMODORO, [blocoAberto('pausa', 2, 10)]);
+
+      clicar('transicao-de-bloco');
+      const requisicao = httpMock.expectOne(`${API}/sessoes/${SESSAO_COM_POMODORO.id}/blocos`);
+      expect(requisicao.request.body).toEqual({ tipo: 'foco', origem: 'aluno' });
+      requisicao.flush(blocoAberto('foco', 3));
+      fixture.detectChanges();
+
+      expect(textoDe('estado-do-bloco')).toContain('Foco');
+      discardPeriodicTasks();
+    }));
+
+    it('conta "bloco N de M" quando houve meta declarada', fakeAsync(() => {
+      abrirCiclo(SESSAO_COM_POMODORO, [blocoFechado('foco', 1, 1500), blocoAberto('foco', 2)]);
+
+      expect(textoDe('contador-de-blocos')).toBe('bloco 2 de 4');
+      discardPeriodicTasks();
+    }));
+
+    it('conduz até a pausa longa e aí oferece o encerramento', fakeAsync(() => {
+      // O teto desta story: a sessão é um ciclo, mas quem a encerra continua
+      // sendo o aluno. O app conduz e oferece; não decide por ele.
+      abrirCiclo(SESSAO_COM_POMODORO, [
+        blocoFechado('foco', 1, 1500),
+        blocoFechado('foco', 2, 1500),
+        blocoFechado('foco', 3, 1500),
+        blocoAberto('foco', 4, 1500),
+      ]);
+
+      expect(textoDe('aviso-de-pausa')).toContain('pausa longa');
+      expect(botao('encerrar-sessao')).toBeTruthy();
+      discardPeriodicTasks();
+    }));
+  });
+
+  // ==========================================================================
+  // AC-17-8 — a trava.
+  //
+  // A régua foi reformulada em 21/09/2026: **nada na tela da sessão pode ser
+  // derivado do comportamento medido do aluno**. O cronômetro passa porque não
+  // tem laço de realimentação — o que ele mostra sai do método declarado e do
+  // relógio de parede. Score, IEE, cor avaliativa e qualquer frase sobre o
+  // estado interno do aluno, não.
+  //
+  // Esta trava precisa **poder falhar**. Se ela só checasse a ausência de um
+  // `data-teste` conhecido, não protegeria nada: o indicador do futuro viria com
+  // um nome que ninguém previu. Por isso ela funciona por inventário — tudo que
+  // a tela exibe hoje está listado abaixo, e qualquer elemento a mais é uma
+  // violação, mesmo que seu texto pareça inofensivo. O teste seguinte
+  // acrescenta um indicador à tela e exige que a trava o pegue; sem ele, não
+  // haveria como saber se esta trava mede alguma coisa.
+  //
+  // ESCOPO: a trava enxerga o que está renderizado dentro do painel da sessão.
+  // Ela não sabe o que passa pelo WebSocket (isso é `telemetria.service.spec.ts`)
+  // nem o que o relatório mostra depois de encerrar — lá o score é o produto.
+  // ==========================================================================
+
+  /** Tudo que a tela da sessão pode exibir hoje. Acrescentar item aqui é uma decisão. */
+  const PERMITIDO_NA_TELA_DA_SESSAO = [
+    'sessao-em-andamento',
+    'encerrar-sessao',
+    'preview-webcam',
+    'metricas',
+    'fps',
+    'fps-baixo',
+    'incerteza-de-captura',
+    'ear',
+    'mar',
+    'head-pose',
+    'sem-rosto',
+    'estado-do-bloco',
+    'cronometro',
+    'contador-de-blocos',
+    'aviso-de-pausa',
+    'transicao-de-bloco',
+  ];
+
+  /** Palavras que só existem se alguém leu a medição para escrevê-las. */
+  const VOCABULARIO_DA_MEDICAO = [
+    /score/i,
+    /\biee\b/i,
+    /índice/i,
+    /engajament/i,
+    /desempenho/i,
+    /\bnota\b/i,
+    /pontuaç/i,
+    /\bpontos\b/i,
+    /\bfadiga\b/i,
+    /\bbom\b/i,
+    /\bruim\b/i,
+    /\b[óo]timo\b/i,
+    /\bp[ée]ssimo\b/i,
+    /parab[ée]ns/i,
+    /você est[áa]/i,
+    /\d+\s*%/,
+  ];
+
+  /** Classes que pintariam um juízo sem escrever uma palavra. */
+  const CLASSES_AVALIATIVAS = /(bom|ruim|positiv|negativ|aprovad|reprovad|sucesso)/i;
+
+  const SCORE_CONHECIDO = 73;
+
+  function painelDaSessao(): HTMLElement {
+    return preview()!.closest('.painel') as HTMLElement;
+  }
+
+  function violacoesDaFronteira(): string[] {
+    const painel = painelDaSessao();
+    const violacoes: string[] = [];
+
+    painel.querySelectorAll('[data-teste]').forEach((alvo) => {
+      const nome = alvo.getAttribute('data-teste')!;
+      if (!PERMITIDO_NA_TELA_DA_SESSAO.includes(nome)) {
+        violacoes.push(`elemento não previsto na tela da sessão: ${nome}`);
+      }
+    });
+
+    painel.querySelectorAll('[class]').forEach((alvo) => {
+      const classes = alvo.getAttribute('class') ?? '';
+      if (CLASSES_AVALIATIVAS.test(classes)) {
+        violacoes.push(`classe avaliativa: ${classes}`);
+      }
+    });
+
+    const conteudo = painel.textContent ?? '';
+    if (conteudo.includes(String(SCORE_CONHECIDO))) {
+      violacoes.push(`o valor medido (${SCORE_CONHECIDO}) aparece na tela`);
+    }
+    for (const termo of VOCABULARIO_DA_MEDICAO) {
+      if (termo.test(conteudo)) {
+        violacoes.push(`vocabulário derivado da medição: ${termo}`);
+      }
+    }
+
+    return violacoes;
+  }
+
+  describe('nada na tela vem da medição (AC-17-8)', () => {
+    /** A tela mais cheia que existe: sessão conduzida, com rosto e com score. */
+    function sessaoMedindo(): void {
+      abrirCiclo(SESSAO_COM_POMODORO, [blocoFechado('foco', 1, 1500), blocoAberto('foco', 2, 600)]);
+
+      telemetria.score.set(SCORE_CONHECIDO);
+      landmarks.metricas.set(LEITURA);
+      landmarks.fps.set(30);
+      fixture.detectChanges();
+    }
+
+    it('não exibe score, indicador nem juízo enquanto o aluno estuda', fakeAsync(() => {
+      sessaoMedindo();
+
+      expect(violacoesDaFronteira()).toEqual([]);
+      discardPeriodicTasks();
+    }));
+
+    it('a trava quebra se alguém acrescentar um indicador à tela', fakeAsync(() => {
+      // O ponto inteiro da trava acima. Sem este teste, ela poderia estar
+      // passando por não medir nada — e ninguém descobriria até o indicador
+      // chegar à tela do aluno.
+      sessaoMedindo();
+      expect(violacoesDaFronteira()).toEqual([]);
+
+      const intruso = document.createElement('p');
+      intruso.setAttribute('data-teste', 'indicador-de-engajamento');
+      intruso.textContent = `Seu IEE agora: ${SCORE_CONHECIDO}`;
+      painelDaSessao().appendChild(intruso);
+
+      expect(violacoesDaFronteira().length).toBeGreaterThan(0);
+      discardPeriodicTasks();
+    }));
+
+    it('continua mostrando o que o aluno pode resolver agora', fakeAsync(() => {
+      // A fronteira não é "a tela fica vazia". Preview, FPS e alerta de
+      // incerteza continuam lá: são diagnóstico do equipamento, e a única coisa
+      // a respeito da qual ele pode agir enquanto estuda.
+      sessaoMedindo();
+      telemetria.incerteza.set('baixa-luz');
+      fixture.detectChanges();
+
+      expect(preview()).toBeTruthy();
+      expect(texto()).toContain('30 FPS');
+      expect(elemento('incerteza-de-captura')).toBeTruthy();
+      discardPeriodicTasks();
+    }));
+  });
+
+  describe('casos de borda do ciclo', () => {
+    it('E1: catálogo indisponível não impede começar a estudar', async () => {
+      abrirTela(null, 'falha');
+
+      expect(elemento('escolher-metodo')).toBeNull();
+      expect(textoDe('catalogo-indisponivel')).toContain('sem método declarado');
+
+      await clicarEAguardar('iniciar-sessao');
+      const requisicao = httpMock.expectOne({ method: 'POST', url: `${API}/sessoes` });
+      expect(requisicao.request.body).toEqual({});
+      requisicao.flush(SESSAO_SEM_METODO);
+      fixture.detectChanges();
+
+      expect(botao('encerrar-sessao')).toBeTruthy();
+    });
+
+    it('E2: método sem duração prescrita não ganha cronômetro nem aviso', fakeAsync(() => {
+      // Flow não prescreve bloco. Mostrar "00:00" ou contar os cinco minutos do
+      // `pausa_s` seria o app prescrevendo o que o método recusa a prescrever.
+      abrirCiclo(SESSAO_COM_FLOW, [blocoAberto('foco', 1, 3600)]);
+
+      expect(textoDe('estado-do-bloco')).toContain('Foco');
+      expect(elemento('cronometro')).toBeNull();
+      expect(elemento('aviso-de-pausa')).toBeNull();
+      discardPeriodicTasks();
+    }));
+
+    it('E3: depois do F5 o cronômetro vem do servidor, não do zero', fakeAsync(() => {
+      // Dez minutos de bloco já corridos quando a página recarregou. Se o estado
+      // viesse da aba, o bloco reiniciaria — e o aluno aprenderia a não
+      // recarregar, que é a pior correção possível.
+      abrirCiclo(SESSAO_COM_POMODORO, [blocoAberto('foco', 1, 600)]);
+
+      expect(textoDe('cronometro')).toContain('15min');
+      discardPeriodicTasks();
+    }));
+
+    it('E4: sessão anterior ao recurso é retomada sem ciclo nenhum', async () => {
+      // `metodo IS NULL` é "esta sessão é anterior ao recurso". Abrir um bloco
+      // nela agora lhe daria um bloco que nunca existiu, começando no meio.
+      // O `httpMock.verify()` do afterEach é quem garante que nem o GET de
+      // blocos foi disparado.
+      await abrirTelaEAguardar(SESSAO_SEM_METODO);
+
+      expect(botao('encerrar-sessao')).toBeTruthy();
+      expect(elemento('estado-do-bloco')).toBeNull();
+      expect(elemento('cronometro')).toBeNull();
+      expect(elemento('contador-de-blocos')).toBeNull();
+    });
+
+    it('E5: transição perdida na rede é reapresentada', fakeAsync(() => {
+      // O servidor absorve a repetição (200, idempotente por tipo). Retentar é
+      // seguro; perder a borda do bloco não é.
+      abrirCiclo(SESSAO_COM_POMODORO, [blocoAberto('foco', 1, 1500)]);
+
+      clicar('transicao-de-bloco');
+      httpMock
+        .expectOne(`${API}/sessoes/${SESSAO_COM_POMODORO.id}/blocos`)
+        .flush({}, { status: 503, statusText: 'Service Unavailable' });
+
+      tick(ESPERA_PARA_RETENTAR_MS);
+      const retentativa = httpMock.expectOne(`${API}/sessoes/${SESSAO_COM_POMODORO.id}/blocos`);
+      expect(retentativa.request.body).toEqual({ tipo: 'pausa', origem: 'metodo' });
+      retentativa.flush(blocoAberto('pausa', 2));
+      fixture.detectChanges();
+
+      expect(textoDe('estado-do-bloco')).toContain('Pausa');
+      discardPeriodicTasks();
+    }));
+
+    it('E6: o assunto para no teto de 120 caracteres antes do POST', async () => {
+      abrirTela(null);
+
+      escrever('campo-assunto', 'a'.repeat(120));
+      expect(campo('campo-assunto').value.length).toBe(120);
+
+      escrever('campo-assunto', 'b'.repeat(121));
+      expect(campo('campo-assunto').value.length).toBe(120);
+
+      await clicarEAguardar('iniciar-sessao');
+      const requisicao = httpMock.expectOne({ method: 'POST', url: `${API}/sessoes` });
+      expect((requisicao.request.body as { assunto: string }).assunto.length).toBe(120);
+      requisicao.flush(SESSAO_SEM_METODO);
+      fixture.detectChanges();
+    });
+
+    it('E7: bloco estourado mantém o aviso e não conta para o negativo', fakeAsync(() => {
+      abrirCiclo(SESSAO_COM_POMODORO, [blocoAberto('foco', 1, 1500 + 300)]);
+
+      expect(textoDe('cronometro')).toBe('0s');
+      expect(textoDe('aviso-de-pausa')).toContain('Hora da pausa');
+
+      tick(60 * 1000);
+      absorverHeartbeat();
+      fixture.detectChanges();
+
+      expect(textoDe('cronometro')).toBe('0s');
+      expect(textoDe('aviso-de-pausa')).toContain('Hora da pausa');
+      discardPeriodicTasks();
+    }));
+
+    it('E8: sem meta declarada não há "bloco 2 de 4"', fakeAsync(() => {
+      // Sem denominador declarado não há denominador. Inventá-lo é o primeiro
+      // passo para o boletim que este produto existe para não emitir.
+      abrirCiclo({ ...SESSAO_COM_POMODORO, meta_de_blocos: null }, [
+        blocoFechado('foco', 1, 1500),
+        blocoAberto('foco', 2),
+      ]);
+
+      expect(elemento('cronometro')).toBeTruthy();
+      expect(elemento('contador-de-blocos')).toBeNull();
+      discardPeriodicTasks();
+    }));
   });
 });

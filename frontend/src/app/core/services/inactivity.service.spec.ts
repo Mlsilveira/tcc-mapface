@@ -46,21 +46,81 @@ describe('InactivityService', () => {
     });
   }));
 
-  it('esquece a sessão de estudo ao deslogar por inatividade', fakeAsync(() => {
-    // Sem isso o heartbeat seguiria batendo no backend depois do logout.
+  /** Abre uma sessão de estudo e deixa o `effect` de suspensão rodar. */
+  function comSessaoDeEstudo(): void {
     sessaoService.iniciar().subscribe();
     httpMock
       .expectOne({ method: 'POST', url: `${API}/sessoes` })
       .flush({ id: 7, id_aluno: 1, inicio: '2026-08-13T12:00:00Z', fim: null });
+    TestBed.flushEffects();
+  }
+
+  /** Drena os heartbeats do `SessaoService`, que não são o objeto destes testes. */
+  function drenarHeartbeats(): void {
+    httpMock.match((r) => r.url.includes('/atividade')).forEach((r) => r.flush({}));
+    discardPeriodicTasks();
+  }
+
+  it('não desloga enquanto houver sessão de estudo em andamento', fakeAsync(() => {
+    // A troca central do recurso: durante o estudo, quem responde "tem alguém
+    // aqui?" é a câmera, não o teclado. Ler um livro por vinte minutos em frente
+    // à webcam era exatamente o que este serviço deslogava — e é o
+    // comportamento que o produto quer incentivar. Pior: ele derrubava quem
+    // fazia a pausa longa que o método de estudo prescreve.
+    service.iniciarMonitoramento();
+    comSessaoDeEstudo();
+
+    tick(TEMPO_LIMITE_INATIVIDADE_MS * 2);
+
+    expect(authServiceSpy.logout).not.toHaveBeenCalled();
+    expect(sessaoService.sessaoAtiva()).not.toBeNull();
+    drenarHeartbeats();
+  }));
+
+  it('volta a contar quando a sessão de estudo termina', fakeAsync(() => {
+    // Suspender sem retomar seria pior que não suspender: a aba ficaria
+    // autenticada para sempre depois da primeira sessão do dia.
+    service.iniciarMonitoramento();
+    comSessaoDeEstudo();
+    tick(TEMPO_LIMITE_INATIVIDADE_MS);
+    expect(authServiceSpy.logout).not.toHaveBeenCalled();
+
+    sessaoService.esquecerSessao();
+    TestBed.flushEffects();
+    tick(TEMPO_LIMITE_INATIVIDADE_MS);
+
+    expect(authServiceSpy.logout).toHaveBeenCalled();
+    drenarHeartbeats();
+  }));
+
+  it('o relógio recomeça do zero quando a sessão termina', fakeAsync(() => {
+    // Quem acabou de encerrar uma sessão de estudo merece os 15 minutos
+    // inteiros: retomar de onde parou deslogaria alguém que estava ali agora.
+    service.iniciarMonitoramento();
+    comSessaoDeEstudo();
+    tick(TEMPO_LIMITE_INATIVIDADE_MS * 3);
+
+    sessaoService.esquecerSessao();
+    TestBed.flushEffects();
+    tick(TEMPO_LIMITE_INATIVIDADE_MS - 1000);
+
+    expect(authServiceSpy.logout).not.toHaveBeenCalled();
+    // O temporizador rearmado ainda está na fila — `discardPeriodicTasks` só
+    // cuida de `setInterval`, e este é um `setTimeout`.
+    service.pararMonitoramento();
+    drenarHeartbeats();
+  }));
+
+  it('esquece a sessão de estudo ao deslogar por inatividade', fakeAsync(() => {
+    // Só se chega ao logout por inatividade **sem** sessão aberta — com sessão,
+    // o relógio está suspenso. Mas o estado local precisa ser limpo do mesmo
+    // jeito: sem isso, a tela do próximo a logar mostraria a sessão do anterior.
     service.iniciarMonitoramento();
 
     tick(TEMPO_LIMITE_INATIVIDADE_MS);
 
     expect(sessaoService.sessaoAtiva()).toBeNull();
-    // Drena os heartbeats disparados antes do logout — nenhum deles reanima a
-    // sessão, porque só o caminho de erro mexe no estado.
-    httpMock.match((r) => r.url.includes('/atividade')).forEach((r) => r.flush({}));
-    discardPeriodicTasks();
+    expect(authServiceSpy.logout).toHaveBeenCalled();
   }));
 
   it('reinicia o temporizador quando há atividade do usuário, adiando o logout', fakeAsync(() => {
