@@ -11,19 +11,33 @@ import pytest
 from sqlmodel import Session, select
 
 from app import relatorio, sumarizacao, telemetria
-from app.models import ENCERRAMENTO_MANUAL, LogEngajamento, ResumoSessao, SessaoEstudo
+from app.models import ENCERRAMENTO_MANUAL, Aluno, LogEngajamento, ResumoSessao, SessaoEstudo
 from app.tempo import agora_utc
 
 
 @pytest.fixture(name="sessao")
 def sessao_fixture(session: Session) -> SessaoEstudo:
+    """Uma sessão encerrada há três dias, com dono de verdade.
+
+    **O aluno existe de propósito, e por muito tempo não existiu.** Até a suíte
+    passar a rodar também contra PostgreSQL, esta fixture gravava
+    `id_aluno=1` sem nunca criar o aluno 1 — e passava, porque o SQLite não
+    verifica chave estrangeira a menos que se peça (`PRAGMA foreign_keys=ON`,
+    desligado por padrão). No PostgreSQL a mesma linha é recusada na hora. O
+    dado de teste era inválido nos dois bancos; só um deles dizia.
+    """
+    aluno = Aluno(nome="Ana Souza", email="ana@exemplo.com", senha_hash="nao-importa-aqui")
+    session.add(aluno)
+    session.commit()
+    session.refresh(aluno)
+
     # Alinhado ao minuto de propósito: o colapso agrupa por minuto de relógio,
     # e um início em 13:00:25 espalharia "os 60 primeiros segundos" por dois
     # baldes — o que é o comportamento correto, mas torna ilegível um teste que
     # quer falar sobre "o primeiro minuto".
     inicio = (agora_utc() - timedelta(days=3)).replace(second=0, microsecond=0)
     sessao = SessaoEstudo(
-        id_aluno=1,
+        id_aluno=aluno.id,
         inicio=inicio,
         fim=inicio + timedelta(minutes=3),
         ultima_atividade=inicio + timedelta(minutes=3),
@@ -90,7 +104,7 @@ class TestRetencao:
         session.add(sessao)
         session.commit()
 
-        assert sumarizacao.aplicar_retencao(session, id_aluno=1) == []
+        assert sumarizacao.aplicar_retencao(session, id_aluno=sessao.id_aluno) == []
         assert len(telemetria.buscar_logs(session, sessao.id)) == 120
 
     def test_colapsa_em_medias_por_minuto_depois_da_janela(self, session, sessao):
@@ -98,7 +112,7 @@ class TestRetencao:
         gravar(session, sessao, [(s, 40.0, None) for s in range(0, 60)])
         gravar(session, sessao, [(s, 80.0, None) for s in range(60, 120)])
 
-        assert sumarizacao.aplicar_retencao(session, id_aluno=1) == [sessao.id]
+        assert sumarizacao.aplicar_retencao(session, id_aluno=sessao.id_aluno) == [sessao.id]
 
         serie = telemetria.buscar_logs(session, sessao.id)
         assert [ponto.score for ponto in serie] == [pytest.approx(40.0), pytest.approx(80.0)]
@@ -114,7 +128,7 @@ class TestRetencao:
             [(0, 60.0, None), (1, None, "baixa-luz"), (2, 80.0, None), (3, None, "oclusao")],
         )
 
-        sumarizacao.aplicar_retencao(session, id_aluno=1)
+        sumarizacao.aplicar_retencao(session, id_aluno=sessao.id_aluno)
 
         serie = telemetria.buscar_logs(session, sessao.id)
         assert len(serie) == 1
@@ -126,7 +140,7 @@ class TestRetencao:
         gravar(session, sessao, [(60 + s, None, "baixa-luz") for s in range(0, 10)])
         gravar(session, sessao, [(120, 90.0, None)])
 
-        sumarizacao.aplicar_retencao(session, id_aluno=1)
+        sumarizacao.aplicar_retencao(session, id_aluno=sessao.id_aluno)
 
         serie = telemetria.buscar_logs(session, sessao.id)
         assert [ponto.score for ponto in serie] == [
@@ -144,7 +158,7 @@ class TestRetencao:
             [(0, 50.0, "bocejos"), (1, 50.0, "bocejos"), (2, None, "baixa-luz")],
         )
 
-        sumarizacao.aplicar_retencao(session, id_aluno=1)
+        sumarizacao.aplicar_retencao(session, id_aluno=sessao.id_aluno)
 
         serie = telemetria.buscar_logs(session, sessao.id)
         assert serie[0].alerta == "bocejos"
@@ -152,14 +166,15 @@ class TestRetencao:
     def test_nao_colapsa_duas_vezes(self, session, sessao):
         gravar(session, sessao, [(s, 40.0, None) for s in range(0, 60)])
 
-        assert sumarizacao.aplicar_retencao(session, id_aluno=1) == [sessao.id]
-        assert sumarizacao.aplicar_retencao(session, id_aluno=1) == []
+        assert sumarizacao.aplicar_retencao(session, id_aluno=sessao.id_aluno) == [sessao.id]
+        assert sumarizacao.aplicar_retencao(session, id_aluno=sessao.id_aluno) == []
         assert len(telemetria.buscar_logs(session, sessao.id)) == 1
 
     def test_nao_toca_na_sessao_de_outro_aluno(self, session, sessao):
         gravar(session, sessao, [(s, 40.0, None) for s in range(0, 60)])
 
-        assert sumarizacao.aplicar_retencao(session, id_aluno=2) == []
+        outro_aluno = sessao.id_aluno + 1
+        assert sumarizacao.aplicar_retencao(session, id_aluno=outro_aluno) == []
         assert len(telemetria.buscar_logs(session, sessao.id)) == 60
 
     def test_nao_toca_em_sessao_em_andamento(self, session, sessao):
@@ -168,7 +183,7 @@ class TestRetencao:
         session.add(sessao)
         session.commit()
 
-        assert sumarizacao.aplicar_retencao(session, id_aluno=1) == []
+        assert sumarizacao.aplicar_retencao(session, id_aluno=sessao.id_aluno) == []
         assert len(telemetria.buscar_logs(session, sessao.id)) == 60
 
 
@@ -183,7 +198,7 @@ class TestIndicadoresSobrevivemAoColapso:
         gravar(session, sessao, [(s, 100.0, None) for s in range(0, 59)])
         gravar(session, sessao, [(59, 0.0, None), (60, 0.0, None)])
 
-        sumarizacao.aplicar_retencao(session, id_aluno=1)
+        sumarizacao.aplicar_retencao(session, id_aluno=sessao.id_aluno)
 
         congelado = sumarizacao.buscar_resumo(session, sessao.id)
         assert congelado.media == pytest.approx(5900 / 61)
@@ -200,7 +215,7 @@ class TestIndicadoresSobrevivemAoColapso:
 
         gravar(session, sessao, [(s, 100.0, None) for s in range(0, 59)])
         gravar(session, sessao, [(59, 0.0, None), (60, 0.0, None)])
-        sumarizacao.aplicar_retencao(session, id_aluno=1)
+        sumarizacao.aplicar_retencao(session, id_aluno=sessao.id_aluno)
 
         resumo = router_sessoes._resumo_de(session, sessao)
 

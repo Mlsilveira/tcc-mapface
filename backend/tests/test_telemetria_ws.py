@@ -520,14 +520,34 @@ def test_expiracao_e_conferida_uma_vez_por_minuto_e_nao_a_cada_payload(
 
 
 def test_recusa_token_de_aluno_removido(client, com_sessao_ativa, session):
-    # Assinatura válida e prazo em dia, mas a conta não existe mais: o canal não
-    # pode ser aceito só por o token ser bem formado.
+    """Assinatura válida e prazo em dia, mas a conta não existe mais.
+
+    O canal não pode ser aceito só por o token ser bem formado.
+
+    **A sessão de estudo sai antes do aluno, e não por capricho de ordem.** Ela
+    referencia `aluno.id`, e apagar o aluno deixando-a para trás é uma violação
+    de chave estrangeira — recusada pelo PostgreSQL, ignorada pelo SQLite, que
+    não verifica FK por padrão. Enquanto a suíte só rodava em SQLite, este teste
+    apagava a metade que lhe interessava e deixava uma linha órfã no banco; o
+    que ele afirma continua idêntico, o estado que ele produz é que passou a ser
+    possível.
+    """
     from sqlmodel import select
 
-    from app.models import Aluno
+    from app.models import Aluno, SessaoEstudo
 
     token = _token_que_vence_em(30 * 60)
-    session.delete(session.exec(select(Aluno).where(Aluno.email == PAYLOAD_ALUNO["email"])).first())
+    aluno = session.exec(select(Aluno).where(Aluno.email == PAYLOAD_ALUNO["email"])).first()
+    for sessao in session.exec(
+        select(SessaoEstudo).where(SessaoEstudo.id_aluno == aluno.id)
+    ).all():
+        session.delete(sessao)
+    # O `flush` é o que garante a ordem. Sem `relationship()` declarado entre os
+    # modelos, o SQLAlchemy não conhece a dependência entre as duas tabelas e
+    # emite os DELETE na ordem dos mappers — "aluno" antes de "sessao_estudo" —,
+    # que é exatamente a que o PostgreSQL recusa.
+    session.flush()
+    session.delete(aluno)
     session.commit()
 
     with client.websocket_connect("/telemetria") as ws:
