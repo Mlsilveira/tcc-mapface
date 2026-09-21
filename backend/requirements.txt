@@ -1,10 +1,25 @@
 fastapi==0.115.0
 uvicorn[standard]==0.30.6
-sqlmodel==0.0.22
+# sqlmodel e pydantic são pinados como par. O sqlmodel declara apenas
+# `pydantic<3.0.0`, largo demais: numa instalação limpa o pip resolvia o pydantic
+# mais recente, que o sqlmodel 0.0.22 não suporta, e todo import de modelo morria
+# em "Field 'id' requires a type annotation". Ao mexer em um, revalidar o outro.
+# 0.0.34 é o último sqlmodel que ainda roda em Python 3.9 (0.0.35+ exige 3.10),
+# que é o piso declarado no README — e o mesmo piso da imagem do Dockerfile.
+sqlmodel==0.0.34
+pydantic==2.13.5
 bcrypt==5.0.0
 python-jose[cryptography]==3.3.0
 pydantic-settings==2.5.2
 python-multipart==0.0.9
 email-validator==2.2.0
+# Driver do PostgreSQL. `[binary]` traz a libpq compilada no wheel: sem ele o pip
+# tenta compilar contra a libpq do sistema, que numa imagem `slim` não existe e
+# exigiria `libpq-dev` + toolchain de C só para instalar uma dependência.
+#
+# psycopg 3, e não psycopg2: é o que a URL `postgresql+psycopg://` seleciona no
+# SQLAlchemy 2, e o psycopg2 está em manutenção. A escolha aparece na URL, então
+# trocar de driver aqui sem trocar a `DATABASE_URL` não conectaria.
+psycopg[binary]==3.2.13
 pytest==8.3.3
 httpx==0.27.2

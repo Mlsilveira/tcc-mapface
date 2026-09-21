@@ -14,10 +14,57 @@ from app.config import settings
 # passe pelo `app.main` (um script de manutenção, um shell) não teria essa sorte.
 from app import models  # noqa: F401
 
-_connect_args = (
-    {"check_same_thread": False} if settings.database_url.startswith("sqlite") else {}
-)
-engine = create_engine(settings.database_url, connect_args=_connect_args)
+def _argumentos_de_conexao(url: str) -> dict:
+    """O que cada banco precisa receber na conexão para se comportar igual.
+
+    **SQLite: `check_same_thread`.** O driver recusa, por padrão, uma conexão
+    usada por thread diferente da que a abriu, e o uvicorn atende requisições em
+    threads de um pool.
+
+    **PostgreSQL: `timezone=UTC`, e esta é a linha que impede uma falha inteira
+    de horário.** Toda coluna de instante deste projeto é `TIMESTAMP WITHOUT
+    TIME ZONE` (é o que o `datetime` do SQLModel gera), e tudo que o código
+    grava é UTC com fuso explícito (`tempo.agora_utc`). Ao inserir um valor com
+    fuso numa coluna sem fuso, o PostgreSQL **converte para o fuso da sessão** e
+    só então descarta a informação. Numa máquina em `America/Sao_Paulo` o
+    instante gravado sai três horas no passado, e volta da leitura como se fosse
+    UTC — a sessão de estudo recém-aberta nasce com `inicio` de três horas atrás
+    e a varredura de ausência a encerra no primeiro `GET /sessoes/ativa`. Foi
+    exatamente o que aconteceu na primeira execução da suíte contra o Postgres:
+    44 testes vermelhos, quase todos por esse desvio.
+
+    Fixar o fuso da **sessão de conexão** em UTC torna essa conversão a
+    identidade, e o valor gravado volta a ser o mesmo que o SQLite guardaria.
+
+    *A alternativa descartada* foi declarar as colunas como `TIMESTAMP WITH TIME
+    ZONE` (`DateTime(timezone=True)` nos modelos), que é o tipo mais correto em
+    absoluto. Ela foi recusada porque muda o **tipo** das colunas existentes, e a
+    migração caseira deste projeto acrescenta coluna e afrouxa obrigatoriedade —
+    não converte tipo (ver `_acrescentar_colunas_faltantes`). Adotá-la exigiria a
+    ferramenta de migração que o plano decidiu não trazer agora. Esta linha
+    resolve o mesmo problema sem tocar no schema, e resolve também para quem
+    subir a aplicação num servidor cujo `TimeZone` ninguém conferiu.
+    """
+    if url.startswith("sqlite"):
+        return {"check_same_thread": False}
+    if url.startswith("postgresql"):
+        return {"options": "-c timezone=UTC"}
+    return {}
+
+
+def criar_motor(url: str) -> Engine:
+    """Um engine com os ajustes que o banco daquela URL exige.
+
+    Existe para que o engine da suíte de testes e o da aplicação nasçam da mesma
+    função. Enquanto os argumentos de conexão ficavam soltos aqui, o
+    `conftest.py` montava o seu próprio engine — e um teste que passasse ali não
+    diria nada sobre o engine que sobe em produção, que é justamente o que a
+    suíte contra PostgreSQL existe para verificar.
+    """
+    return create_engine(url, connect_args=_argumentos_de_conexao(url))
+
+
+engine = criar_motor(settings.database_url)
 
 
 def criar_tabelas(motor: Optional[Engine] = None) -> None:
