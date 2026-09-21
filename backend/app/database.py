@@ -35,6 +35,8 @@ def criar_tabelas(motor: Optional[Engine] = None) -> None:
     motor = motor or engine
     SQLModel.metadata.create_all(motor)
     _acrescentar_colunas_faltantes(motor)
+    _preencher_obrigatorias(motor)
+    _relaxar_obrigatoriedade(motor)
 
 
 def _acrescentar_colunas_faltantes(motor: Engine) -> None:
@@ -49,6 +51,9 @@ def _acrescentar_colunas_faltantes(motor: Engine) -> None:
     vezes não faz nada na segunda. Toda coluna acrescentada precisa aceitar nulo
     ou ter default — o que já é verdade para as linhas antigas, que não têm valor
     nenhum a oferecer para um campo que não existia quando foram gravadas.
+
+    Não cobre mudança de **restrição** numa coluna que já existe — isso é
+    `_relaxar_obrigatoriedade`, que nasceu de um caso real e está logo abaixo.
 
     A ticket 15 (deploy) é onde isto provavelmente vira Alembic: com mais de uma
     réplica subindo ao mesmo tempo contra o RDS, duas podem tentar o mesmo ALTER,
@@ -72,6 +77,142 @@ def _acrescentar_colunas_faltantes(motor: Engine) -> None:
                 conexao.execute(
                     text(f'ALTER TABLE "{tabela.name}" ADD COLUMN "{coluna.name}" {tipo}')
                 )
+
+
+def _preencher_obrigatorias(motor: Engine) -> None:
+    """Dá valor às linhas antigas nas colunas que o modelo exige preenchidas.
+
+    Contrapartida de `_acrescentar_colunas_faltantes`: ele acrescenta a coluna
+    vazia, porque a linha antiga não tem valor a oferecer para um campo que não
+    existia quando foi gravada. Só que o modelo pode exigir valor ali — `fadiga`
+    é `float` com default 0,0 —, e o `NULL` que ficou vira um `TypeError` na
+    primeira conta que some a coluna, longe daqui e sem pista de origem.
+
+    Só preenche onde o **próprio modelo** já diz qual é o valor ausente, via
+    default escalar. Coluna obrigatória sem default fica como está: inventar
+    número para ela seria o sistema decidir sozinho o que aconteceu num dia em
+    que ninguém estava medindo.
+    """
+    inspetor = inspect(motor)
+    existentes = set(inspetor.get_table_names())
+
+    with motor.begin() as conexao:
+        for tabela in SQLModel.metadata.sorted_tables:
+            if tabela.name not in existentes:
+                continue
+
+            no_banco = {coluna["name"] for coluna in inspetor.get_columns(tabela.name)}
+
+            for coluna in tabela.columns:
+                padrao = coluna.default
+                if (
+                    coluna.nullable
+                    or coluna.name not in no_banco
+                    or padrao is None
+                    or padrao.is_callable
+                ):
+                    continue
+
+                conexao.execute(
+                    text(
+                        f'UPDATE "{tabela.name}" SET "{coluna.name}" = :valor '
+                        f'WHERE "{coluna.name}" IS NULL'
+                    ),
+                    {"valor": padrao.arg},
+                )
+
+
+def _relaxar_obrigatoriedade(motor: Engine) -> None:
+    """Deixa aceitar nulo a coluna que o modelo tornou opcional.
+
+    **Por que existe.** A ticket 10 mudou `LogEngajamento.score` de obrigatório
+    para opcional: `NULL` passou a significar "não deu para medir este segundo",
+    que é a distinção inteira daquela ticket. Só que num banco criado antes dela
+    a coluna continua `NOT NULL`, e `create_all` não muda tabela existente.
+
+    O resultado é o pior tipo de falha: tudo funciona até o aluno apagar a luz,
+    e aí o primeiro ponto de incerteza estoura como `IntegrityError` no meio da
+    sessão dele. Nenhum teste de suíte pegava, porque cada um cria um banco em
+    memória a partir dos modelos de hoje — onde a coluna já nasce opcional.
+    Apareceu ao abrir a aplicação contra o `app.db` de desenvolvimento, que é
+    anterior à ticket 10.
+
+    **Só afrouxa, nunca aperta.** Tornar uma coluna obrigatória exige decidir o
+    que fazer com as linhas que já estão lá com `NULL` — inventar valor, apagar
+    linha, recusar o boot —, e essa é uma decisão de produto que uma migração
+    automática não tem como tomar sozinha.
+    """
+    inspetor = inspect(motor)
+    existentes = set(inspetor.get_table_names())
+
+    for tabela in SQLModel.metadata.sorted_tables:
+        if tabela.name not in existentes:
+            continue
+
+        no_banco = {coluna["name"]: coluna for coluna in inspetor.get_columns(tabela.name)}
+        a_relaxar = [
+            coluna.name
+            for coluna in tabela.columns
+            if coluna.nullable
+            and not coluna.primary_key
+            and coluna.name in no_banco
+            and not no_banco[coluna.name]["nullable"]
+        ]
+        if not a_relaxar:
+            continue
+
+        if motor.dialect.name == "sqlite":
+            # O SQLite não tem ALTER COLUMN: a receita oficial é reconstruir a
+            # tabela. O PostgreSQL da ticket 14 tem, e é o caminho de baixo.
+            _reconstruir_tabela(motor, tabela, set(no_banco))
+        else:
+            with motor.begin() as conexao:
+                for nome in a_relaxar:
+                    conexao.execute(
+                        text(
+                            f'ALTER TABLE "{tabela.name}" '
+                            f'ALTER COLUMN "{nome}" DROP NOT NULL'
+                        )
+                    )
+
+
+def _reconstruir_tabela(motor: Engine, tabela, colunas_no_banco: set) -> None:
+    """Recria a tabela no schema atual e traz os dados junto (só SQLite).
+
+    O SQLite não tem `ALTER COLUMN`; a receita oficial é reconstruir a tabela. A
+    ordem abaixo é o que importa, e cada passo protege o seguinte:
+
+    1. A tabela antiga é **renomeada**, em vez de a nova nascer com nome
+       provisório. Parece equivalente e não é: criar a nova pelo modelo exige
+       que as tabelas referenciadas por chave estrangeira estejam no mesmo
+       metadata, e só o metadata real do SQLModel tem todas elas.
+    2. Os índices antigos são derrubados antes de a tabela nova nascer. No
+       SQLite eles acompanham a tabela renomeada com os nomes originais, e
+       colidiriam com os que o modelo vai criar.
+    3. A cópia leva só as colunas presentes **nos dois** lados. Coluna que só
+       existe no modelo entra com o default; coluna que só existe no banco fica
+       para trás de propósito — se ninguém mais a declara, carregá-la adiante só
+       adiaria a conversa.
+    """
+    comuns = [coluna.name for coluna in tabela.columns if coluna.name in colunas_no_banco]
+    lista = ", ".join(f'"{nome}"' for nome in comuns)
+    antiga = f"_migracao_{tabela.name}"
+
+    indices = [indice["name"] for indice in inspect(motor).get_indexes(tabela.name)]
+
+    with motor.begin() as conexao:
+        conexao.execute(text(f'ALTER TABLE "{tabela.name}" RENAME TO "{antiga}"'))
+        for nome in indices:
+            if nome:
+                conexao.execute(text(f'DROP INDEX IF EXISTS "{nome}"'))
+
+    tabela.create(motor)
+
+    with motor.begin() as conexao:
+        conexao.execute(
+            text(f'INSERT INTO "{tabela.name}" ({lista}) SELECT {lista} FROM "{antiga}"')
+        )
+        conexao.execute(text(f'DROP TABLE "{antiga}"'))
 
 
 def get_session():
