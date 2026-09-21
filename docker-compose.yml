@@ -1,0 +1,44 @@
+# FERRAMENTA DE DESENVOLVIMENTO — NÃO É INFRAESTRUTURA DE PRODUÇÃO.
+#
+# Este arquivo existe por um motivo só: dar um PostgreSQL a quem for mexer no
+# backend sem obrigar a pessoa a instalar um na máquina. Em produção o banco é
+# do provedor (RDS, no plano da ticket 15), com backup, retenção, rede fechada e
+# senha que ninguém lê num arquivo versionado — nada disso está aqui, e nada
+# disso deve ser acrescentado aqui.
+#
+# Duas marcas propositais para que ninguém confunda os dois papéis:
+#
+#   * a senha é `mapface`, escrita em texto e versionada. Num arquivo de
+#     produção isso seria o defeito; aqui é o aviso.
+#   * não há `volumes:`. Os dados morrem com o contêiner, o que é o
+#     comportamento desejado para um banco de teste — `docker compose down`
+#     devolve o ambiente ao estado inicial, e ninguém se apega a um dado que
+#     nasceu de uma suíte de testes.
+#
+# A aplicação **não** está aqui de propósito. A imagem do backend
+# (`backend/Dockerfile`) é o artefato que vai para o registro, e subi-la por um
+# compose local criaria um segundo jeito de rodar o sistema, que divergiria do
+# primeiro na primeira variável de ambiente que alguém esquecesse de espelhar.
+# Para rodar a imagem contra este banco, ver o README.
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: mapface-postgres
+    environment:
+      POSTGRES_USER: mapface
+      POSTGRES_PASSWORD: mapface
+      POSTGRES_DB: mapface
+    ports:
+      # A porta fica exposta no host porque quem mais usa este banco é a suíte
+      # de testes, que roda fora do Docker.
+      - "5432:5432"
+    healthcheck:
+      # `pg_isready` é o que distingue "o contêiner subiu" de "o Postgres aceita
+      # conexão": há alguns segundos entre os dois, e é neles que uma suíte
+      # disparada cedo demais falha com "connection refused" — erro que parece
+      # de configuração e não é.
+      test: ["CMD-SHELL", "pg_isready -U mapface -d mapface"]
+      interval: 2s
+      timeout: 3s
+      retries: 15
