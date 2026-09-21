@@ -61,8 +61,9 @@ def nome_do_alerta(codigo: str) -> str:
 
 #: Tempo de captura contínua a partir do qual o relatório sugere fracionar a
 #: sessão. Não é um limite fisiológico — é a ordem de grandeza das técnicas de
-#: fracionamento mais difundidas (25–50 min por bloco). Provisório no mesmo
-#: sentido que `LIMIAR_MAR_BOCEJO`: quer validação com dados de uso real.
+#: fracionamento mais difundidas (25–50 min por bloco). Continua provisório: é
+#: um corte escolhido, não medido, e quer validação com dados de uso real — a
+#: mesma dívida que `LIMIAR_MAR_BOCEJO` já pagou com a sessão real de 28/08.
 DURACAO_SEM_FRACIONAR = timedelta(minutes=50)
 
 #: Abaixo desta média o relatório sugere rever a estratégia de estudo. O IEE vai
