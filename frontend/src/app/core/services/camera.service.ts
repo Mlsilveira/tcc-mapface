@@ -95,9 +95,39 @@ export function traduzirFalhaDeCamera(erro: unknown): FalhaDeCamera {
 @Injectable({ providedIn: 'root' })
 export class CameraService implements OnDestroy {
   private readonly streamSignal = signal<MediaStream | null>(null);
+  private readonly proporcaoSignal = signal<number | null>(null);
 
   /** Stream da webcam enquanto houver captura ativa, ou `null`. */
   readonly stream = this.streamSignal.asReadonly();
+
+  /**
+   * Proporção (largura ÷ altura) que a câmera está de fato entregando.
+   *
+   * Existe porque a caixa do preview não pode ser fixa. Uma webcam USB comum
+   * entrega 4:3; um celular exposto como câmera do Windows entrega 16:9. Uma
+   * caixa 4:3 recebendo 16:9 ou corta 25% da largura (com `cover`) ou fica com
+   * barras (com `contain`) — e nenhuma das duas é aceitável num preview cuja
+   * função é o aluno conferir o próprio enquadramento.
+   *
+   * `null` até haver stream, e aí o CSS usa a proporção de fallback.
+   */
+  readonly proporcao = this.proporcaoSignal.asReadonly();
+
+  private medirProporcao(stream: MediaStream): void {
+    // A proporção é refinamento de apresentação; o acesso à câmera não pode
+    // depender dela. `getSettings` é padrão em navegador real, mas se faltar —
+    // trilha de origem exótica, ambiente antigo — o fallback do CSS resolve, e
+    // derrubar `solicitarAcesso` por causa disso seria trocar um enquadramento
+    // imperfeito por sessão nenhuma.
+    const trilha = stream.getVideoTracks()[0];
+    const ajustes = typeof trilha?.getSettings === 'function' ? trilha.getSettings() : undefined;
+    const largura = ajustes?.width;
+    const altura = ajustes?.height;
+    // `aspectRatio` vem direto em alguns navegadores; onde não vier, deriva de
+    // largura e altura. Sem nenhum dos dois, o CSS fica com o fallback.
+    const proporcao = ajustes?.aspectRatio ?? (largura && altura ? largura / altura : null);
+    this.proporcaoSignal.set(proporcao && isFinite(proporcao) && proporcao > 0 ? proporcao : null);
+  }
 
   /**
    * Pede acesso à webcam. Idempotente: chamadas repetidas reaproveitam o stream
@@ -121,11 +151,63 @@ export class CameraService implements OnDestroy {
     try {
       stream = await navigator.mediaDevices.getUserMedia(RESTRICOES_DE_VIDEO);
     } catch (erro) {
-      throw traduzirFalhaDeCamera(erro);
+      stream = await this.tentarOutrosDispositivos(erro);
     }
 
     this.streamSignal.set(stream);
+    this.medirProporcao(stream);
     return stream;
+  }
+
+  /**
+   * Quando o dispositivo escolhido pelo navegador não inicia, tenta os outros.
+   *
+   * Sem indicar `deviceId`, quem escolhe a câmera é o navegador — e ele escolhe
+   * mal com frequência. Numa máquina de teste com três dispositivos (uma webcam
+   * USB, a câmera virtual do OBS e um celular exposto como câmera do Windows),
+   * o Chrome elegeu a USB, que estava travada em `NotReadableError`, e a sessão
+   * não começava. **Havia uma câmera funcionando o tempo todo**, a duas linhas
+   * de distância.
+   *
+   * Só vale a pena para `NotReadableError`, que significa "o dispositivo existe
+   * mas não inicia". Permissão negada não melhora trocando de câmera — negar é
+   * decisão do aluno sobre a origem inteira —, e ausência de dispositivo não
+   * tem alternativa a tentar.
+   *
+   * A enumeração vem **depois** da primeira tentativa de propósito: antes de o
+   * navegador conceder acesso, `enumerateDevices` devolve entradas anônimas e
+   * sem `deviceId` utilizável. É a chamada que falhou que destrava a lista.
+   */
+  private async tentarOutrosDispositivos(erroOriginal: unknown): Promise<MediaStream> {
+    const falha = traduzirFalhaDeCamera(erroOriginal);
+    if (falha.motivo !== 'webcam-ocupada') {
+      throw falha;
+    }
+
+    let dispositivos: MediaDeviceInfo[];
+    try {
+      dispositivos = (await navigator.mediaDevices.enumerateDevices()).filter(
+        (dispositivo) => dispositivo.kind === 'videoinput',
+      );
+    } catch {
+      // Enumerar falhou: nada a acrescentar ao diagnóstico original.
+      throw falha;
+    }
+
+    for (const dispositivo of dispositivos) {
+      try {
+        return await navigator.mediaDevices.getUserMedia({
+          video: { ...(RESTRICOES_DE_VIDEO.video as MediaTrackConstraints), deviceId: { exact: dispositivo.deviceId } },
+          audio: false,
+        });
+      } catch {
+        // Esta não abriu; segue para a próxima. O erro individual não interessa
+        // — o que o aluno precisa saber é se alguma funcionou.
+      }
+    }
+
+    // Nenhuma abriu: o diagnóstico original continua sendo o mais honesto.
+    throw falha;
   }
 
   /**
@@ -144,6 +226,7 @@ export class CameraService implements OnDestroy {
 
     stream.getTracks().forEach((track) => track.stop());
     this.streamSignal.set(null);
+    this.proporcaoSignal.set(null);
   }
 
   /**
