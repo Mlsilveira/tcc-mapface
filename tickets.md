@@ -257,6 +257,39 @@ As seis ACs acima nasceram no épico `E02-metodos-de-estudo` do `.wize/`, e não
 
 **Os métodos que ficaram de fora.** Feynman, active recall e SQ3R diferem por atividade cognitiva, e EAR, MAR e Head Pose não distinguem "explicar em voz alta" de "reler". Oferecê-los faria o sistema afirmar que mede o que não mede.
 
+## 18. Preparo do software para produção
+
+> Numerada 18, colocada antes da trilha de infraestrutura de propósito: ela é o que torna as tickets 14 e 15 possíveis. Terraform e AWS são responsabilidade de outra pessoa; esta ticket entrega **o software que essa pessoa consegue implantar**.
+
+**O que construir:** a aplicação roda fora da máquina de desenvolvimento, com a garantia de que funciona lá.
+
+**Bloqueada por:** nenhuma.
+
+- [x] Driver PostgreSQL e a suíte inteira rodando contra Postgres, além de SQLite
+- [x] `Dockerfile` e `.dockerignore` do backend, mais um `docker-compose.yml` de desenvolvimento só com Postgres
+- [x] Configuração por ambiente: `AMBIENTE`, `ORIGENS_PERMITIDAS`, `NIVEL_DE_LOG`
+- [x] A aplicação **recusa subir** com a `SECRET_KEY` de exemplo fora de desenvolvimento
+- [x] CORS vindo de configuração, com o curinga recusado
+- [x] Frontend sem endereço compilado: `environment.prod.ts` e a URL entrando no build
+- [x] Sondas `/vivo` e `/pronto`, separadas porque levam a ações opostas
+- [x] Log estruturado em JSON, sem conteúdo de aluno
+- [x] Handler global de exceção
+- [ ] Consentimento explícito, exclusão de dados e rate limit — exigidos por haver usuários reais
+- [ ] Seção de limites conhecidos lida por quem decide a topologia — **feito no README**
+- [ ] Instrumentação da latência do WebSocket (entra na ticket 16)
+
+**O bug que ela achou, e que teria matado a apresentação.** A primeira execução da suíte contra PostgreSQL deu **44 falhas e 13 erros**, e 43 delas eram a mesma coisa. Toda coluna de instante é `TIMESTAMP WITHOUT TIME ZONE`, e todo instante que o código grava é UTC com fuso explícito. Ao inserir um valor com fuso numa coluna sem fuso, o PostgreSQL **converte para o fuso da sessão de conexão** e só então descarta a informação. Numa máquina em `America/Sao_Paulo`, o instante gravado saía três horas no passado e voltava da leitura como se fosse UTC.
+
+Consequência em produção: **toda sessão de estudo nasceria com `inicio` de três horas atrás** e seria encerrada pela varredura de ausência no primeiro `GET /sessoes/ativa`. Para todo mundo, o tempo inteiro. Os 383 testes verdes em SQLite não diziam nada sobre isso — e é exatamente por isso que "rodar a suíte no banco que vai para produção" era o primeiro item da ordem.
+
+A correção abre a conexão com `-c timezone=UTC`, o que torna a conversão a identidade. A alternativa — declarar as colunas como `TIMESTAMP WITH TIME ZONE` — é o tipo mais correto em absoluto e foi recusada porque muda o **tipo** de colunas existentes, e a migração caseira acrescenta coluna e afrouxa obrigatoriedade, não converte tipo.
+
+**O caminho que nunca tinha rodado.** O ramo PostgreSQL de `_relaxar_obrigatoriedade` (`ALTER COLUMN ... DROP NOT NULL`) existia no código desde a ticket 10 e **nunca havia sido executado uma vez sequer**. Agora tem teste próprio, que distingue os dois ramos pelo **OID da tabela** — reconstruir muda o OID, `ALTER COLUMN` não; contagem de linhas ou lista de colunas não distinguiriam nada.
+
+**O que o SQLite escondia.** Ele não verifica chave estrangeira por padrão, então uma fixture gravava sessão de estudo para um aluno que nunca existiu. Dado inválido nos dois bancos; só um deles dizia.
+
+**O que não foi validado:** o `Dockerfile` foi escrito mas **não construído** — não há Docker na máquina. O que deu para verificar foi o `pip install -r requirements.txt` num venv limpo de Python 3.9.6, que é o passo onde o bug do pin de `sqlmodel`/`pydantic` aparece. Quem tiver Docker precisa rodar um `build` antes de confiar.
+
 ## 14. Infraestrutura como código (Terraform)
 
 **O que construir:** toda a infraestrutura AWS provisionável com um comando, sem passos manuais.

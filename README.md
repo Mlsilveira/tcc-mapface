@@ -156,6 +156,8 @@ Implementado:
 - **Ticket 12 — Histórico de sessões.** Lista das sessões encerradas do aluno, com o resumo de cada uma e acesso ao relatório completo.
 - **Ticket 13 — Sumarização e retenção.** Os indicadores são congelados em `resumo_sessao` no encerramento; passadas 24 horas, os pontos por segundo são trocados por médias por minuto. `horario_registro` e `id_sessao` são indexados.
 
+- **Ticket 18 — Preparo para produção.** A aplicação roda e é testada contra PostgreSQL, não só SQLite; a configuração vem do ambiente e recusa subir insegura; o frontend não tem mais endereço compilado; há sondas de vida e prontidão, log em JSON e handler global de exceção. O `Dockerfile` existe e **ainda não foi construído** — não há Docker na máquina onde foi escrito.
+
 Em andamento:
 
 - **Ticket 17 — Ciclo de vida da sessão dirigido por presença e métodos de estudo.** Quem mantém a sessão viva passou a ser o rosto na câmera, com o limite de ausência vindo do método declarado. O catálogo de métodos, as colunas de contexto, a varredura por sessão, a renovação de credencial, a tabela `bloco_estudo` e a API de transições estão prontos; a tela inicial declara método, assunto e meta, a tela da sessão conduz o ciclo com cronômetro, aviso de pausa e transições gravadas, e o relatório lê a sessão por blocos. **A ticket está fechada** — falta só a revisão do Matheus.
@@ -180,7 +182,50 @@ cp .env.example .env
 
 A API sobe em `http://localhost:8000`, com documentação interativa em `http://localhost:8000/docs`.
 
-Antes de rodar em qualquer ambiente real, troque a `SECRET_KEY` no `.env` por um valor aleatório. O `.env` não é versionado.
+O `.env` não é versionado.
+
+### Configuração e ambientes
+
+Toda a configuração vem de variáveis de ambiente (ou de um `.env`). Todos os valores têm default de desenvolvimento: `cp .env.example .env` e a aplicação sobe sem mais nada.
+
+| Variável | Default | O que é |
+|---|---|---|
+| `AMBIENTE` | `desenvolvimento` | `desenvolvimento`, `teste` ou `producao` |
+| `DATABASE_URL` | `sqlite:///./app.db` | banco da aplicação |
+| `SECRET_KEY` | a chave de exemplo | segredo que assina os tokens |
+| `ORIGENS_PERMITIDAS` | `http://localhost:4200` | origens aceitas pelo CORS, separadas por vírgula |
+| `NIVEL_DE_LOG` | `INFO` | `DEBUG`, `INFO`, `WARNING` ou `ERROR` |
+| `ACCESS_TOKEN_EXPIRE_MINUTES` | `30` | janela deslizante do token |
+| `TETO_DE_CREDENCIAL_HORAS` | `12` | teto absoluto da credencial, contado do login |
+| `VAO_MAXIMO_DA_SERIE_MINUTOS` | `10` | maior silêncio da série ainda atribuível a perda de captura |
+
+**A aplicação recusa subir** — o processo morre no boot, com a mensagem no log — em três casos:
+
+1. `SECRET_KEY` ainda é a chave de exemplo e `AMBIENTE` não é `desenvolvimento` nem `teste`. A chave de exemplo está no repositório: quem a tem assina um token válido de qualquer aluno. Gere a sua com `python -c "import secrets; print(secrets.token_urlsafe(64))"`.
+2. `AMBIENTE` tem valor fora da lista. Um `prod` digitado com pressa não é `producao`, e sem essa recusa ele passaria em branco justamente pela verificação do item 1.
+3. `ORIGENS_PERMITIDAS` contém `*`. A API responde com credenciais, e nessa combinação o próprio navegador rejeita a resposta — configurar assim produziria o sintoma ("nada funciona em produção") muito longe da causa.
+
+Isso é deliberado. Este README pedia, em texto, para trocar a `SECRET_KEY` antes de subir — e pedir é um controle que depende de alguém ler, lembrar e executar no dia do deploy. A consequência de esquecer não era um erro visível: era uma aplicação funcionando perfeitamente, com credenciais forjáveis.
+
+### Sondas de saúde
+
+| Rota | Pergunta | Resposta |
+|---|---|---|
+| `GET /vivo` | o processo responde? | `200 {"status": "vivo"}`. Não toca em nada externo |
+| `GET /pronto` | o banco responde? | `200 {"status": "pronto", "banco": "ok"}` ou `503` |
+| `GET /health` | idem `/pronto` (apelido histórico) | `200 {"status": "ok"}` ou `503` |
+
+São duas perguntas porque levam a ações **opostas**: sem `/vivo`, reinicie a task; sem `/pronto`, tire-a da rotação e espere. Uma sonda de vida que checasse o banco reiniciaria em laço uma aplicação sã durante uma queda do banco.
+
+`/health` mudou de comportamento: antes devolvia `200` incondicionalmente, sem tocar em nada — o orquestrador considerava a task saudável com o banco fora do ar e o aluno recebia erro 500 num painel todo verde. Ele agora responde à pergunta de prontidão, com o mesmo corpo de sucesso de antes. **Se houver sonda de *liveness* apontada para `/health`, mude-a para `/vivo`.**
+
+### Log
+
+Uma linha por evento, em JSON, no stdout — que é onde um agregador de contêiner espera encontrá-lo, e onde a diferença entre texto e objeto é a diferença entre `grep` e consulta por campo. No boot saem o ambiente, o banco (com a senha mascarada) e as origens de CORS aceitas: são os três erros de configuração possíveis, e os três invisíveis de fora.
+
+Nenhuma linha carrega conteúdo escrito pelo aluno (`assunto`, `meta`), e-mail, ou senha em URL de banco. As sessões aparecem por id numérico, que basta para investigar e não basta para vazar por leitura casual. Isso é testado, não é convenção.
+
+Exceção não tratada devolve `500 {"detail": "Erro interno. A falha foi registrada."}`. O traceback vai para o log, nunca para o cliente.
 
 ### Frontend
 
@@ -191,6 +236,27 @@ npm start
 ```
 
 A aplicação sobe em `http://localhost:4200` e espera o backend em `http://localhost:8000`.
+
+### Construir o frontend para produção
+
+Os endereços do backend não estão mais fixos no código. Em desenvolvimento vêm de `frontend/src/environments/environment.ts`; no build de produção o `fileReplacements` do `angular.json` troca esse arquivo pelo `environment.prod.ts`, cujo valor é escrito na hora de publicar:
+
+```bash
+cd frontend
+MAPFACE_API_URL=https://api.seu-dominio.com npm run build:producao
+```
+
+O resultado fica em `frontend/dist/frontend/browser`, pronto para o bucket.
+
+`MAPFACE_API_URL` é a **única** coisa a configurar: a URL do canal de telemetria é derivada dela trocando o esquema (`https://` → `wss://`), porque `/telemetria` é uma rota da mesma aplicação FastAPI. Não existe variável separada para o WebSocket, e é de propósito — dois valores independentes é o dobro de chance de publicar `ws://` sob um site `https://`, erro que o navegador só denuncia em tempo de execução, num canal só, com o resto do site funcionando.
+
+O build **falha** se `MAPFACE_API_URL` não estiver definida. Um `ng build --configuration production` chamado direto, sem o script, compila com um endereço marcador que não resolve (`https://api.invalida.mapface`): o site quebra visivelmente, em vez de — com `localhost` — tentar silenciosamente falar com a máquina de quem abriu o navegador.
+
+Para conferir o que foi construído:
+
+```bash
+grep -r "localhost:8000" dist/            # tem que devolver nada
+```
 
 #### Modelo do MediaPipe
 
@@ -221,6 +287,90 @@ Do npm 11 em diante, os scripts de instalação das dependências vêm bloqueado
 ```bash
 cd frontend && npx puppeteer browsers install chrome
 ```
+
+### A mesma suíte contra PostgreSQL
+
+O comando acima roda contra SQLite em memória, que é o padrão. Em produção o banco é PostgreSQL, e uma suíte verde em SQLite **não diz nada** sobre ele: os dois divergem em fuso horário, em verificação de chave estrangeira e em quase tudo que envolve `ALTER TABLE`. A variável `DATABASE_URL_DE_TESTE` aponta a suíte inteira — os mesmos testes, sem cópia — para um banco de verdade:
+
+```bash
+cd backend
+DATABASE_URL_DE_TESTE=postgresql+psycopg://mapface:mapface@127.0.0.1:5432/mapface \
+  .venv/bin/python -m pytest
+```
+
+As tabelas do projeto são **derrubadas e recriadas** no começo da execução, e cada teste recebe todas elas truncadas, com as sequências zeradas — é assim que os `id` continuam começando em 1 como no SQLite. Aponte para um banco descartável, nunca para um que tenha dado de alguém.
+
+Rodando assim, alguns testes deixam de ser pulados: `tests/test_migracao_postgres.py` exercita o ramo `ALTER COLUMN ... DROP NOT NULL` da migração caseira, que o SQLite não tem e que por isso nunca é executado no modo padrão.
+
+Para levantar o banco sem instalar PostgreSQL na máquina, ver "PostgreSQL local com Docker" abaixo.
+
+## Docker
+
+### PostgreSQL local com Docker
+
+`docker-compose.yml`, na raiz, sobe **só o banco**. Ele é ferramenta de desenvolvimento, não infraestrutura: a senha é `mapface`, escrita no arquivo versionado, e não há volume — `down` apaga tudo, que é o que se quer de um banco de teste.
+
+```bash
+docker compose up -d postgres
+```
+
+A URL correspondente é `postgresql+psycopg://mapface:mapface@127.0.0.1:5432/mapface`, que serve tanto para `DATABASE_URL_DE_TESTE` quanto para `DATABASE_URL`.
+
+```bash
+docker compose down
+```
+
+### Imagem do backend
+
+> **Esta imagem nunca foi construída.** Não havia Docker na máquina em que o `backend/Dockerfile` foi escrito, então ele não foi validado por execução nenhuma — nem `build`, nem `run`. Os comandos abaixo são o que *deve* funcionar, e a primeira pessoa com Docker por perto deve rodá-los antes de confiar no arquivo.
+
+```bash
+cd backend
+docker build -t mapface-backend .
+```
+
+O `Dockerfile` parte de `python:3.9-slim-bookworm`, que é o piso declarado logo acima em "Rodando localmente". A escolha é deliberada: construir na versão mínima é o que torna esse piso verificável — numa imagem mais nova, o primeiro trecho de sintaxe de Python 3.10 passaria despercebido e o pré-requisito viraria mentira. O `requirements.txt` é instalado num ambiente limpo, que é exatamente onde o conflito entre `sqlmodel` e `pydantic` apareceu (commit `222d332`) e onde ele voltaria a aparecer se os dois pins se separassem.
+
+Para rodar a imagem contra o banco do compose:
+
+```bash
+docker run --rm -p 8000:8000 \
+  -e DATABASE_URL=postgresql+psycopg://mapface:mapface@host.docker.internal:5432/mapface \
+  -e SECRET_KEY="$(python3 -c 'import secrets; print(secrets.token_urlsafe(48))')" \
+  mapface-backend
+```
+
+`host.docker.internal` é como o contêiner alcança o host no Docker Desktop (macOS e Windows). No Linux, use `--network host` e `127.0.0.1`, ou coloque os dois na mesma rede do compose.
+
+A imagem **não** traz `.env`: toda configuração entra por variável de ambiente, e o `.dockerignore` mantém o `.env` de desenvolvimento fora do contexto de build para que a `SECRET_KEY` real não possa ser publicada junto com a imagem por acidente.
+
+O `CMD` sobe **um processo só**, sem `--workers`, e isso é requisito de correção, não economia: `app/analista.py` guarda a calibração de cada aluno em memória de processo, e um segundo worker faria o aluno recalibrar toda vez que uma requisição caísse no outro. Vale igual para o número de réplicas em produção.
+
+## Limites conhecidos desta versão
+
+Três coisas que esta versão **não** faz, e que quem for publicá-la precisa saber antes de decidir a topologia. Nenhuma é acidente: as três estão escritas nos docstrings do código, e as três dependem da mesma premissa.
+
+### Uma réplica. Não é economia — é requisito de correção.
+
+`app/analista.py` guarda a baseline calibrada de cada sessão num dicionário **em memória do processo**. É o que permite ao aluno ser medido contra o próprio rosto em vez de contra uma constante, e é o que a reconexão do WebSocket preserva.
+
+Com duas instâncias, uma reconexão que caia na outra encontra um registro vazio: o aluno **recalibra no meio da sessão** e passa a ser medido contra uma régua nova. O score não fica errado de um jeito visível — fica incomparável com o que veio antes, em silêncio, dentro do mesmo relatório.
+
+Subir o número de tasks sem antes mover essa baseline para o banco quebra a medição sem quebrar nada que um healthcheck perceba.
+
+### As varreduras rodam dentro do request
+
+`sessoes.encerrar_inativas` e `sumarizacao.aplicar_retencao` são preguiçosas: rodam quando alguém abre a tela, não por agendador. A PoC segue sem processo de fundo, e quem paga o custo é quem se beneficia dele.
+
+Com poucos alunos isso é invisível. Com muitos, vira trabalho no caminho da requisição e precisa virar job.
+
+### A migração de schema não coordena réplicas
+
+`database.criar_tabelas` roda `ALTER TABLE` no boot, comparando o banco com os modelos. Com duas réplicas subindo ao mesmo tempo, as duas tentam o mesmo `ALTER` — é aí que faz falta o controle de versão que uma ferramenta de migração de verdade tem (Alembic). Com uma réplica, o problema não existe.
+
+---
+
+As três se resolvem com **uma instância**. Essa é a escolha desta versão, e ela é adequada à janela de uso pretendida — demonstração e um teste com poucos participantes, não operação contínua. O que não pode acontecer é alguém aumentar o número de tasks achando que está apenas dando folga de capacidade.
 
 ## Organização do código
 
