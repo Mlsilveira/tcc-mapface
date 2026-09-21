@@ -1,0 +1,86 @@
+<div class="aplicacao">
+  <header class="topo">
+    <div class="topo__interno">
+      <app-logo />
+      <nav class="topo__acoes">
+        <a class="botao botao--fantasma" routerLink="/home" data-teste="voltar-para-home">
+          Nova sessão
+        </a>
+      </nav>
+    </div>
+  </header>
+
+  <main class="conteudo">
+    <section class="painel">
+      <h1>Minhas sessões</h1>
+      <p class="historico__intro">
+        Cada sessão encerrada vira um relatório. Eles ficam aqui para você olhar de novo quando
+        quiser — inclusive as que terminaram sozinhas.
+      </p>
+
+      @if (carregando()) {
+        <p class="estado-vazio__texto" role="status" data-teste="historico-carregando">
+          Buscando suas sessões…
+        </p>
+      } @else if (erro() !== null) {
+        <p class="erro-geral" role="alert" data-teste="historico-erro">{{ erro() }}</p>
+      } @else if (sessoes().length === 0) {
+        <div class="estado-vazio" data-teste="historico-vazio">
+          <span class="estado-vazio__marca"><app-icone nome="grafico" /></span>
+          <p class="estado-vazio__texto">
+            Você ainda não tem sessões encerradas. A primeira aparece aqui assim que você terminar
+            uma.
+          </p>
+          <a class="botao botao--primario" routerLink="/home">Começar uma sessão</a>
+        </div>
+      } @else {
+        <ul class="historico" data-teste="historico-lista">
+          @for (sessao of sessoes(); track sessao.id) {
+            <li class="historico__item">
+              <a class="historico__link" [routerLink]="['/relatorio', sessao.id]">
+                <div class="historico__quando">
+                  <strong>{{ sessao.inicio | date: 'dd/MM/yyyy' }}</strong>
+                  <span>{{ sessao.inicio | date: 'shortTime' }}</span>
+                  <!-- Traço, nunca "Sem método": `null` é "esta sessão é
+                       anterior ao recurso" e "livre" é uma escolha do aluno.
+                       Colapsar os dois inventaria uma escolha que ninguém fez. -->
+                  <span class="historico__metodo" data-teste="historico-metodo">
+                    {{ sessao.metodo_nome ?? '—' }}
+                    @if (sessao.assunto) {
+                      · {{ sessao.assunto }}
+                    }
+                  </span>
+                </div>
+
+                <dl class="historico__numeros">
+                  <div>
+                    <dt>Tempo medido</dt>
+                    <dd>{{ duracao(sessao.duracao_presente_s) }}</dd>
+                  </div>
+                  <div>
+                    <dt>Média</dt>
+                    <!-- Traço, nunca zero: sessão sem medida não é sessão com
+                         índice zero. É a distinção que a ticket 10 comprou. -->
+                    <dd>
+                      {{ sessao.media !== null ? (sessao.media | number: '1.0-0') : '—' }}
+                    </dd>
+                  </div>
+                  <div>
+                    <dt>Alertas</dt>
+                    <dd>{{ sessao.alertas }}</dd>
+                  </div>
+                </dl>
+
+                @if (sessao.parcial) {
+                  <span class="selo-parcial" data-teste="historico-parcial">Parcial</span>
+                }
+              </a>
+            </li>
+          }
+        </ul>
+      }
+    </section>
+  </main>
+
+  <p class="rodape-tela">MapFace · Índice de Engajamento no Estudo</p>
+</div>
