@@ -1,0 +1,32 @@
+# O que não entra no contexto de build da imagem do backend.
+#
+# Isto não é higiene: é a diferença entre uma imagem publicada no ECR e uma
+# imagem publicada no ECR **com o `.env` de desenvolvimento dentro**. O
+# `Dockerfile` copia só `app/`, então nada daqui chegaria à imagem por acidente
+# — mas tudo que estiver listado abaixo seria enviado ao daemon a cada build, e
+# uma linha `COPY . .` escrita no futuro passaria a levar junto.
+
+# Segredos. A `SECRET_KEY` real e a senha do banco moram aqui.
+.env
+
+# Banco local. Além de inútil dentro da imagem, é dado de estudo de alguém.
+*.db
+
+# Ambiente virtual da máquina: megabytes de wheels compilados para macOS, que
+# não rodam na imagem Linux e cujo único efeito seria tornar o build lento.
+.venv/
+venv/
+
+# Artefatos de execução dos testes.
+.pytest_cache/
+.coverage
+htmlcov/
+__pycache__/
+*.py[cod]
+
+# Os testes não vão para a imagem de produção. Eles rodam no desenvolvimento,
+# contra SQLite e contra PostgreSQL (ver README).
+tests/
+
+Dockerfile
+.dockerignore
