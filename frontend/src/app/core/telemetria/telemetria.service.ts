@@ -1,11 +1,19 @@
 import { Injectable, InjectionToken, NgZone, OnDestroy, inject, signal } from '@angular/core';
 
+import { API_URL, baseDeWebSocket } from '../api';
 import { LeituraDaCaptura } from '../visao/landmarks.service';
 import { AuthService } from '../services/auth.service';
 import { PayloadDeTelemetria, agregar } from './agregacao';
 
-/** URL do canal de telemetria. Deriva da API para não haver duas configurações. */
-export const URL_DA_TELEMETRIA = 'ws://localhost:8000/telemetria';
+/**
+ * URL do canal de telemetria.
+ *
+ * Deriva da API para não haver duas configurações — o que este comentário já
+ * afirmava enquanto a linha abaixo era um literal com `localhost` dentro.
+ * Agora é verdade: a única coisa configurável é `API_URL`, e o esquema `ws`/
+ * `wss` acompanha o `http`/`https` dela sozinho (ver `baseDeWebSocket`).
+ */
+export const URL_DA_TELEMETRIA = `${baseDeWebSocket(API_URL)}/telemetria`;
 
 /**
  * De quanto em quanto tempo uma amostra é tirada da captura.
