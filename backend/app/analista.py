@@ -31,7 +31,7 @@ from datetime import datetime, timedelta
 from statistics import median
 from typing import Deque, Dict, List, Optional, Tuple
 
-from app.config import settings
+from app import metodos
 from app.tempo import agora_utc
 
 PESO_OCULAR = 0.6
@@ -528,9 +528,12 @@ class RegistroDeAnalistas:
         self._ultimo_uso: Dict[int, datetime] = {}
 
     def _limite(self) -> timedelta:
-        # Casado com a inatividade da sessão: enquanto a sessão pode estar viva,
-        # a baseline dela também precisa estar.
-        return self._validade or timedelta(minutes=settings.sessao_inatividade_minutos)
+        # Não é um relógio próprio: é derivação do teto de ausência. Nenhuma
+        # sessão sobrevive a mais que `metodos.TETO_DE_AUSENCIA` sem rosto na
+        # câmera, logo uma baseline mais velha que o teto nunca pode ser
+        # necessária. Amarrar ao teto, e não ao limite do método, é de propósito:
+        # o registro é global e não sabe de qual sessão virá o próximo acesso.
+        return self._validade or metodos.TETO_DE_AUSENCIA
 
     def obter(self, id_sessao: int, agora: Optional[datetime] = None) -> AnalistaEngajamento:
         agora = agora or agora_utc()
