@@ -88,7 +88,11 @@ Duas propriedades fecham o desenho, e são as duas frases que a defesa precisa:
 - **Token expirado não ressuscita.** Renovar exige credencial viva. Aceitar um token vencido faria de qualquer token roubado uma credencial permanente — o access token viraria um refresh token sem nenhuma das garantias de um.
 - **O teto viaja dentro do token.** Não há tabela de sessão no servidor. Isso mantém a autenticação stateless e é uma limitação declarada, não um descuido: o que o par access+refresh compraria é poder **revogar**, e revogação depende de estado no servidor. Sem ele, dois tokens são um token com cerimônia.
 
-Sessões longas expuseram um defeito que estava escondido: o canal de telemetria autenticava **uma vez**, na primeira mensagem, e nunca reavaliava. Enquanto tudo morria em 30 minutos isso era invisível — o heartbeat tomava 401 e o cliente desmontava tudo. Com sessões de horas, um WebSocket aberto seria um canal autenticado de vida ilimitada, imune à expiração e ao logout. Agora o servidor guarda o vencimento do token na entrada e o reconfere **uma vez por minuto** — não a cada payload, porque o canal recebe um payload por segundo por aluno e cada um já paga uma escrita no banco. Do outro lado, o cliente reconecta sempre com a credencial **corrente**, e não com a do início da sessão.
+Sessões longas expuseram um defeito que estava escondido: o canal de telemetria autenticava **uma vez**, na primeira mensagem, e nunca reavaliava. Enquanto tudo morria em 30 minutos isso era invisível — o heartbeat tomava 401 e o cliente desmontava tudo. Com sessões de horas, um WebSocket aberto seria um canal autenticado de vida ilimitada, imune à expiração do token. Agora o servidor guarda o vencimento na entrada e o reconfere **uma vez por minuto** — não a cada payload, porque o canal recebe um payload por segundo por aluno e cada um já paga uma escrita no banco. Do outro lado, o cliente reconecta sempre com a credencial **corrente**, e não com a do início da sessão.
+
+**O que isso não cobre, e a distinção importa:** o canal reage à **expiração**, não ao **logout**. Sair da conta apaga o token do navegador e nada mais — não há revogação no servidor, porque a autenticação é stateless e revogar exige estado. Um token copiado antes do logout continua abrindo canal até vencer. A janela é o que resta da expiração corrente, no máximo 30 minutos.
+
+Isso é limitação declarada, não descuido: o que o par access+refresh compraria é exatamente poder revogar, e sem uma tabela de sessão no servidor dois tokens são um token com cerimônia. Se um dia a revogação for necessária, o menor caminho é uma coluna de versão de token por aluno, conferida na validação — e ela passaria a cobrir também a troca de senha.
 
 Defesa em uma linha: *o token renova enquanto o aluno usa o sistema, mas nenhuma credencial vive mais que 12 horas depois do login, e renovar exige um token ainda válido.*
 
@@ -190,7 +194,11 @@ Toda a configuração vem de variáveis de ambiente (ou de um `.env`). Todos os 
 
 | Variável | Default | O que é |
 |---|---|---|
-| `AMBIENTE` | `desenvolvimento` | `desenvolvimento`, `teste` ou `producao` |
+| `AMBIENTE` | não declarado (vale `desenvolvimento`) | `desenvolvimento`, `teste` ou `producao` |
+| `EMAILS_AUTORIZADOS` | vazio — cadastro aberto | quem pode se cadastrar, separado por vírgula |
+| `TENTATIVAS_DE_AUTENTICACAO` | `10` | tentativas de login/registro por e-mail dentro da janela |
+| `JANELA_DE_TENTATIVAS_MINUTOS` | `5` | tamanho da janela em que elas são contadas |
+| `AUTENTICACOES_SIMULTANEAS` | `8` | logins/registros em voo ao mesmo tempo |
 | `DATABASE_URL` | `sqlite:///./app.db` | banco da aplicação |
 | `SECRET_KEY` | a chave de exemplo | segredo que assina os tokens |
 | `ORIGENS_PERMITIDAS` | `http://localhost:4200` | origens aceitas pelo CORS, separadas por vírgula |
@@ -199,13 +207,42 @@ Toda a configuração vem de variáveis de ambiente (ou de um `.env`). Todos os 
 | `TETO_DE_CREDENCIAL_HORAS` | `12` | teto absoluto da credencial, contado do login |
 | `VAO_MAXIMO_DA_SERIE_MINUTOS` | `10` | maior silêncio da série ainda atribuível a perda de captura |
 
-**A aplicação recusa subir** — o processo morre no boot, com a mensagem no log — em três casos:
+**A aplicação recusa subir** — o processo morre no boot, com a mensagem no log — em sete casos:
 
-1. `SECRET_KEY` ainda é a chave de exemplo e `AMBIENTE` não é `desenvolvimento` nem `teste`. A chave de exemplo está no repositório: quem a tem assina um token válido de qualquer aluno. Gere a sua com `python -c "import secrets; print(secrets.token_urlsafe(64))"`.
-2. `AMBIENTE` tem valor fora da lista. Um `prod` digitado com pressa não é `producao`, e sem essa recusa ele passaria em branco justamente pela verificação do item 1.
-3. `ORIGENS_PERMITIDAS` contém `*`. A API responde com credenciais, e nessa combinação o próprio navegador rejeita a resposta — configurar assim produziria o sintoma ("nada funciona em produção") muito longe da causa.
+1. `AMBIENTE` tem valor fora da lista. Um `prod` digitado com pressa não é `producao`, e sem essa recusa ele passaria em branco justamente pela verificação da chave.
+2. **`AMBIENTE` não foi declarado e `DATABASE_URL` não aponta para um SQLite local.** Não declarar não é o mesmo que declarar `desenvolvimento`: sem a declaração a aplicação assume desenvolvimento, que é onde a chave de exemplo e o cadastro aberto são tolerados — e um banco de verdade não é lugar para nenhum dos dois.
+3. **`SECRET_KEY` é a chave de exemplo e o banco não é um SQLite local.** É o que sai de copiar o `.env.example` para uma task definition e trocar só a `DATABASE_URL`. A frase que esta regra torna verdadeira é curta: *a chave que está no repositório só protege um arquivo na máquina de quem clonou*.
+4. `SECRET_KEY` é a chave de exemplo e `AMBIENTE` não é `desenvolvimento` nem `teste`. Gere a sua com `python -c "import secrets; print(secrets.token_urlsafe(64))"`.
+5. `ALGORITHM` está fora de `HS256`, `HS384` e `HS512`. O segredo desta aplicação é simétrico, então só a família HMAC serve — e a lista fechada é o que recusa `none`, o algoritmo que desliga a verificação de assinatura e que tem formato impecável.
+6. `ORIGENS_PERMITIDAS` contém `*`, **ou** contém origem sem `https://` em `AMBIENTE=producao`. O curinga com credenciais é recusado pelo próprio navegador; e sem HTTPS o navegador não entrega a webcam, então uma origem em texto claro faria a aplicação abrir e não medir nada.
+7. `EMAILS_AUTORIZADOS` está vazio em `AMBIENTE=producao`. Lista vazia é cadastro aberto a qualquer pessoa da internet, e este sistema liga a webcam de quem entra.
 
-Isso é deliberado. Este README pedia, em texto, para trocar a `SECRET_KEY` antes de subir — e pedir é um controle que depende de alguém ler, lembrar e executar no dia do deploy. A consequência de esquecer não era um erro visível: era uma aplicação funcionando perfeitamente, com credenciais forjáveis.
+Os itens 2 e 3 corrigem uma verificação que **falhava aberta**. A primeira versão condicionava a recusa a "o ambiente não está na lista de isentos", e o campo tinha default `desenvolvimento` — de modo que quem **não declarava** `AMBIENTE` entrava na lista de isentos sem escolher entrar nela. A mesma distração que deixa a `SECRET_KEY` de exemplo para trás desligava a guarda que existe por causa dela. Foi reproduzido: sem `AMBIENTE`, com a chave de exemplo e com `DATABASE_URL` apontando para um PostgreSQL, a aplicação subia.
+
+Exigir `AMBIENTE` declarado em toda situação teria fechado o buraco e quebrado `git clone && uvicorn` sem `.env` — e uma verificação que atrapalha o trabalho diário é uma verificação que alguém comenta numa tarde ruim, o que a deixa pior do que não existir. O que se exige é declaração **onde a ausência dela é perigosa**: quando o banco não é um arquivo da própria máquina. Nenhuma destas recusas protege contra decisão — quem declarar `AMBIENTE=desenvolvimento` num endereço público está escolhendo, e o trabalho da verificação é impedir esquecimento, não vetar escolha.
+
+### Quem entra, e quantas vezes pode tentar
+
+O cadastro é fechado por **lista de e-mails** (`EMAILS_AUTORIZADOS`), e não por código de convite. O código seria um segredo só, compartilhado por todos: bastaria alguém encaminhar a mensagem do grupo para ele ficar tão público quanto a URL, e tirar o acesso de uma pessoa obrigaria a trocá-lo para todo mundo, inclusive para quem estivesse no meio de uma sessão. A lista nomeia a população real do estudo — entra quem foi convidado, sai quem desistiu — e é legível na configuração em vez de estar na memória de quem distribuiu o código. Em troca, os e-mails da turma passam a viver na configuração, junto com a senha do banco e com o mesmo controle de acesso.
+
+Quem não está na lista recebe **403**, e o 403 vem antes de qualquer consulta ao banco: de fora, um e-mail já cadastrado e um livre respondem a mesma coisa. Lista vazia significa cadastro aberto, que é o certo em desenvolvimento e é recusado no boot em `AMBIENTE=producao`.
+
+`POST /auth/login` e `POST /auth/registro` são os dois únicos endpoints anônimos do sistema, e os dois pagam um bcrypt de ~300 ms por chamada. Duas contenções, contra dois ataques diferentes:
+
+- **Tentativas por e-mail** — 10 a cada 5 minutos, com `429` e `Retry-After`. O contador é zerado por login bem-sucedido, de modo que quem sabe a própria senha nunca o acumula. É **por e-mail, não por IP**: atrás de um balanceador o IP de toda a turma é o mesmo IP, e um limite por IP ou pune a turma junta ou depende de confiar num `X-Forwarded-For` que qualquer cliente escreve.
+- **Trabalho em voo** — no máximo 8 logins/registros simultâneos, com `429` imediato. Os endpoints são síncronos e rodam no threadpool de 40 threads que `/pronto` divide com eles: sem teto, algumas dezenas de chamadas ocupam as threads, a sonda estoura o timeout e o orquestrador recicla uma task **sã**, derrubando a sessão de estudo de todo mundo ao mesmo tempo. A recusa é imediata de propósito — esperar por vaga seguraria a thread, que é o recurso a preservar.
+
+`POST /auth/renovar` fica fora dos dois: é a rota que o cliente de cada aluno chama em laço enquanto estuda, já exige token válido e não paga bcrypt.
+
+O login custa o mesmo para quem existe e para quem não existe. Antes, e-mail desconhecido voltava na hora e e-mail cadastrado custava os 300 ms do bcrypt — diferença medível com o cronômetro do navegador, que respondia "esta pessoa usa o sistema?" a qualquer um. É o mesmo oráculo de existência que as rotas de sessão evitam com o 404 uniforme, e que faltava na porta da frente.
+
+### Teto de tamanho de corpo
+
+Nenhuma requisição legítima desta API passa de ~1 KB, e o teto é de 64 KB. Ele não valida campo — isso é trabalho do `schemas.py`, que devolve 422 dizendo qual campo está errado. O trabalho dele é impedir que **a memória da instância seja escolhida por um desconhecido**: sem teto, o corpo inteiro é bufferizado antes de o pydantic olhar para ele.
+
+Está em código, e não delegado ao balanceador, por uma razão factual: o Application Load Balancer limita tamanho e número de **cabeçalhos**, e não tem limite configurável de corpo. Quem tem é o AWS WAF (`SizeRestrictions_BODY`), que é outro recurso, outro custo e outro dono — "deixar para o ALB" não era executável. Além disso a aplicação roda em mais de um lugar (compose local, instância do teste, notebook na defesa) e só um deles tem balanceador na frente.
+
+**Para quem cuida da infraestrutura:** uma regra de WAF `SizeRestrictions_BODY` alinhada com os 64 KB é um complemento útil — recusa antes de gastar banda da instância, e alcança o caso de corpo enviado em *chunks* sem `Content-Length`, que o middleware não alcança. Não é pré-requisito para publicar.
 
 ### Sondas de saúde
 
@@ -224,6 +261,8 @@ São duas perguntas porque levam a ações **opostas**: sem `/vivo`, reinicie a 
 Uma linha por evento, em JSON, no stdout — que é onde um agregador de contêiner espera encontrá-lo, e onde a diferença entre texto e objeto é a diferença entre `grep` e consulta por campo. No boot saem o ambiente, o banco (com a senha mascarada) e as origens de CORS aceitas: são os três erros de configuração possíveis, e os três invisíveis de fora.
 
 Nenhuma linha carrega conteúdo escrito pelo aluno (`assunto`, `meta`), e-mail, ou senha em URL de banco. As sessões aparecem por id numérico, que basta para investigar e não basta para vazar por leitura casual. Isso é testado, não é convenção.
+
+Essa promessa não se sustenta só pela disciplina de quem escreve o log. Uma exceção do banco carrega, na própria mensagem, os valores ligados à consulta que falhou — e o handler de falha registra o traceback inteiro. Dois cadastros simultâneos com o mesmo e-mail bastavam, **sem autenticação**, para pôr e-mail e hash de senha no agregador; um erro em `sessao_estudo` punha o `assunto`. O engine sobe com `hide_parameters=True`, que é o que impede o driver de escrever esses valores. O tipo da exceção e a consulta continuam no log; os dados, não.
 
 Exceção não tratada devolve `500 {"detail": "Erro interno. A falha foi registrada."}`. O traceback vai para o log, nunca para o cliente.
 
@@ -348,7 +387,7 @@ O `CMD` sobe **um processo só**, sem `--workers`, e isso é requisito de corre�
 
 ## Limites conhecidos desta versão
 
-Três coisas que esta versão **não** faz, e que quem for publicá-la precisa saber antes de decidir a topologia. Nenhuma é acidente: as três estão escritas nos docstrings do código, e as três dependem da mesma premissa.
+Quatro coisas que esta versão **não** faz, e que quem for publicá-la precisa saber antes de decidir a topologia. Nenhuma é acidente: as quatro estão escritas nos docstrings do código, e as quatro dependem da mesma premissa.
 
 ### Uma réplica. Não é economia — é requisito de correção.
 
@@ -368,9 +407,19 @@ Com poucos alunos isso é invisível. Com muitos, vira trabalho no caminho da re
 
 `database.criar_tabelas` roda `ALTER TABLE` no boot, comparando o banco com os modelos. Com duas réplicas subindo ao mesmo tempo, as duas tentam o mesmo `ALTER` — é aí que faz falta o controle de versão que uma ferramenta de migração de verdade tem (Alembic). Com uma réplica, o problema não existe.
 
+### Os contadores da porta da frente vivem na memória do processo
+
+`app/contencao.py` guarda as tentativas de login e as vagas de trabalho em voo num dicionário do processo. É o que permite limitar sem Redis, sem tabela e sem dependência nova.
+
+Com duas instâncias, cada uma conta metade das tentativas e o limite efetivo dobra — em silêncio, sem nada quebrar de um jeito que um healthcheck perceba. **Não é uma otimização adiada: é uma condição de corretude.** No dia em que houver duas tasks, o contador precisa passar a ser compartilhado.
+
 ---
 
-As três se resolvem com **uma instância**. Essa é a escolha desta versão, e ela é adequada à janela de uso pretendida — demonstração e um teste com poucos participantes, não operação contínua. O que não pode acontecer é alguém aumentar o número de tasks achando que está apenas dando folga de capacidade.
+As quatro se resolvem com **uma instância**. Essa é a escolha desta versão, e ela é adequada à janela de uso pretendida — demonstração e um teste com poucos participantes, não operação contínua. O que não pode acontecer é alguém aumentar o número de tasks achando que está apenas dando folga de capacidade.
+
+**O pool de conexões acompanha essa escolha.** Sendo uma instância, o teto dela é o consumo total do sistema: 45 conexões (`pool_size=20`, `max_overflow=25`). O número não é folga escolhida no olho — é o máximo de chamadas bloqueantes que o processo consegue produzir, que são as 40 threads do *threadpool* do AnyIO (onde rodam as rotas `def`) mais uma do laço de eventos (onde o WebSocket roda SQLAlchemy síncrono em linha, serializado). Acima disso nada neste processo espera no pool, e `/pronto` não pode ser esganado por telemetria. A conta está no docstring de `database.TETO_DE_CONEXOES` e é refeita à mão em `tests/test_conexoes.py`.
+
+O canal de telemetria **não** segura uma conexão pela sessão de estudo inteira: ele abre e fecha uma sessão de banco por payload. Era o contrário, e era o defeito de verdade — com uma conexão presa por aluno com a webcam ligada, o teto virava o número de participantes que cabiam na sala, e passar dele derrubava login, heartbeat e `/pronto` para todo mundo. `pool_pre_ping=True` cobre o outro extremo: conexão ociosa derrubada do outro lado no intervalo entre o teste e a defesa é descartada no empréstimo em vez de virar 500 na primeira tela aberta.
 
 ## Organização do código
 
@@ -388,6 +437,8 @@ backend/
     criterios.py     avaliação da sessão por blocos, e todas as frases dela
     sumarizacao.py   resumo congelado no encerramento e retenção da série
     security.py      hashing de senha e emissão/validação de JWT
+    contencao.py     tentativas de autenticação e teto de trabalho em voo
+    limites.py       teto de tamanho de corpo das requisições
     tempo.py         normalização de datetimes para UTC
     models.py        tabelas aluno, sessao_estudo, bloco_estudo, log_engajamento,
                      resumo_sessao
