@@ -49,7 +49,9 @@ não anotação de conveniência:
    os dois compõem sem se conhecerem, porque a presença mantém a sessão, a
    sessão mantém o heartbeat, e o heartbeat carrega a renovação.
 """
+import secrets
 from datetime import datetime, timedelta, timezone
+from functools import lru_cache
 from typing import Optional
 
 import bcrypt
@@ -62,6 +64,31 @@ from app.tempo import agora_utc
 
 def hash_senha(senha: str) -> str:
     return bcrypt.hashpw(senha.encode("utf-8"), bcrypt.gensalt()).decode("utf-8")
+
+
+@lru_cache(maxsize=1)
+def hash_inalcancavel() -> str:
+    """Um hash de bcrypt que nenhuma senha digitada acerta, calculado uma vez.
+
+    Existe por causa de um canal lateral de tempo no login: quando o e-mail não
+    existe, a rota respondia na hora, e quando existe ela paga os ~300 ms do
+    bcrypt. A diferença é medível de fora com um cronômetro de navegador, e
+    transforma `POST /auth/login` num confirmador público de quem usa o sistema
+    — a mesma coisa que as rotas de sessão evitam com o 404 uniforme, "senão a
+    diferença vira um oráculo de existência". Verificando a senha contra este
+    hash quando não há aluno, os dois caminhos custam o mesmo.
+
+    O segredo é aleatório e é descartado: ninguém precisa conhecê-lo, e o que se
+    quer dele é só que a verificação **falhe** depois de gastar o tempo certo.
+    Um hash literal no código faria o mesmo serviço e pareceria um segredo
+    esquecido no repositório para sempre, que é a leitura errada mais cara que
+    uma linha destas pode ter.
+
+    `lru_cache` porque gerar o hash custa os mesmos 300 ms: no import ele
+    atrasaria todo boot e toda coleta de teste, mesmo quando ninguém faz login.
+    Calculado no primeiro uso, é pago uma vez por processo.
+    """
+    return hash_senha(secrets.token_urlsafe(32))
 
 
 def verificar_senha(senha: str, senha_hash: str) -> bool:
