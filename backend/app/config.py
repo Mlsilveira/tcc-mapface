@@ -6,7 +6,8 @@ segunda roda no import, o que significa que uma configuração insegura não vir
 um erro no primeiro request — vira um processo que não sobe. Ver §1.4 e §1.5 do
 plano de produção.
 """
-from typing import FrozenSet, List
+from contextlib import contextmanager
+from typing import FrozenSet, Iterator, List, Optional
 
 from pydantic import AliasChoices, Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
@@ -27,13 +28,32 @@ PRODUCAO = "producao"
 #: onde a verificação importa.
 AMBIENTES_CONHECIDOS: FrozenSet[str] = frozenset({DESENVOLVIMENTO, TESTE, PRODUCAO})
 
-#: Onde a chave de exemplo ainda é aceita. `teste` está aqui porque a suíte roda
-#: sem `.env` nenhum, em máquina de CI que não tem segredo a oferecer — e exigir
-#: um segredo para rodar teste só ensinaria a inventar um e versioná-lo.
+#: Onde a chave de exemplo ainda é aceita — **junto** com a condição de banco
+#: local do item 3 de `verificar_configuracao`, nunca sozinha. `teste` está aqui
+#: porque a suíte roda sem `.env` nenhum, em máquina de CI que não tem segredo a
+#: oferecer, e exigir um segredo para rodar teste só ensinaria a inventar um e
+#: versioná-lo.
 AMBIENTES_SEM_SEGREDO: FrozenSet[str] = frozenset({DESENVOLVIMENTO, TESTE})
+
+#: Prefixo da URL de um banco que mora num arquivo da própria máquina. É o que
+#: separa "alguém clonou o repositório" de "isto é uma instalação de verdade":
+#: um SQLite local não tem usuário além de quem está sentado na frente dele.
+PREFIXO_SQLITE = "sqlite"
+
+#: Os algoritmos de assinatura que este projeto pode usar. Só a família HMAC,
+#: porque o segredo é simétrico (`SECRET_KEY`): pedir `RS256` aqui seria pedir
+#: para a `jose` tratar uma senha como chave privada RSA, e o erro apareceria no
+#: primeiro login e não no boot. `none` — o algoritmo que desliga a verificação
+#: de assinatura — é recusado por consequência de a lista ser fechada, que é o
+#: motivo de ela ser uma lista e não uma validação de formato.
+ALGORITMOS_CONHECIDOS: FrozenSet[str] = frozenset({"HS256", "HS384", "HS512"})
 
 #: O curinga de CORS. Recusado, não ignorado — ver `verificar_configuracao`.
 CURINGA = "*"
+
+#: O único esquema de origem aceito em produção. Ver o item 6 de
+#: `verificar_configuracao`.
+ESQUEMA_SEGURO = "https://"
 
 
 class ConfiguracaoInsegura(RuntimeError):
@@ -58,15 +78,21 @@ class Settings(BaseSettings):
     existe para que esquecer de declarar seja barulhento em vez de silencioso.
     """
 
-    # Qual dos ambientes conhecidos está rodando. O default é desenvolvimento
-    # porque é o único que não pode exigir declaração: é o estado de quem acabou
-    # de clonar o repositório e da suíte de testes.
+    # Qual dos ambientes conhecidos está rodando, **como declarado** — `None`
+    # quando ninguém declarou nada. A distinção entre "não declarado" e
+    # "declarado como desenvolvimento" é o conserto de um furo real: enquanto
+    # este campo tinha default `desenvolvimento`, quem esquecesse `AMBIENTE` na
+    # task definition caía automaticamente na lista de isentos de segredo
+    # (`AMBIENTES_SEM_SEGREDO`) — e é exatamente o mesmo perfil de quem esquece
+    # a `SECRET_KEY`. A guarda desenhada contra o esquecimento tinha um
+    # esquecimento como caminho de contorno.
     #
-    # Inverter (default `producao`, dev declarado) foi considerado e descartado:
-    # seria mais seguro por construção e quebraria os 383 testes e o primeiro
-    # `uvicorn` de qualquer pessoa nova. A segurança aqui vem da verificação
-    # explícita, não de um default hostil.
-    ambiente: str = DESENVOLVIMENTO
+    # Quem quer o valor para usar (log, decisão de política) lê `ambiente`, que
+    # devolve `desenvolvimento` quando não há declaração. Quem quer saber se
+    # **houve** declaração lê este campo — e é só a verificação que quer isso.
+    ambiente_declarado: Optional[str] = Field(
+        default=None, validation_alias=AliasChoices("AMBIENTE")
+    )
 
     database_url: str = "sqlite:///./app.db"
     secret_key: str = CHAVE_DE_EXEMPLO
@@ -89,6 +115,43 @@ class Settings(BaseSettings):
     # que algo está errado no ambiente publicado e não dá para reproduzir na
     # máquina: `NIVEL_DE_LOG=DEBUG` e subir de novo é mais rápido que adivinhar.
     nivel_de_log: str = "INFO"
+
+    # Quem pode se cadastrar, separado por vírgula. **Vazio significa aberto**,
+    # que é o que mantém `git clone && uvicorn` utilizável e a suíte rodando sem
+    # configurar nada — e é também por isso que `verificar_configuracao` recusa
+    # subir com esta lista vazia em produção. Ver `emails_autorizados` e o item
+    # 7 da verificação.
+    #
+    # Lista de e-mails, e não código de convite: ver o docstring de
+    # `app.routers.auth.registrar`, onde a escolha é justificada contra a
+    # alternativa.
+    emails_autorizados: str = ""
+
+    # Quantas tentativas de autenticação um mesmo e-mail pode gastar dentro da
+    # janela abaixo antes de levar 429. Dez porque é folgado para quem erra a
+    # senha de verdade — três, quatro erros seguidos é o que acontece com gente
+    # apressada — e apertado para quem está varrendo: 10 tentativas a cada 5
+    # minutos são 2.880 por dia contra **uma** conta, número que não chega perto
+    # de um dicionário. O contador é zerado por login bem-sucedido, de modo que
+    # o aluno legítimo nunca o acumula.
+    tentativas_de_autenticacao: int = 10
+    janela_de_tentativas_minutos: int = 5
+
+    # Quantas requisições de login/registro podem estar **em voo ao mesmo
+    # tempo**. Existe por causa da CPU do bcrypt (cost 12, ~300 ms) e do
+    # threadpool de 40 threads em que os endpoints síncronos do FastAPI rodam:
+    # sem teto, algumas dezenas de chamadas simultâneas ocupam as threads,
+    # `/pronto` — que é síncrono e divide o mesmo pool — fica na fila e estoura
+    # o timeout da sonda, e o orquestrador recicla uma task que estava sã,
+    # derrubando a sessão de estudo de todo mundo junto.
+    #
+    # Oito é o maior número que ainda deixa a conta confortável: 8 das 40
+    # threads ocupadas, 32 livres para sonda e telemetria, e ~2,4 s de trabalho
+    # de bcrypt enfileirado no pior caso de uma task de 0,25 vCPU. É folgado
+    # para uma turma que entra ao longo de um ou dois minutos (cada login ocupa
+    # sua vaga por pouco mais de um segundo) e é um teto duro para quem
+    # dispara em rajada.
+    autenticacoes_simultaneas: int = 8
 
     # Maior vão entre dois pontos consecutivos da série que ainda é atribuível a
     # **perda de captura** — reconexão do WebSocket, aba em segundo plano,
@@ -127,7 +190,38 @@ class Settings(BaseSettings):
     # sozinho. Com ele, o pior caso é limitado e dizível em uma frase.
     teto_de_credencial_horas: int = 12
 
-    model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8")
+    # `populate_by_name` existe por causa do `validation_alias` de
+    # `ambiente_declarado`: sem ele, o campo só poderia ser preenchido pelo nome
+    # da variável de ambiente, e os testes que constroem uma `Settings` à mão
+    # teriam de escrever `AMBIENTE=` como argumento — que é o nome do ambiente,
+    # não o do campo.
+    model_config = SettingsConfigDict(
+        env_file=".env", env_file_encoding="utf-8", populate_by_name=True
+    )
+
+    @property
+    def ambiente(self) -> str:
+        """O ambiente em vigor: o declarado, ou desenvolvimento quando não há.
+
+        Propriedade, e não campo com default, porque o default apagava a
+        informação de que ninguém declarou nada — e é justamente essa
+        informação que `verificar_configuracao` precisa para distinguir "estou
+        em desenvolvimento" de "esqueci de dizer onde estou". Quem só quer o
+        valor continua lendo `settings.ambiente` como antes.
+        """
+        if self.ambiente_declarado is None:
+            return DESENVOLVIMENTO
+        return self.ambiente_declarado
+
+    def banco_e_local(self) -> bool:
+        """O banco é um arquivo SQLite desta máquina?
+
+        É o sinal que esta configuração usa para reconhecer uma instalação de
+        verdade sem depender de ninguém declarar que ela é de verdade: um
+        PostgreSQL tem endereço, credencial e outras pessoas do outro lado;
+        `sqlite:///./app.db` é um arquivo ao lado do código de quem clonou.
+        """
+        return self.database_url.strip().lower().startswith(PREFIXO_SQLITE)
 
     def origens_de_cors(self) -> List[str]:
         """As origens declaradas, uma a uma, sem espaços e sem vazias.
@@ -141,6 +235,21 @@ class Settings(BaseSettings):
         return [
             origem.strip() for origem in self.origens_permitidas.split(",") if origem.strip()
         ]
+
+    def emails_autorizados_a_registrar(self) -> FrozenSet[str]:
+        """Os e-mails da lista, normalizados. Vazio significa **registro aberto**.
+
+        Normalizar para minúsculas é o que faz a lista casar com o que a pessoa
+        digita: `Ana.Souza@exemplo.com` e `ana.souza@exemplo.com` são a mesma
+        caixa postal em todo provedor que esta turma usa, e uma lista que
+        recusasse a primeira produziria um "não estou autorizado" incompreensível
+        para quem está com o próprio e-mail na mão. O rigor do RFC — que permite
+        parte local sensível a maiúsculas — perderia aqui para a realidade, e o
+        custo de errar é alguém não conseguir se cadastrar.
+        """
+        return frozenset(
+            email.strip().lower() for email in self.emails_autorizados.split(",") if email.strip()
+        )
 
 
 def verificar_configuracao(config: Settings) -> None:
@@ -159,26 +268,91 @@ def verificar_configuracao(config: Settings) -> None:
     morre no boot com a mensagem no log — que é o lugar onde quem publicou está
     olhando naquele exato minuto.
 
-    As três recusas, e o que cada uma protege:
+    **O furo que os itens 2 e 3 fecham, e por que o conserto tem esta forma.**
+    A primeira versão desta função condicionava a recusa a
+    `ambiente not in AMBIENTES_SEM_SEGREDO`, e `ambiente` tinha default
+    `desenvolvimento`. Resultado: quem **não declarava** `AMBIENTE` entrava na
+    lista de isentos sem escolher entrar nela — a mesma distração que deixa a
+    `SECRET_KEY` de exemplo para trás desligava a guarda que existe por causa
+    dela. Foi reproduzido: sem `AMBIENTE`, com a chave de exemplo e com
+    `DATABASE_URL` apontando para um PostgreSQL, a aplicação subia.
 
-    1. **Ambiente desconhecido.** `AMBIENTE=prod` não é produção para o item 2 e
-       passaria pela verificação sem ser verificado. Fechar a lista transforma o
-       typo num erro em vez de num buraco.
-    2. **Chave de exemplo fora de desenvolvimento/teste.** O item que dá nome a
+    Das duas saídas possíveis, a escolhida **não** foi exigir `AMBIENTE`
+    declarado em toda situação. Exigir sempre quebraria `git clone && uvicorn`
+    sem `.env` e obrigaria a suíte a declarar ambiente para rodar — e uma
+    verificação que atrapalha o trabalho diário é uma verificação que alguém
+    comenta numa tarde ruim, o que a deixa pior do que não existir. O que se
+    exige é declaração **onde a ausência dela é perigosa**: quando o banco não é
+    um SQLite local. Um PostgreSQL tem endereço, credencial e gente do outro
+    lado; um arquivo `app.db` é de quem clonou o repositório. O critério não
+    depende de ninguém lembrar de nada — ele lê a única variável que, nesse
+    cenário, a pessoa não tem como esquecer, porque sem ela a aplicação não
+    encontra dado nenhum.
+
+    Nenhuma destas recusas protege contra **decisão**: quem declarar
+    `AMBIENTE=desenvolvimento` num endereço público está escolhendo, e o
+    trabalho desta função é impedir esquecimento, não vetar escolha.
+
+    As recusas, e o que cada uma protege:
+
+    1. **Ambiente desconhecido.** `AMBIENTE=prod` não é produção para os itens
+       seguintes e passaria pela verificação sem ser verificado. Fechar a lista
+       transforma o typo num erro em vez de num buraco.
+    2. **Ambiente não declarado com banco que não é SQLite local.** O furo
+       descrito acima. A mensagem pede a declaração em vez de adivinhar o
+       ambiente: adivinhar "isto deve ser produção" acertaria hoje e seria uma
+       regra que ninguém consegue prever amanhã.
+    3. **Chave de exemplo com banco que não é SQLite local.** O item 4 sozinho
+       deixava passar `AMBIENTE=desenvolvimento` + RDS + chave de exemplo, que é
+       o que sai de copiar o `.env.example` para uma task definition e trocar só
+       a `DATABASE_URL`. A frase que este item torna verdadeira é curta: *a
+       chave que está no repositório só protege um arquivo na máquina de quem
+       clonou*.
+    4. **Chave de exemplo fora de desenvolvimento/teste.** O item que dá nome a
        tudo isto.
-    3. **Curinga no CORS.** `allow_origins=["*"]` com `allow_credentials=True` é
-       recusado pelos próprios navegadores, então configurar assim produz um
-       sintoma ("nada funciona em produção") a uma distância enorme da causa. E
-       se um dia as credenciais saírem do meio, o curinga abre a API para
-       qualquer página da internet. Recusar aqui custa uma linha e economiza a
-       tarde inteira de depuração.
+    5. **Algoritmo de assinatura fora da lista.** `ALGORITHM` vinha do ambiente
+       sem ser olhado: um valor torto não era recusado no boot, virava exceção
+       no primeiro login — ou, pior, `none`, que faria a `jose` aceitar token
+       sem assinatura nenhuma.
+    6. **Curinga no CORS, e `http://` em produção.** `allow_origins=["*"]` com
+       `allow_credentials=True` é recusado pelos próprios navegadores, então
+       configurar assim produz um sintoma ("nada funciona em produção") a uma
+       distância enorme da causa. E `http://` em produção é, pela lógica deste
+       projeto, configuração impossível: o navegador só entrega a webcam a um
+       contexto seguro, e sem webcam não há IEE — a origem em texto claro
+       renderia uma tela de permissão negada sem explicação.
+    7. **Registro aberto em produção.** `EMAILS_AUTORIZADOS` vazio significa
+       "qualquer um se cadastra", que é o certo em desenvolvimento e é a mesma
+       variável esquecida do item 2 quando o endereço é público. Em produção a
+       lista é obrigatória — e quem realmente quiser cadastro aberto pode dizer
+       isso declarando outro ambiente, que é uma decisão e não um descuido.
     """
-    if config.ambiente not in AMBIENTES_CONHECIDOS:
+    declarado = config.ambiente_declarado
+    if declarado is not None and declarado not in AMBIENTES_CONHECIDOS:
         conhecidos = ", ".join(sorted(AMBIENTES_CONHECIDOS))
         raise ConfiguracaoInsegura(
             "AMBIENTE={} não é um ambiente conhecido. Use um de: {}.".format(
-                config.ambiente, conhecidos
+                declarado, conhecidos
             )
+        )
+
+    if declarado is None and not config.banco_e_local():
+        conhecidos = ", ".join(sorted(AMBIENTES_CONHECIDOS))
+        raise ConfiguracaoInsegura(
+            "AMBIENTE não foi declarado e DATABASE_URL não aponta para um SQLite "
+            "local. Sem declaração a aplicação assumiria desenvolvimento, que é "
+            "onde a chave de exemplo e o cadastro aberto são tolerados — e um "
+            "banco de verdade não é lugar para nenhum dos dois. Declare "
+            "AMBIENTE com um de: {}.".format(conhecidos)
+        )
+
+    if config.secret_key == CHAVE_DE_EXEMPLO and not config.banco_e_local():
+        raise ConfiguracaoInsegura(
+            "SECRET_KEY ainda é a chave de exemplo do repositório e DATABASE_URL "
+            "não aponta para um SQLite local. Essa chave está publicada no "
+            "código: quem a tem assina um token válido de qualquer aluno. Gere "
+            'uma chave aleatória — por exemplo `python -c "import secrets; '
+            'print(secrets.token_urlsafe(64))"` — e publique-a como SECRET_KEY.'
         )
 
     if config.secret_key == CHAVE_DE_EXEMPLO and config.ambiente not in AMBIENTES_SEM_SEGREDO:
@@ -190,6 +364,15 @@ def verificar_configuracao(config: Settings) -> None:
             "publique-a como SECRET_KEY.".format(config.ambiente)
         )
 
+    if config.algorithm not in ALGORITMOS_CONHECIDOS:
+        conhecidos = ", ".join(sorted(ALGORITMOS_CONHECIDOS))
+        raise ConfiguracaoInsegura(
+            "ALGORITHM={} não é um algoritmo aceito. O segredo desta aplicação é "
+            "simétrico, então só a família HMAC serve. Use um de: {}.".format(
+                config.algorithm, conhecidos
+            )
+        )
+
     if CURINGA in config.origens_de_cors():
         raise ConfiguracaoInsegura(
             "ORIGENS_PERMITIDAS contém '{}'. A API responde com credenciais, e o "
@@ -197,6 +380,53 @@ def verificar_configuracao(config: Settings) -> None:
             "origens uma a uma, separadas por vírgula.".format(CURINGA)
         )
 
+    if config.ambiente == PRODUCAO:
+        inseguras = [
+            origem
+            for origem in config.origens_de_cors()
+            if not origem.lower().startswith(ESQUEMA_SEGURO)
+        ]
+        if inseguras:
+            raise ConfiguracaoInsegura(
+                "ORIGENS_PERMITIDAS tem origem sem HTTPS em produção: {}. O "
+                "navegador só entrega a webcam a um contexto seguro, e sem "
+                "webcam não há IEE — a aplicação abriria e mediria nada. Use "
+                "{}.".format(", ".join(inseguras), ESQUEMA_SEGURO)
+            )
+
+    if config.ambiente == PRODUCAO and not config.emails_autorizados_a_registrar():
+        raise ConfiguracaoInsegura(
+            "EMAILS_AUTORIZADOS está vazio e AMBIENTE=producao. Lista vazia "
+            "significa cadastro aberto a qualquer pessoa da internet, e este "
+            "sistema liga a webcam de quem entra. Liste os e-mails do estudo, "
+            "separados por vírgula."
+        )
+
 
 settings = Settings()
 verificar_configuracao(settings)
+
+
+@contextmanager
+def configuracao_temporaria(**valores) -> Iterator[Settings]:
+    """Troca os valores do `settings` do processo durante um bloco, e devolve.
+
+    Existe para os testes que precisam observar o comportamento de um endpoint
+    sob outra configuração — a lista de e-mails autorizados, o limite de
+    tentativas — sem subir um processo novo para cada caso. Fica aqui, e não no
+    `conftest.py`, porque quem sabe quais atributos existem é este módulo; um
+    `monkeypatch.setattr` espalhado pelos testes erraria o nome em silêncio no
+    dia em que um campo fosse renomeado.
+
+    Restaura no `finally` inclusive quando o bloco levanta: um teste que falha
+    não pode deixar a configuração do processo diferente para o teste seguinte,
+    porque o sintoma apareceria no teste errado.
+    """
+    anteriores = {nome: getattr(settings, nome) for nome in valores}
+    for nome, valor in valores.items():
+        setattr(settings, nome, valor)
+    try:
+        yield settings
+    finally:
+        for nome, valor in anteriores.items():
+            setattr(settings, nome, valor)
