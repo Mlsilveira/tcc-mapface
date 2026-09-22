@@ -385,6 +385,104 @@ def test_incerteza_de_captura_nao_desqualifica_a_presenca(client, com_sessao_ati
     assert _ultima_presenca(session, id_sessao) is not None
 
 
+class TestEmprestimoDeConexao:
+    """O bloqueador que só aparece com a turma inteira na sala.
+
+    A assinatura do handler dizia `db: Session = Depends(get_session)`. Numa
+    rota HTTP uma dependência com `yield` dura o que dura a requisição; num
+    WebSocket ela dura o que dura o **canal**, que aqui são horas. Cada aluno
+    com a webcam ligada segurava uma conexão do pool a sessão de estudo inteira,
+    e o pool é do processo: passado o teto, parava tudo — login, heartbeat e
+    `/pronto`, que é o que mantém a única task na rotação.
+
+    Nenhum teste funcional pegava isso, porque um canal que funciona com uma
+    conexão emprestada funciona exatamente igual com uma conexão devolvida. O
+    que distingue os dois é **quantas vezes** o canal pede e devolve, e é isso
+    que esta seção mede.
+    """
+
+    @pytest.fixture(name="emprestimos")
+    def emprestimos_fixture(self, client, session):
+        """Conta as aberturas e os fechamentos de sessão de banco do canal.
+
+        Substitui a fábrica que o `conftest` já instala por uma que conta e
+        devolve a mesma sessão compartilhada — o que muda é a contagem, não o
+        banco, para que as outras asserções do arquivo continuem valendo.
+        """
+        from contextlib import contextmanager
+
+        from app.database import obter_fabrica_de_sessoes
+        from app.main import app
+
+        contagem = {"abertas": 0, "fechadas": 0}
+
+        @contextmanager
+        def fabrica_que_conta():
+            contagem["abertas"] += 1
+            yield session
+            contagem["fechadas"] += 1
+
+        app.dependency_overrides[obter_fabrica_de_sessoes] = lambda: fabrica_que_conta
+        return contagem
+
+    def test_cada_payload_abre_e_fecha_a_propria_sessao_de_banco(
+        self, client, com_sessao_ativa, emprestimos
+    ):
+        """Uma abertura na conexão, uma por payload — e nenhuma sobrevivendo.
+
+        Esperado à mão: o canal abre uma sessão para autenticar e resolver a
+        sessão de estudo, e depois uma por payload. Três payloads, portanto
+        1 + 3 = 4 aberturas, e as quatro fechadas.
+
+        Se a sessão voltasse a ser resolvida por `Depends`, o número seria 1 —
+        uma só, aberta na conexão e devolvida quando o aluno fechasse o
+        navegador.
+        """
+        with client.websocket_connect("/telemetria") as ws:
+            ws.send_json({"token": com_sessao_ativa})
+            ws.receive_json()
+
+            for _ in range(3):
+                ws.send_json({"ear": 0.30, "yaw": 0.0, "rosto_detectado": True})
+                ws.receive_json()
+
+        assert emprestimos["abertas"] == 4
+        assert emprestimos["fechadas"] == 4
+
+    def test_payload_invalido_nao_custa_ida_ao_banco(
+        self, client, com_sessao_ativa, emprestimos
+    ):
+        """Payload que não vira ponto não vira empréstimo.
+
+        Esperado à mão: só a abertura do canal. O payload recusado responde erro
+        e segue ouvindo sem encostar no banco — o que já era verdade e passa a
+        ser visível na contagem.
+        """
+        with client.websocket_connect("/telemetria") as ws:
+            ws.send_json({"token": com_sessao_ativa})
+            ws.receive_json()
+
+            ws.send_json({"ear": "abacaxi", "yaw": None})
+            ws.receive_json()
+
+        assert emprestimos["abertas"] == 1
+
+    def test_a_recusa_na_abertura_tambem_devolve_a_conexao(self, client, token, emprestimos):
+        """Canal recusado por falta de sessão de estudo não deixa nada preso.
+
+        É o caminho do aluno que abre a tela antes de iniciar a sessão, e ele
+        acontece com frequência. Uma conexão vazada por recusa seria pior que
+        uma vazada por canal aberto: ninguém a associaria a um canal, porque não
+        há canal nenhum.
+        """
+        with client.websocket_connect("/telemetria") as ws:
+            ws.send_json({"token": token})
+            assert ws.receive_json() == {"tipo": "erro", "motivo": "sem-sessao-ativa"}
+
+        assert emprestimos["abertas"] == 1
+        assert emprestimos["fechadas"] == 1
+
+
 def _token_que_vence_em(segundos: int, emitido_em=None):
     """Um token legítimo, com validade curta, para exercitar a reavaliação."""
     from datetime import datetime, timedelta, timezone

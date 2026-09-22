@@ -1,4 +1,5 @@
-from typing import Optional
+from contextlib import contextmanager
+from typing import Callable, ContextManager, Iterator, Optional
 
 from sqlalchemy import inspect, text
 from sqlalchemy.engine import Engine
@@ -52,6 +53,96 @@ def _argumentos_de_conexao(url: str) -> dict:
     return {}
 
 
+#: Quantas conexões deste processo podem estar em uso ao mesmo tempo.
+#:
+#: **De onde sai o 45, e por que ele não é um chute de capacidade.** Este
+#: processo é um só (o `CMD` do Dockerfile sobe sem `--workers`, porque a
+#: baseline calibrada vive em memória de processo), e dentro dele só existem
+#: **dois** lugares de onde pode partir uma chamada bloqueante ao banco:
+#:
+#: 1. o *threadpool* do AnyIO, onde o FastAPI executa toda rota declarada com
+#:    `def` — login, heartbeat, telas, `/pronto`. O limite dele é 40 threads
+#:    (`anyio.to_thread.current_default_thread_limiter().total_tokens`), e 40
+#:    threads não conseguem segurar 41 conexões;
+#: 2. o próprio laço de eventos, onde as rotas `async` — hoje, só o WebSocket —
+#:    executam SQLAlchemy síncrono em linha. O laço é de uma thread só, então
+#:    **todos** os canais abertos somados produzem no máximo **uma** chamada ao
+#:    banco em voo, por mais alunos que estejam com a webcam ligada.
+#:
+#: 40 + 1 = 41 é o teto verdadeiro do processo. 45 deixa quatro de folga para o
+#: que roda fora dos dois caminhos (o `criar_tabelas` do lifespan, um script de
+#: manutenção apontado para o mesmo banco) e garante a propriedade que
+#: interessa: **nada neste processo fica esperando no pool**, então o
+#: `pool_timeout` de 30 s nunca dispara e `/pronto` não pode ser esganado por
+#: telemetria. Era exatamente o desfecho do teto anterior de 15 — do 16º aluno
+#: em diante, `/pronto` falhava e o orquestrador tirava da rotação a única task
+#: que existe.
+#:
+#: **E o outro lado da conta, o banco.** O `max_connections` padrão do RDS
+#: PostgreSQL é `LEAST(DBInstanceClassMemory/9531392, 5000)`: ≈112 numa
+#: `db.t4g.micro` (1 GiB) e ≈225 numa `db.t4g.small`. Tirando as 3 reservadas
+#: para superusuário e as que o próprio RDS mantém, sobram ~100 na menor
+#: instância plausível. Uma aplicação com teto 45 usa menos da metade disso —
+#: sobra banco para um `psql` durante o teste com a turma, que é justamente a
+#: hora em que alguém vai querer olhar uma tabela.
+TETO_DE_CONEXOES = 45
+
+#: Quantas conexões continuam **abertas** depois que o pico passa.
+#:
+#: Não é quanto o pool pré-abre (o SQLAlchemy abre sob demanda): é quanto ele
+#: retém. As 25 acima destas são o `max_overflow` — nascem no pico e são
+#: fechadas ao voltar.
+#:
+#: 20 é generoso de propósito para o regime normal do experimento, que é
+#: pequeno: 40 alunos a 1 Hz produzem 40 gravações por segundo, mas serializadas
+#: no laço de eventos (item 2 acima) elas ocupam **uma** conexão; o heartbeat do
+#: navegador bate uma vez por minuto por aluno, ou ~0,7 requisição por segundo
+#: numa turma de 40; as telas são esporádicas. Um punhado de conexões daria
+#: conta. O que 20 compra é não pagar aperto de mão com o RDS no primeiro pico
+#: depois de cada vale — e não manter 45 conexões ociosas estacionadas no banco
+#: a tarde inteira, que é o que `pool_size=45` faria.
+CONEXOES_AQUECIDAS = 20
+
+
+def _argumentos_de_pool(url: str) -> dict:
+    """Como o pool é dimensionado — e por que o SQLite fica de fora.
+
+    `pool_size` e `max_overflow` só existem no `QueuePool`. O SQLite em memória
+    da suíte usa `SingletonThreadPool`, que **recusa** esses argumentos com um
+    `TypeError` no `create_engine` — ou seja, passá-los sem distinção derrubaria
+    todo teste da suíte antes da primeira asserção.
+
+    `pool_pre_ping` vale para os dois, e é o único ajuste que vale a pena
+    manter ligado também em SQLite: assim o caminho que roda em produção é o
+    mesmo que a suíte exercita.
+
+    **O que `pool_pre_ping` resolve.** Uma conexão parada é derrubada do outro
+    lado sem aviso — pelo `idle_session_timeout` do RDS, por um NAT no meio —, e
+    o pool só descobre no `SELECT` seguinte, que volta como 500 para o aluno. O
+    intervalo que produz isso não é hipotético neste projeto: é o que separa o
+    teste com a turma da defesa. Com o *pre-ping*, o pool gasta um `SELECT 1` no
+    empréstimo, vê a conexão morta, descarta e abre outra — e ninguém percebe.
+
+    *A alternativa descartada* foi `pool_recycle`, que fecha a conexão por
+    idade. Ela resolveria o mesmo caso e exigiria manter um número deste lado
+    sempre menor que o tempo ocioso tolerado do outro — um acoplamento a um
+    valor que mora no console da AWS e que ninguém revisaria ao mudar de
+    instância. O *pre-ping* pergunta em vez de supor.
+
+    O custo do *pre-ping* é um `SELECT 1` por empréstimo, e ele é real: com a
+    sessão curta por payload (`sessao_curta`), uma turma de 40 alunos a 1 Hz
+    empresta algumas dezenas de vezes por segundo. É um ida-e-volta trivial numa
+    rede local de VPC, e o que ele evita é um 500 numa demonstração.
+    """
+    if url.startswith("sqlite"):
+        return {"pool_pre_ping": True}
+    return {
+        "pool_size": CONEXOES_AQUECIDAS,
+        "max_overflow": TETO_DE_CONEXOES - CONEXOES_AQUECIDAS,
+        "pool_pre_ping": True,
+    }
+
+
 def criar_motor(url: str) -> Engine:
     """Um engine com os ajustes que o banco daquela URL exige.
 
@@ -60,8 +151,35 @@ def criar_motor(url: str) -> Engine:
     `conftest.py` montava o seu próprio engine — e um teste que passasse ali não
     diria nada sobre o engine que sobe em produção, que é justamente o que a
     suíte contra PostgreSQL existe para verificar.
+
+    **`hide_parameters=True` é uma decisão de privacidade, não de verbosidade.**
+    Sem ele, toda exceção do SQLAlchemy carrega `[parameters: (...)]` com os
+    valores ligados à consulta que falhou — e o handler global de `app/main.py`
+    registra a falha com `exc_info=True`, o que faz o `FormatadorJson` serializar
+    o traceback inteiro no campo `excecao`. Dois `POST /auth/registro`
+    simultâneos com o mesmo e-mail bastam, **sem autenticação nenhuma**, para
+    pôr o e-mail e o hash bcrypt de alguém no CloudWatch; um `INSERT` que falhe
+    em `sessao_estudo` põe o `assunto`, que é texto escrito pelo aluno. O
+    docstring de `app/observabilidade.py` promete que nada disso aparece no log,
+    e esta linha é o que torna a promessa verdadeira — a disciplina de não
+    escrever dado pessoal em `contexto={...}` não alcança o que o driver anexa
+    sozinho à mensagem de erro.
+
+    O que se perde é a depuração por leitura do log: saber *qual* linha colidiu
+    exige ir ao banco. É o preço certo — o tipo da exceção, a consulta e a
+    origem continuam na linha, e são eles que dizem o que quebrou. *A
+    alternativa descartada* foi filtrar os parâmetros no `FormatadorJson`, por
+    expressão regular sobre o traceback já formatado: ela deixaria o dado
+    circular dentro do processo e dependeria de a regex acompanhar o formato de
+    mensagem de cada driver, que é a categoria de defeito que só aparece em
+    produção. Aqui o valor simplesmente nunca é escrito.
     """
-    return create_engine(url, connect_args=_argumentos_de_conexao(url))
+    return create_engine(
+        url,
+        connect_args=_argumentos_de_conexao(url),
+        hide_parameters=True,
+        **_argumentos_de_pool(url),
+    )
 
 
 engine = criar_motor(settings.database_url)
@@ -265,3 +383,54 @@ def _reconstruir_tabela(motor: Engine, tabela, colunas_no_banco: set) -> None:
 def get_session():
     with Session(engine) as session:
         yield session
+
+
+@contextmanager
+def sessao_curta() -> Iterator[Session]:
+    """Uma sessão de banco que vive o tempo de **uma** unidade de trabalho.
+
+    Existe para o WebSocket, e a diferença para `get_session` é o tempo de vida,
+    não o conteúdo. Uma dependência com `yield` numa rota HTTP dura o que dura a
+    requisição — milissegundos. A mesma dependência num WebSocket dura o que
+    dura o **canal**, que neste projeto são horas: era `db: Session =
+    Depends(get_session)` na assinatura de `telemetria_ws`, e cada aluno com a
+    webcam ligada segurava uma conexão do pool a sessão de estudo inteira.
+
+    Com 15 conexões no pool, o 16º aluno travava — e não travava só a telemetria
+    dele: travava login, heartbeat e `/pronto` para todo mundo, porque o pool é
+    do processo. `/pronto` falhando faz o orquestrador tirar a task da rotação, e
+    a topologia desta versão tem **uma** task. O gatilho não era um atacante: era
+    a turma do teste, com a carga para a qual o sistema foi feito.
+
+    Aumentar o pool sozinho não resolveria: moveria o teto de 15 para 45 alunos
+    e manteria intacta a forma da falha — conexão retida por tempo de conexão, e
+    não por tempo de trabalho. Aqui a conexão é emprestada para o `INSERT` do
+    payload e devolvida em seguida, então o número de canais abertos deixa de
+    ser o número de conexões ocupadas. O canal a 1 Hz usa alguns milissegundos
+    de conexão por segundo, em vez de mil.
+
+    *A alternativa descartada* foi manter a dependência e chamar `db.close()` ao
+    fim de cada payload, reabrindo sob demanda. Funciona — uma `Session` reabre
+    sozinha na consulta seguinte —, e foi recusada porque o tempo de vida do
+    recurso ficaria implícito numa chamada solta no meio do laço, que é
+    exatamente o tipo de coisa que a próxima edição do handler apaga sem notar.
+    Um `with` diz onde a sessão começa e onde termina.
+    """
+    with Session(engine) as sessao:
+        yield sessao
+
+
+def obter_fabrica_de_sessoes() -> Callable[[], ContextManager[Session]]:
+    """Dependência que entrega **a fábrica**, e não uma sessão já aberta.
+
+    É o que permite ao WebSocket abrir e fechar uma sessão por payload sem
+    perder a substituição por `app.dependency_overrides`: uma dependência comum
+    (sem `yield`) é chamada e devolve na hora, então nada fica pendurado no
+    ciclo de vida do canal.
+
+    Poderia não existir — o handler importaria `sessao_curta` direto —, e aí a
+    suíte perderia o único ponto em que trocar o banco do canal é possível.
+    Todos os testes de WebSocket passariam a falar com o `app.db` do disco em
+    vez do banco descartável da fixture.
+    """
+    return sessao_curta

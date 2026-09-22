@@ -31,6 +31,28 @@ def registrar_log(
     registrada no tempo certo, e não produziu número. O ponto existe para que o
     relatório da ticket 11 consiga dizer "aqui não deu para medir" em vez de
     apresentar um buraco indistinguível de uma pausa.
+
+    **`flush` + `expunge` no lugar do `refresh` depois do `commit`.** Era
+    `commit(); refresh(log)`, e esse par é caro justamente aqui: `commit`
+    devolve a conexão ao pool e invalida os atributos carregados; o `refresh`
+    seguinte **reabre uma transação** para reler a mesma linha que acabou de ser
+    escrita, e essa transação fica aberta — com a conexão presa — até alguém
+    fechar a sessão. Esta função roda uma vez por segundo por aluno com a webcam
+    ligada, então era um `SELECT` por segundo por aluno e uma conexão retida
+    entre um payload e o outro.
+
+    A ordem daqui não custa ida-e-volta nenhuma: `flush` emite o `INSERT` que o
+    `commit` emitiria de qualquer jeito, e é ele quem preenche o `id` gerado
+    pelo banco. `expunge` tira a instância da sessão **antes** do `commit`, que
+    é o que a impede de ser invalidada — quem recebe o retorno leva um retrato
+    com os valores dentro, em vez de um objeto que dispara consulta no primeiro
+    atributo lido.
+
+    *A alternativa descartada* foi simplesmente apagar o `refresh` e devolver o
+    objeto como o `commit` o deixa. Seria uma linha a menos e devolveria uma
+    instância cujos atributos só existem enquanto a sessão de banco estiver
+    aberta — um retorno que funciona em todo teste de hoje e quebra no dia em
+    que alguém ler `log.id` depois do `with`.
     """
     log = LogEngajamento(
         id_sessao=id_sessao,
@@ -40,8 +62,9 @@ def registrar_log(
         horario_registro=agora or agora_utc(),
     )
     db.add(log)
+    db.flush()
+    db.expunge(log)
     db.commit()
-    db.refresh(log)
     return log
 
 
