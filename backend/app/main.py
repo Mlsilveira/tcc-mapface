@@ -15,6 +15,7 @@ from sqlalchemy import text
 
 from app import database, observabilidade
 from app.config import settings
+from app.limites import LimiteDeCorpo
 from app.database import criar_tabelas
 from app.observabilidade import banco_sem_segredo, registrar
 from app.routers import auth, sessoes, telemetria
@@ -130,6 +131,13 @@ def criar_app() -> FastAPI:
     observabilidade.configurar_logs(settings.nivel_de_log)
 
     app = FastAPI(title="IEE — API", lifespan=lifespan)
+
+    # Teto de tamanho de corpo (ver `app/limites.py`). Registrado **antes** do
+    # CORS de propósito: o Starlette põe o último middleware registrado por
+    # fora, e o 413 precisa sair com os cabeçalhos de CORS — senão o navegador
+    # reporta erro de rede genérico em vez do erro real, e quem estiver
+    # depurando procura no lugar errado.
+    app.add_middleware(LimiteDeCorpo)
 
     app.add_middleware(
         CORSMiddleware,

@@ -1,5 +1,5 @@
 from datetime import datetime
-from typing import Annotated, Dict, List, Optional
+from typing import Annotated, Dict, Iterable, List, Optional
 
 from pydantic import (
     AfterValidator,
@@ -27,6 +27,123 @@ def _dentro_do_limite_do_bcrypt(senha: str) -> str:
 
 
 Senha = Annotated[str, Field(min_length=8), AfterValidator(_dentro_do_limite_do_bcrypt)]
+
+
+#: Teto de tamanho do nome do aluno, em **caracteres**.
+#:
+#: Mesma natureza de `LIMITE_ASSUNTO_CARACTERES` — limite de produto, medido em
+#: caracteres porque é o que a pessoa vê enquanto digita — com uma urgência que
+#: o assunto não tem: `nome` é o único texto livre de um endpoint **público**.
+#: `POST /auth/registro` não pede token, e um campo sem teto do outro lado
+#: significa que qualquer pessoa na internet escolhe quantos bytes a instância
+#: (uma só) vai bufferizar, gravar no banco e depois repetir em **toda** resposta
+#: que traga o aluno. Não era hipótese: a auditoria mandou 200 mil caracteres e
+#: recebeu 201, com os 200 mil persistidos.
+#:
+#: 120, e não um número apertado, porque nome de pessoa não é vocabulário que se
+#: possa derivar como os códigos logo abaixo: nome civil brasileiro com os
+#: sobrenomes das duas famílias passa de 60 caracteres sem esforço, e um teto
+#: curto demais recusaria gente real na tela de cadastro — o pior defeito
+#: possível num campo de identidade, porque a pessoa não tem como contornar. É o
+#: mesmo 120 do assunto pelo mesmo motivo: os dois são rótulos que a interface
+#: desenha em uma linha, ao lado de outra coisa.
+LIMITE_NOME_CARACTERES = 120
+
+
+def _teto_de_vocabulario(valores: Iterable[str]) -> int:
+    """O teto de um campo cujo conjunto de valores válidos o servidor conhece.
+
+    `metodo`, `tipo` e `origem` não são texto livre: os valores aceitos estão em
+    `app/metodos.py` e `app/blocos.py`, e o maior de todos tem 10 caracteres
+    (`timeboxing`). O teto sai daí em vez de ser escolhido, e a diferença é que
+    ele acompanha o catálogo sozinho — no dia em que um método de código mais
+    longo entrar, ninguém precisa lembrar de vir aqui ajustar um número.
+
+    **O dobro do maior código, e não o próprio.** O 422 de código desconhecido é
+    uma ajuda: ele repete o que chegou e aponta `GET /metodos`. Apertado no valor
+    exato, um erro de digitação com um caractere a mais (`"pomodoroo"`, ou
+    `"timeboxing "` com o espaço que o campo colou) deixaria de chegar naquela
+    mensagem e receberia `String should have at most 10 characters`, que não
+    ajuda ninguém a consertar nada. O dobro dá espaço para todo engano plausível
+    e continua sendo teto: um valor duas vezes mais longo que o maior código
+    válido não é engano, é sondagem.
+    """
+    return 2 * max(len(valor) for valor in valores)
+
+
+#: Teto do código de método aceito em `POST /sessoes` — ver `_teto_de_vocabulario`.
+LIMITE_CODIGO_DE_METODO = _teto_de_vocabulario(metodos.METODOS)
+
+#: Tetos do tipo e da origem aceitos em `POST /sessoes/{id}/blocos`, pela mesma
+#: regra e pelo mesmo motivo: os dois vocabulários estão em `app/blocos.py`.
+LIMITE_TIPO_DE_BLOCO = _teto_de_vocabulario(blocos.TIPOS)
+LIMITE_ORIGEM_DE_BLOCO = _teto_de_vocabulario(blocos.ORIGENS)
+
+
+#: Quantos caracteres de um texto recebido sobrevivem até a resposta de erro.
+#:
+#: **Por que um teto de campo não basta.** O 422 do pydantic carrega, no campo
+#: `input`, o valor recebido **inteiro**. Pôr `max_length` no `nome` e parar por
+#: aí trocaria "200 KB aceitos e gravados" por "200 KB devolvidos na mensagem de
+#: erro": a recusa passaria a custar mais banda que a aceitação, e quem manda o
+#: lixo continuaria pagando o mesmo de sempre. É a amplificação por reflexão da
+#: auditoria, entrando pela porta do validador em vez da porta da mensagem
+#: escrita à mão.
+#:
+#: **De onde sai o número.** 320 é o maior endereço de e-mail que o RFC 5321
+#: admite (64 de parte local, `@`, 255 de domínio), e e-mail é o campo de texto
+#: mais longo que esta API pode legitimamente receber — todos os tetos declarados
+#: acima ficam bem abaixo dele. Ou seja: nenhum valor que algum dia fosse aceito
+#: passa pela tesoura, e o corte só alcança o que já estava condenado.
+LIMITE_DE_ECO_CARACTERES = 320
+
+
+def _recortado_para_o_erro(valor: object) -> object:
+    """Texto longo demais, cortado no tamanho em que a recusa ainda é a mesma.
+
+    Deixa **um caractere a mais** que `LIMITE_DE_ECO_CARACTERES`, e não o
+    tamanho exato: é o que mantém reprovado o que estava reprovado. Cortar para
+    dentro do limite de um campo transformaria entrada inválida em válida, que é
+    o jeito mais bobo possível de abrir um buraco enquanto se fecha outro.
+
+    Devolve o que não for texto sem tocar — número, nulo, lista, objeto
+    aninhado. Quem decide o que cada campo aceita continua sendo o campo.
+    """
+    if isinstance(valor, str) and len(valor) > LIMITE_DE_ECO_CARACTERES:
+        return valor[: LIMITE_DE_ECO_CARACTERES + 1]
+    return valor
+
+
+class CorpoRecebido(BaseModel):
+    """Corpo de request com os textos absurdos cortados antes da validação.
+
+    **Isto não é validação.** Nada aqui aceita ou recusa nada: quem recusa
+    continua sendo o `max_length` de cada campo, aplicado a um valor que já está
+    comprovadamente acima de qualquer teto desta API. O que muda é só o tamanho
+    da resposta de erro, que deixa de ser proporcional ao que o cliente mandou e
+    passa a ser constante.
+
+    **Por que aqui e não num handler de `RequestValidationError`.** O handler
+    seria mais abrangente — pegaria todo campo de todo modelo de uma vez, sem
+    ninguém ter que lembrar de herdar desta classe. Foi descartado por dois
+    motivos. Ele mora na montagem da aplicação, em `app/main.py`, que nesta
+    rodada tem outro dono; e, mais de fundo, ele mudaria a forma de **toda**
+    resposta 422 da API, inclusive as que hoje ajudam o cliente a se corrigir.
+    Isto aqui é local, mede-se pela definição dos campos e não esconde nada de
+    quem está depurando: sobram 321 caracteres na mensagem, um a mais que o
+    maior valor legítimo que esta API poderia receber.
+    """
+
+    @model_validator(mode="before")
+    @classmethod
+    def _cortar_textos_absurdos(cls, dados: object) -> object:
+        # Só o corpo JSON de objeto passa por aqui. Construção em código com
+        # argumentos nomeados chega como dicionário igual; qualquer outra coisa
+        # (um modelo já pronto, por exemplo) segue intacta.
+        if not isinstance(dados, dict):
+            return dados
+
+        return {chave: _recortado_para_o_erro(valor) for chave, valor in dados.items()}
 
 
 #: Teto de tamanho do assunto declarado pelo aluno, em **caracteres**.
@@ -75,8 +192,16 @@ def _assunto_util(valor: Optional[str]) -> Optional[str]:
 Assunto = Annotated[str, Field(max_length=LIMITE_ASSUNTO_CARACTERES)]
 
 
-class AlunoRegistro(BaseModel):
-    nome: str = Field(min_length=1)
+class AlunoRegistro(CorpoRecebido):
+    """O cadastro, que é o **único** corpo desta API aberto a quem não tem token.
+
+    Herda de `CorpoRecebido` por isso: aqui o tamanho da entrada é escolhido por
+    um desconhecido, e os três campos precisam ter teto e ter resposta de erro de
+    tamanho constante. `senha` já tinha o dele desde sempre
+    (`LIMITE_SENHA_BYTES`); `nome` não tinha nenhum.
+    """
+
+    nome: str = Field(min_length=1, max_length=LIMITE_NOME_CARACTERES)
     email: EmailStr
     senha: Senha
 
@@ -494,7 +619,7 @@ class SessaoNoHistorico(BaseModel):
         )
 
 
-class NovaSessao(BaseModel):
+class NovaSessao(CorpoRecebido):
     """O que o aluno declara na tela inicial, antes de começar.
 
     **`pausa_maxima_s` não está aqui, e a ausência é a decisão.** O cliente manda
@@ -512,8 +637,14 @@ class NovaSessao(BaseModel):
     #: para que exista **um** lugar que decide o que é método válido. Repetir a
     #: lista num `Literal` daria um 422 mais bonito e uma segunda fonte de
     #: verdade que envelheceria sozinha.
+    #:
+    #: O `max_length` não é uma segunda validação do catálogo — é o teto que
+    #: separa "erro de digitação, que merece a mensagem boa" de "carga", e ele
+    #: sai do próprio catálogo (`_teto_de_vocabulario`) para não virar um número
+    #: solto que ninguém sabe revisar.
     metodo: Optional[str] = Field(
         default=None,
+        max_length=LIMITE_CODIGO_DE_METODO,
         description="Código de um método de `GET /metodos`. Nulo abre sessão sem método.",
     )
 
@@ -534,7 +665,7 @@ class NovaSessao(BaseModel):
         return _assunto_util(valor)
 
 
-class TransicaoDeBloco(BaseModel):
+class TransicaoDeBloco(CorpoRecebido):
     """A declaração de que a sessão entrou em foco ou em pausa.
 
     **É declaração, não observação.** O cliente conduz o método com o cronômetro
@@ -543,12 +674,19 @@ class TransicaoDeBloco(BaseModel):
     `app/blocos.py`). O instante é o da chegada do request, e não um campo do
     corpo: carimbo de tempo vindo do cliente é relógio de navegador
     desregulado — ou, no caso ruim, escolhido.
+
+    Os dois campos são vocabulário fechado de `app/blocos.py`, e quem decide o
+    que vale continua sendo `blocos.validar_declaracao` — os tetos aqui só
+    impedem que um valor de quilobytes chegue até lá para ser repetido de volta.
     """
 
-    tipo: str = Field(description="`foco` ou `pausa`.")
+    tipo: str = Field(
+        max_length=LIMITE_TIPO_DE_BLOCO, description="`foco` ou `pausa`."
+    )
 
     origem: str = Field(
         default=blocos.ORIGEM_METODO,
+        max_length=LIMITE_ORIGEM_DE_BLOCO,
         description="`metodo` quando o cronômetro zerou; `aluno` quando ele antecipou ou adiou.",
     )
 
