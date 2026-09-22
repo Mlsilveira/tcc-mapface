@@ -13,9 +13,10 @@ from datetime import timedelta
 
 import pytest
 from fastapi.testclient import TestClient
-from sqlmodel import Session, create_engine
+from sqlmodel import Session, SQLModel, create_engine
 
 from app import database, main, observabilidade, sessoes
+from app.database import criar_motor
 from app.models import Aluno, SessaoEstudo
 from app.observabilidade import FormatadorJson, banco_sem_segredo, obter_logger, registrar
 from app.tempo import agora_utc, como_utc
@@ -24,6 +25,11 @@ from app.tempo import agora_utc, como_utc
 #: log, a asserção de privacidade falha.
 ASSUNTO_DO_ALUNO = "Cálculo II — integrais por partes, lista 4"
 EMAIL_DO_ALUNO = "ana@exemplo.com"
+
+#: Um hash bcrypt com a cara dos de verdade. É a segunda isca: o `INSERT` que
+#: falha ao cadastrar um e-mail repetido leva os dois campos ligados na mesma
+#: consulta, então o traceback que vazasse um vazaria o outro junto.
+HASH_BCRYPT_DO_ALUNO = "$2b$12$K1x9Qv7sHhPmL0aZbT3uYeRj8cW2fN5dG6iO4pS1vX0yB7tA3mC9e"
 
 
 def _linhas(caplog) -> list:
@@ -266,6 +272,131 @@ class TestFalhaNaoTratada:
             cliente_com_rota_que_estoura.get("/estoura?assunto=" + ASSUNTO_DO_ALUNO)
 
         assert ASSUNTO_DO_ALUNO not in json.dumps(_linhas(caplog), ensure_ascii=False)
+
+
+class TestParametrosDaConsultaNoLog:
+    """O caminho pelo qual um dado pessoal chega ao log sem ninguém escrevê-lo.
+
+    Os outros testes de privacidade desta suíte vigiam o que o **código** manda
+    para o log: `registrar(..., {"id_sessao": ...})` leva ids, não e-mail nem
+    `assunto`. Essa disciplina não alcança o que o driver de banco anexa sozinho
+    à mensagem de uma exceção — o SQLAlchemy carimba `[parameters: (...)]` com
+    todos os valores ligados à consulta que falhou, e o handler de §2.4 registra
+    a falha com `exc_info=True`, o que faz o `FormatadorJson` serializar o
+    traceback inteiro no campo `excecao`.
+
+    **Por que um `IntegrityError` de verdade e não um erro sintético.** O
+    `RuntimeError` de `TestFalhaNaoTratada` prova que o traceback chega ao log, e
+    é o que aquela seção existe para provar. Ele não tem parâmetro ligado
+    nenhum, então passaria igual com ou sem `hide_parameters` — a trava
+    existiria e estaria medindo outra coisa. Só um erro emitido pelo driver, com
+    valores reais presos à consulta, exercita o caminho que vaza.
+
+    **E é disparável sem autenticação.** Dois `POST /auth/registro` simultâneos
+    com o mesmo e-mail passam os dois pela conferência de duplicata e colidem no
+    índice único — sem token, sem conta, de fora. Em produção o destino dessa
+    linha é o CloudWatch.
+    """
+
+    @pytest.fixture(name="motor_do_teste")
+    def motor_do_teste_fixture(self, tmp_path):
+        """Um banco descartável nascido do **mesmo** `criar_motor` da aplicação.
+
+        Montar o engine aqui com `create_engine` faria o teste passar sem dizer
+        nada sobre o que sobe em produção: o que está sob verificação é a
+        fábrica de engines, não um engine construído para o teste concordar.
+
+        Banco em **arquivo**, e não `sqlite://`: o `TestClient` atende a rota
+        numa thread própria, e o SQLite em memória vive dentro de uma conexão
+        só — a rota encontraria um banco vazio, e o `INSERT` repetido não
+        chegaria a colidir.
+        """
+        motor = criar_motor("sqlite:///{}".format(tmp_path / "parametros.db"))
+        SQLModel.metadata.create_all(motor)
+        yield motor
+        motor.dispose()
+
+    def _cliente_que_insere(self, motor, construir_linha):
+        """Uma aplicação real com uma rota que grava a linha que lhe derem.
+
+        A rota é de mentira; o `INSERT` não. Chamá-la duas vezes com a mesma
+        linha produz a colisão no banco, e daí para a frente tudo é o caminho de
+        produção: exceção do driver, handler global, `FormatadorJson`.
+        """
+        aplicacao = main.criar_app()
+
+        @aplicacao.post("/grava")
+        def grava() -> dict:
+            with Session(motor) as db:
+                db.add(construir_linha())
+                db.commit()
+            return {"gravou": True}
+
+        # `raise_server_exceptions=False`: por padrão o TestClient relança a
+        # exceção para o teste em vez de deixar o handler global respondê-la, e
+        # é o handler que produz a linha de log sob exame.
+        return TestClient(aplicacao, raise_server_exceptions=False)
+
+    def _excecao_registrada(self, caplog) -> str:
+        linhas = [
+            linha for linha in _linhas(caplog) if linha["mensagem"] == "falha não tratada"
+        ]
+        assert len(linhas) == 1
+        return linhas[0]["excecao"]
+
+    def test_o_email_e_a_senha_nao_entram_no_traceback(self, motor_do_teste, caplog):
+        """O vazamento que um cadastro duplicado produz, medido na linha de log."""
+        cliente = self._cliente_que_insere(
+            motor_do_teste,
+            lambda: Aluno(
+                nome="Ana Souza",
+                email=EMAIL_DO_ALUNO,
+                senha_hash=HASH_BCRYPT_DO_ALUNO,
+            ),
+        )
+
+        assert cliente.post("/grava").status_code == 200
+
+        with caplog.at_level(logging.ERROR):
+            assert cliente.post("/grava").status_code == 500
+
+        excecao = self._excecao_registrada(caplog)
+        # A falha continua identificável — é o tipo da exceção que diz o que
+        # quebrou, e ele não é dado de ninguém.
+        assert "IntegrityError" in excecao
+        assert EMAIL_DO_ALUNO not in excecao
+        assert HASH_BCRYPT_DO_ALUNO not in excecao
+
+    def test_o_assunto_escrito_pelo_aluno_nao_entra_no_traceback(
+        self, motor_do_teste, caplog
+    ):
+        """`assunto` é texto autoral, e viaja como parâmetro de todo `INSERT`
+        em `sessao_estudo`. Um erro ali põe no log o que a pessoa escreveu que
+        ia estudar — exatamente o que o docstring de `app.observabilidade`
+        promete que não acontece."""
+        with Session(motor_do_teste) as db:
+            db.add(
+                Aluno(
+                    nome="Ana Souza",
+                    email=EMAIL_DO_ALUNO,
+                    senha_hash=HASH_BCRYPT_DO_ALUNO,
+                )
+            )
+            db.commit()
+            db.add(SessaoEstudo(id=1, id_aluno=1, assunto=ASSUNTO_DO_ALUNO))
+            db.commit()
+
+        cliente = self._cliente_que_insere(
+            motor_do_teste,
+            lambda: SessaoEstudo(id=1, id_aluno=1, assunto=ASSUNTO_DO_ALUNO),
+        )
+
+        with caplog.at_level(logging.ERROR):
+            assert cliente.post("/grava").status_code == 500
+
+        excecao = self._excecao_registrada(caplog)
+        assert "IntegrityError" in excecao
+        assert ASSUNTO_DO_ALUNO not in excecao
 
 
 def test_o_relogio_da_linha_e_utc(caplog):

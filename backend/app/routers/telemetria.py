@@ -17,14 +17,14 @@ ilimitada** — imune à expiração do token e imune ao logout. O buraco não �
 criado pela renovação; ele já existia e era escondido pelo teto de 30 minutos.
 """
 from datetime import datetime, timedelta
-from typing import NamedTuple, Optional, Tuple
+from typing import Callable, ContextManager, NamedTuple, Optional, Tuple
 
 from fastapi import APIRouter, Depends, WebSocket, WebSocketDisconnect
 from sqlmodel import Session, select
 
 from app import analista, sessoes, telemetria
-from app.database import get_session
-from app.models import Aluno
+from app.database import obter_fabrica_de_sessoes
+from app.models import Aluno, SessaoEstudo
 from app.security import decodificar_token, expiracao_do_token
 from app.tempo import agora_utc
 
@@ -133,16 +133,130 @@ def _alerta_do(resultado: analista.ResultadoIEE) -> Optional[str]:
     return resultado.fadiga.motivos[0] if resultado.fadiga.motivos else None
 
 
+class Abertura(NamedTuple):
+    """O que sobra da abertura do canal depois que a sessão de banco fecha.
+
+    Três valores simples, e nenhum objeto do ORM — essa é a razão de a classe
+    existir. Enquanto o handler tinha uma sessão de banco viva o canal inteiro,
+    guardar o `Aluno` e a `SessaoEstudo` carregados era natural. Com a sessão
+    curta por payload, esses objetos ficariam **desligados** assim que o `with`
+    da abertura terminasse, e o primeiro atributo lido no laço estouraria um
+    `DetachedInstanceError` — no meio da sessão de estudo de alguém, que é o
+    pior lugar possível.
+
+    `motivo` preenchido é recusa (`nao-autenticado`, `sem-sessao-ativa`), e aí
+    os outros dois não têm valor a carregar.
+    """
+
+    motivo: Optional[str] = None
+    id_sessao: Optional[int] = None
+    expira_em: Optional[datetime] = None
+
+
+def _abrir_canal(
+    abrir_sessao: Callable[[], ContextManager[Session]], primeira: dict
+) -> Abertura:
+    """Autentica e resolve a sessão de estudo numa única ida ao banco.
+
+    A sessão de banco abre e fecha aqui dentro de propósito: o que o laço
+    precisa dela é o `id` da sessão de estudo e o prazo do token, e os dois são
+    valores. Devolvê-los em vez das linhas carregadas é o que permite ao canal
+    passar horas aberto sem nada emprestado do pool.
+    """
+    with abrir_sessao() as db:
+        credencial = _autenticar(db, primeira)
+        if credencial is None:
+            return Abertura(motivo="nao-autenticado")
+
+        sessao = sessoes.buscar_ativa(db, credencial.aluno.id)
+        if sessao is None:
+            # Telemetria sem sessão em andamento não teria onde ser gravada, e
+            # aceitar o payload em silêncio faria o aluno crer que está sendo
+            # medido.
+            return Abertura(motivo="sem-sessao-ativa")
+
+        return Abertura(id_sessao=sessao.id, expira_em=credencial.expira_em)
+
+
+def _gravar_ponto(
+    abrir_sessao: Callable[[], ContextManager[Session]],
+    id_sessao: int,
+    resultado: analista.ResultadoIEE,
+    rosto_detectado: bool,
+) -> None:
+    """Grava o ponto da série e, havendo rosto, renova a presença — e devolve a conexão.
+
+    Tudo o que toca o banco a 1 Hz está aqui, dentro de um `with` só, para que o
+    empréstimo do pool dure o payload e não o canal.
+
+    A sessão de estudo é relida por chave primária a cada payload. Parece
+    desperdício de uma consulta e não é: `sessoes.buscar_ativa` — o outro jeito
+    de obtê-la — dispara a varredura de inativas, que percorre **todas** as
+    sessões abertas de todos os alunos. Chamá-la a 1 Hz por aluno transformaria
+    a varredura preguiçosa num cron disfarçado, que é justamente o que o
+    docstring de `sessoes.registrar_presenca` pede para não fazer. Um `get` por
+    id é um índice único e nada mais.
+
+    Sessão sumida do banco entre um payload e o outro (só acontece se alguém a
+    apagar à mão) não derruba o canal: o ponto já foi gravado, e presença sem
+    linha para gravar não tem o que renovar.
+    """
+    with abrir_sessao() as db:
+        telemetria.registrar_log(
+            db,
+            id_sessao=id_sessao,
+            score=resultado.score,
+            fadiga=resultado.fadiga.fator,
+            alerta=_alerta_do(resultado),
+        )
+
+        # Presença é **rosto na câmera**, não payload recebido — e esta condição
+        # é a correção inteira do ciclo de vida da sessão.
+        #
+        # O comentário que estava aqui dizia "quem manda telemetria está
+        # estudando", e a premissa era falsa: `agregacao.ts` devolve um payload
+        # válido, com `rosto_detectado: false`, sempre que há quadro de vídeo sem
+        # rosto. Só devolve `null` quando não há quadro nenhum. Logo, cadeira
+        # vazia com a aba em primeiro plano renovava a atividade uma vez por
+        # segundo, indefinidamente — a sessão nunca morria, e o relatório contava
+        # a tarde inteira como estudo.
+        #
+        # **A incerteza de captura não desqualifica a presença.** Ela é sobre o
+        # score: "não dá para afirmar quanto engajamento houve neste segundo".
+        # Achar o rosto é uma afirmação mais fraca e independente — luz baixa,
+        # reflexo no óculos e oclusão parcial estragam a medida do EAR sem tirar
+        # ninguém da frente da webcam. Tratar incerteza como ausência
+        # encerraria a sessão de quem está estudando num quarto mal iluminado, e
+        # seria a mesma confusão entre "não medi" e "não estava lá" que a
+        # ticket 10 existe para recusar.
+        if not rosto_detectado:
+            return
+
+        sessao = db.get(SessaoEstudo, id_sessao)
+        if sessao is not None:
+            sessoes.registrar_presenca(db, sessao)
+
+
 @router.websocket("/telemetria")
 async def telemetria_ws(
     websocket: WebSocket,
-    db: Session = Depends(get_session),
+    abrir_sessao: Callable[[], ContextManager[Session]] = Depends(
+        obter_fabrica_de_sessoes
+    ),
 ) -> None:
     """Recebe métricas faciais e devolve o score de engajamento a cada payload.
 
     A sessão de estudo não vem do cliente: é resolvida no servidor a partir do
     aluno autenticado. Aceitar um `id_sessao` do cliente abriria espaço para
     alguém gravar log na sessão de outra pessoa.
+
+    **O que chega por `Depends` é a fábrica de sessões, não uma sessão.** A
+    assinatura dizia `db: Session = Depends(get_session)`, e num WebSocket uma
+    dependência com `yield` vive enquanto o canal viver — horas. Cada aluno com
+    a webcam ligada segurava uma conexão do pool a sessão inteira, e o pool é do
+    processo: passado o teto, parava tudo, inclusive `/pronto`, que é o que
+    mantém a única task na rotação. O raciocínio completo está em
+    `database.sessao_curta`.
     """
     await websocket.accept()
 
@@ -151,17 +265,9 @@ async def telemetria_ws(
     except (WebSocketDisconnect, ValueError):
         return
 
-    credencial = _autenticar(db, primeira)
-    if credencial is None:
-        await websocket.send_json({"tipo": "erro", "motivo": "nao-autenticado"})
-        await websocket.close()
-        return
-
-    sessao = sessoes.buscar_ativa(db, credencial.aluno.id)
-    if sessao is None:
-        # Telemetria sem sessão em andamento não teria onde ser gravada, e
-        # aceitar o payload em silêncio faria o aluno crer que está sendo medido.
-        await websocket.send_json({"tipo": "erro", "motivo": "sem-sessao-ativa"})
+    abertura = _abrir_canal(abrir_sessao, primeira)
+    if abertura.motivo is not None:
+        await websocket.send_json({"tipo": "erro", "motivo": abertura.motivo})
         await websocket.close()
         return
 
@@ -170,7 +276,7 @@ async def telemetria_ws(
     # Vem do registro, e não é criado aqui, porque a reconexão automática da
     # ticket 6 abre uma conexão nova para a mesma sessão: um analista por
     # conexão faria o aluno recalibrar a cada oscilação de rede.
-    engajamento = analista.registro.obter(sessao.id)
+    engajamento = analista.registro.obter(abertura.id_sessao)
 
     # A primeira conferência fica para daqui a um minuto: o token acabou de ser
     # validado por `decodificar_token`, que já recusa expirado.
@@ -189,7 +295,7 @@ async def telemetria_ws(
             # canal cuja validade não dá para afirmar não é um canal válido. É
             # a mesma escolha que o resto do projeto faz com medida ausente —
             # abster-se, em vez de assumir o caso favorável.
-            if credencial.expira_em is None or agora >= credencial.expira_em:
+            if abertura.expira_em is None or agora >= abertura.expira_em:
                 await websocket.send_json(
                     {"tipo": "erro", "motivo": "nao-autenticado"}
                 )
@@ -208,35 +314,7 @@ async def telemetria_ws(
             ear=ear, yaw=yaw, rosto_detectado=rosto_detectado, mar=mar, incerteza=incerteza
         )
 
-        telemetria.registrar_log(
-            db,
-            id_sessao=sessao.id,
-            score=resultado.score,
-            fadiga=resultado.fadiga.fator,
-            alerta=_alerta_do(resultado),
-        )
-
-        # Presença é **rosto na câmera**, não payload recebido — e esta linha é a
-        # correção inteira do ciclo de vida da sessão.
-        #
-        # O comentário que estava aqui dizia "quem manda telemetria está
-        # estudando", e a premissa era falsa: `agregacao.ts` devolve um payload
-        # válido, com `rosto_detectado: false`, sempre que há quadro de vídeo sem
-        # rosto. Só devolve `null` quando não há quadro nenhum. Logo, cadeira
-        # vazia com a aba em primeiro plano renovava a atividade uma vez por
-        # segundo, indefinidamente — a sessão nunca morria, e o relatório contava
-        # a tarde inteira como estudo.
-        #
-        # **A incerteza de captura não desqualifica a presença.** Ela é sobre o
-        # score: "não dá para afirmar quanto engajamento houve neste segundo".
-        # Achar o rosto é uma afirmação mais fraca e independente — luz baixa,
-        # reflexo no óculos e oclusão parcial estragam a medida do EAR sem tirar
-        # ninguém da frente da webcam. Tratar incerteza como ausência
-        # encerraria a sessão de quem está estudando num quarto mal iluminado, e
-        # seria a mesma confusão entre "não medi" e "não estava lá" que a
-        # ticket 10 existe para recusar.
-        if rosto_detectado:
-            sessoes.registrar_presenca(db, sessao)
+        _gravar_ponto(abrir_sessao, abertura.id_sessao, resultado, rosto_detectado)
 
         # `calibrando` acompanha o score porque o primeiro minuto é medido
         # contra uma referência genérica: o dashboard da ticket 9 precisa poder

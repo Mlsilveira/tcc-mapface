@@ -1,4 +1,5 @@
 import os
+from contextlib import contextmanager
 
 import pytest
 from fastapi.testclient import TestClient
@@ -6,7 +7,7 @@ from sqlalchemy import text
 from sqlmodel import Session, SQLModel, create_engine
 from sqlmodel.pool import StaticPool
 
-from app.database import criar_motor, get_session
+from app.database import criar_motor, get_session, obter_fabrica_de_sessoes
 from app.main import app
 
 #: Banco contra o qual a suíte roda. Vazio (o padrão) significa SQLite em
@@ -50,6 +51,23 @@ def registro_de_analistas_limpo():
 
     analista.registro = analista.RegistroDeAnalistas()
     yield
+
+
+@pytest.fixture(autouse=True)
+def limites_de_autenticacao_zerados():
+    """Dá a cada teste a porta da frente descontada.
+
+    Mesmo motivo do registro de analistas acima: as tentativas de login e as
+    vagas em voo são **estado de processo**, e a suíte registra e faz login com
+    os mesmos poucos e-mails dezenas de vezes seguidas. Sem zerar, o teste que
+    passasse do limite falharia por causa dos anteriores — e o de número onze
+    falharia hoje, passaria amanhã ao mudar a ordem, e acusaria a rota errada.
+    """
+    from app import contencao
+
+    contencao.esquecer_tudo()
+    yield
+    contencao.esquecer_tudo()
 
 
 @pytest.fixture(name="motor_de_teste", scope="session")
@@ -130,10 +148,32 @@ def _limpar(motor) -> None:
 
 @pytest.fixture(name="client")
 def client_fixture(session: Session):
+    """O cliente HTTP/WebSocket apontado para o banco descartável do teste.
+
+    **Duas substituições, porque há dois jeitos de pedir banco.** As rotas HTTP
+    pedem uma sessão pronta (`get_session`); o canal de telemetria pede a
+    *fábrica* (`obter_fabrica_de_sessoes`), para poder abrir e fechar uma sessão
+    curta por payload em vez de segurar uma conexão o canal inteiro. Sem a
+    segunda linha o WebSocket falaria com o `app.db` do disco, e os testes dele
+    passariam a afirmar coisas sobre o banco de desenvolvimento de quem rodou a
+    suíte.
+
+    A fábrica de teste devolve **sempre a mesma** sessão e não a fecha: o teste
+    precisa poder inspecionar depois o que o canal gravou, e fechar a sessão
+    compartilhada no fim do primeiro payload derrubaria o próprio teste. O que
+    está sob teste aqui é o ciclo de vida do empréstimo (quantas vezes se pede e
+    se devolve), não a identidade do objeto emprestado.
+    """
+
     def get_session_override():
         return session
 
+    @contextmanager
+    def sessao_compartilhada():
+        yield session
+
     app.dependency_overrides[get_session] = get_session_override
+    app.dependency_overrides[obter_fabrica_de_sessoes] = lambda: sessao_compartilhada
     # Não usamos "with TestClient(app)" de propósito: isso dispararia o
     # lifespan (criar_tabelas) contra o banco real de app.database.engine,
     # criando um app.db espúrio no disco durante os testes. As tabelas de
