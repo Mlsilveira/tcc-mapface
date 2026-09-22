@@ -50,6 +50,43 @@ def catalogo(_: Aluno = Depends(get_aluno_atual)) -> List[MetodoPublico]:
     return MetodoPublico.catalogo()
 
 
+#: Quantos caracteres do valor recusado cabem numa mensagem de erro daqui.
+#:
+#: As três mensagens 422 deste módulo repetem o que chegou — "Método de estudo
+#: desconhecido: 'feynman'" —, e repetir é metade do que as torna úteis: sem o
+#: valor, o aluno que mandou `"Pomodoro"` com maiúscula lê "desconhecido" e não
+#: tem onde olhar. O defeito medido em auditoria não era repetir, era repetir
+#: **sem teto**: 5.000 caracteres de `metodo` viravam 5.097 bytes de resposta, de
+#: graça para quem mandou.
+#:
+#: O `max_length` de `app/schemas.py` já impede que um valor desses chegue até
+#: aqui. Esta constante é a segunda linha, e é deliberadamente **independente**
+#: daquela: se um dia o teto de um código subir, o tamanho desta mensagem não
+#: sobe junto de carona, sem ninguém decidir que sobe.
+#:
+#: 24 porque o maior código de todo o vocabulário desta API tem 10 caracteres
+#: (`timeboxing`): 24 mostra o engano inteiro — o código digitado duas vezes, o
+#: espaço colado no fim, o acento a mais — e ainda assim faz o tamanho da
+#: resposta parar de depender do tamanho do request.
+LIMITE_DE_ECO_DO_VALOR = 24
+
+
+def _recortado(valor: str) -> str:
+    """O valor recebido, do jeito que a mensagem de erro pode repeti-lo.
+
+    Sai sempre em `repr`, como as mensagens já faziam: as aspas em volta são o
+    que deixa `'foco '` distinguível de `'foco'` na tela de quem está depurando,
+    e é exatamente essa diferença que costuma ser a causa do erro.
+
+    O corte leva `…` no fim para não trocar um defeito por uma mentira: sem a
+    marca, a mensagem afirmaria que o valor recusado era o pedaço mostrado, e o
+    cliente iria procurar o erro num texto que nunca mandou.
+    """
+    if len(valor) > LIMITE_DE_ECO_DO_VALOR:
+        return repr(valor[:LIMITE_DE_ECO_DO_VALOR] + "…")
+    return repr(valor)
+
+
 @contextmanager
 def _traduzindo_erros() -> Iterator[None]:
     """Converte as exceções de domínio de `app.sessoes` em respostas HTTP."""
@@ -101,7 +138,7 @@ def iniciar(
         raise HTTPException(
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
             detail=(
-                f"Método de estudo desconhecido: {corpo.metodo!r}. "
+                f"Método de estudo desconhecido: {_recortado(corpo.metodo)}. "
                 "Os métodos disponíveis estão em GET /metodos."
             ),
         )
@@ -176,7 +213,7 @@ def declarar_bloco(
             raise HTTPException(
                 status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
                 detail=(
-                    f"Tipo de bloco desconhecido: {corpo.tipo!r}. "
+                    f"Tipo de bloco desconhecido: {_recortado(corpo.tipo)}. "
                     f"Os tipos são {blocos.TIPO_FOCO!r} e {blocos.TIPO_PAUSA!r}."
                 ),
             )
@@ -184,7 +221,7 @@ def declarar_bloco(
             raise HTTPException(
                 status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
                 detail=(
-                    f"Origem de bloco desconhecida: {corpo.origem!r}. "
+                    f"Origem de bloco desconhecida: {_recortado(corpo.origem)}. "
                     f"As origens são {blocos.ORIGEM_METODO!r} e {blocos.ORIGEM_ALUNO!r}."
                 ),
             )
