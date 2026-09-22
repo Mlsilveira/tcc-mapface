@@ -274,7 +274,11 @@ As seis ACs acima nasceram no épico `E02-metodos-de-estudo` do `.wize/`, e não
 - [x] Sondas `/vivo` e `/pronto`, separadas porque levam a ações opostas
 - [x] Log estruturado em JSON, sem conteúdo de aluno
 - [x] Handler global de exceção
-- [ ] Consentimento explícito, exclusão de dados e rate limit — exigidos por haver usuários reais
+- [x] Limite de tentativas de autenticação e teto de trabalho em voo (`app/contencao.py`)
+- [x] Cadastro fechado por lista de e-mails autorizados
+- [x] Tetos de tamanho: campos de texto e corpo da requisição
+- [x] Auditoria de segurança — duas passagens independentes, 5 bloqueadores corrigidos
+- [ ] Consentimento explícito e exclusão de dados — exigidos por haver usuários reais
 - [ ] Seção de limites conhecidos lida por quem decide a topologia — **feito no README**
 - [ ] Instrumentação da latência do WebSocket (entra na ticket 16)
 
@@ -287,6 +291,16 @@ A correção abre a conexão com `-c timezone=UTC`, o que torna a conversão a i
 **O caminho que nunca tinha rodado.** O ramo PostgreSQL de `_relaxar_obrigatoriedade` (`ALTER COLUMN ... DROP NOT NULL`) existia no código desde a ticket 10 e **nunca havia sido executado uma vez sequer**. Agora tem teste próprio, que distingue os dois ramos pelo **OID da tabela** — reconstruir muda o OID, `ALTER COLUMN` não; contagem de linhas ou lista de colunas não distinguiriam nada.
 
 **O que o SQLite escondia.** Ele não verifica chave estrangeira por padrão, então uma fixture gravava sessão de estudo para um aluno que nunca existiu. Dado inválido nos dois bancos; só um deles dizia.
+
+**A auditoria de segurança, e os cinco bloqueadores que ela achou.** Duas passagens independentes — uma auditoria ofensiva e o `wize-sec-red-teamer` do dev-kit — convergiram em cinco coisas que impediam pôr usuários reais:
+
+1. **Dados pessoais vazavam para o log.** Exceções do SQLAlchemy carregam os valores ligados à consulta, e o handler global registrava o traceback inteiro. Dois cadastros simultâneos com o mesmo e-mail bastavam, **sem autenticação**, para pôr e-mail e hash de senha no agregador; um erro em `sessao_estudo` punha o `assunto`. O docstring de `observabilidade.py` prometia que isso nunca acontecia. O teste que deveria travar usava exceção sintética, sem parâmetros ligados — estava no lugar certo e media a coisa errada.
+2. **A verificação de configuração falhava aberta.** A recusa da chave de exemplo dependia de `AMBIENTE` estar declarado, e o default era `desenvolvimento` — a mesma distração que deixa a chave para trás desligava a guarda que existe por causa dela.
+3. **O pool tinha 15 conexões e cada WebSocket segurava uma pela sessão inteira.** A partir do 16º aluno com a webcam ligada, tudo parava: login, heartbeat, `/pronto`. E `/pronto` falhando faz o orquestrador reciclar a task. Disparava **sem atacante**, com a carga do próprio experimento, e não aparece em teste com duas abas.
+4. **Campos de texto sem teto.** `nome` com 200 KB era aceito e persistido. E `max_length` sozinho teria **piorado**: o 422 do pydantic carrega o valor recebido inteiro, trocando persistência por amplificação no mesmo endpoint público.
+5. **Cadastro aberto sem limite de tentativas.** Com bcrypt no caminho e instância única, uma rajada ocupa o threadpool, a sonda estoura o timeout e o orquestrador recicla uma task sã.
+
+**O que as duas passagens confirmaram que está certo**, e é material de defesa: não há IDOR — duas contas cruzadas em todas as rotas, com 404 uniforme real, inclusive nas rotas novas de blocos; a renovação de credencial resistiu a nove ângulos de ataque, incluindo `alg: none` e `iat` forjado; nenhuma SQL crua com entrada de usuário; nenhum segredo no histórico do git; e o MediaPipe é auto-hospedado, então o código que toca a webcam não vem de CDN de terceiro.
 
 **O que não foi validado:** o `Dockerfile` foi escrito mas **não construído** — não há Docker na máquina. O que deu para verificar foi o `pip install -r requirements.txt` num venv limpo de Python 3.9.6, que é o passo onde o bug do pin de `sqlmodel`/`pydantic` aparece. Quem tiver Docker precisa rodar um `build` antes de confiar.
 
