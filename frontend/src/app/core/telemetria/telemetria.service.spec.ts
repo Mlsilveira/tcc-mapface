@@ -2,6 +2,7 @@ import { provideHttpClient } from '@angular/common/http';
 import { HttpTestingController, provideHttpClientTesting } from '@angular/common/http/testing';
 import { TestBed, discardPeriodicTasks, fakeAsync, tick } from '@angular/core/testing';
 
+import { API_URL } from '../api';
 import { AuthService } from '../services/auth.service';
 import { LeituraDaCaptura } from '../visao/landmarks.service';
 import { MetricasFaciais } from '../visao/metricas';
@@ -303,7 +304,7 @@ describe('TelemetriaService', () => {
 
     TestBed.inject(AuthService).renovar().subscribe();
     TestBed.inject(HttpTestingController)
-      .expectOne('http://localhost:8000/auth/renovar')
+      .expectOne(`${API_URL}/auth/renovar`)
       .flush({ access_token: 'jwt-renovado', token_type: 'bearer' });
 
     canal().cair();

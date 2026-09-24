@@ -26,7 +26,7 @@ output "database_url_sem_senha" {
     execução. Esta saída existe para o time ver que host, porta, banco e usuário
     batem — não para ser copiada para um `.env`.
   TEXTO
-  value       = "postgresql+psycopg2://${module.banco.usuario}:SENHA@${module.banco.endereco}:${module.banco.porta}/${module.banco.nome_do_banco}"
+  value       = "postgresql+psycopg://${module.banco.usuario}:SENHA@${module.banco.endereco}:${module.banco.porta}/${module.banco.nome_do_banco}"
 }
 
 output "arn_do_segredo_da_senha" {

@@ -4,8 +4,9 @@
   "private": true,
   "scripts": {
     "ng": "ng",
-    "start": "ng serve",
-    "build": "ng build",
+    "start": "npm run assets && ng serve",
+    "assets": "node scripts/baixar-modelo.mjs",
+    "build": "npm run assets && ng build",
     "watch": "ng build --watch --configuration development",
     "test": "ng test --watch=false"
   },

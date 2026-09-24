@@ -2,6 +2,7 @@ import { HttpTestingController, provideHttpClientTesting } from '@angular/common
 import { provideHttpClient } from '@angular/common/http';
 import { TestBed } from '@angular/core/testing';
 
+import { API_URL } from '../api';
 import { AuthService, MARGEM_DE_RENOVACAO_MS } from './auth.service';
 
 /**
@@ -45,7 +46,7 @@ describe('AuthService', () => {
   it('armazena o token e passa a reportar autenticado após login', () => {
     service.login({ email: 'ana@exemplo.com', senha: 'senhaSegura123' }).subscribe();
 
-    const requisicao = httpMock.expectOne('http://localhost:8000/auth/login');
+    const requisicao = httpMock.expectOne(`${API_URL}/auth/login`);
     expect(requisicao.request.method).toBe('POST');
     requisicao.flush({ access_token: 'token-fake', token_type: 'bearer' });
 
@@ -57,7 +58,7 @@ describe('AuthService', () => {
   it('remove o token e reporta não autenticado após logout', () => {
     service.login({ email: 'ana@exemplo.com', senha: 'senhaSegura123' }).subscribe();
     httpMock
-      .expectOne('http://localhost:8000/auth/login')
+      .expectOne(`${API_URL}/auth/login`)
       .flush({ access_token: 'token-fake', token_type: 'bearer' });
 
     service.logout();
@@ -70,7 +71,7 @@ describe('AuthService', () => {
     const payload = { nome: 'Ana', email: 'ana@exemplo.com', senha: 'senhaSegura123' };
     service.registrar(payload).subscribe();
 
-    const requisicao = httpMock.expectOne('http://localhost:8000/auth/registro');
+    const requisicao = httpMock.expectOne(`${API_URL}/auth/registro`);
     expect(requisicao.request.method).toBe('POST');
     expect(requisicao.request.body).toEqual(payload);
     requisicao.flush({});
@@ -120,7 +121,7 @@ describe('AuthService — renovação de credencial', () => {
   function comToken(token: string): void {
     service.login({ email: 'ana@exemplo.com', senha: 'senhaSegura123' }).subscribe();
     httpMock
-      .expectOne('http://localhost:8000/auth/login')
+      .expectOne(`${API_URL}/auth/login`)
       .flush({ access_token: token, token_type: 'bearer' });
   }
 
@@ -157,7 +158,7 @@ describe('AuthService — renovação de credencial', () => {
 
     service.renovar().subscribe();
     httpMock
-      .expectOne('http://localhost:8000/auth/renovar')
+      .expectOne(`${API_URL}/auth/renovar`)
       .flush({ access_token: novo, token_type: 'bearer' });
 
     expect(service.getToken()).toBe(novo);
@@ -179,7 +180,7 @@ describe('AuthService — renovação de credencial', () => {
     service.renovar().subscribe((token) => recebidos.push(token));
 
     httpMock
-      .expectOne('http://localhost:8000/auth/renovar')
+      .expectOne(`${API_URL}/auth/renovar`)
       .flush({ access_token: novo, token_type: 'bearer' });
 
     expect(recebidos).toEqual([novo, novo, novo]);
@@ -193,13 +194,13 @@ describe('AuthService — renovação de credencial', () => {
 
     service.renovar().subscribe();
     httpMock
-      .expectOne('http://localhost:8000/auth/renovar')
+      .expectOne(`${API_URL}/auth/renovar`)
       .flush({ access_token: tokenQueVenceEm(DOBRO_DA_MARGEM_S), token_type: 'bearer' });
 
     const maisNovo = tokenQueVenceEm(DOBRO_DA_MARGEM_S + 1);
     service.renovar().subscribe();
     httpMock
-      .expectOne('http://localhost:8000/auth/renovar')
+      .expectOne(`${API_URL}/auth/renovar`)
       .flush({ access_token: maisNovo, token_type: 'bearer' });
 
     expect(service.getToken()).toBe(maisNovo);

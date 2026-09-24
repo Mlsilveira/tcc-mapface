@@ -1,0 +1,17 @@
+# O ambiente virtual é do Windows: copiá-lo para dentro de uma imagem Linux
+# levaria binários que não rodam, e ainda invalidaria o cache a cada build.
+.venv/
+venv/
+__pycache__/
+*.pyc
+.pytest_cache/
+
+# O SQLite de desenvolvimento. Em produção o banco é o RDS, e embutir este
+# arquivo na imagem colocaria dados de teste — e contas de teste — em produção.
+*.db
+
+# Segredos locais. Em produção as variáveis vêm da task definition.
+.env
+
+# Os testes não vão para a imagem de produção.
+tests/
