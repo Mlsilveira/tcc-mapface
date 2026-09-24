@@ -264,6 +264,44 @@ def test_sinal_constante_na_sessao_some_na_calibracao_por_sessao() -> None:
     assert crua.acuracia_balanceada_media > cega.acuracia_balanceada_media + 0.25
 
 
+def test_fold_de_uma_classe_so_e_ignorado_em_vez_de_pontuado() -> None:
+    """Fold sem as duas classes não mede nada — e mede **errado** se contar.
+
+    `balanced_accuracy_score` é a média do acerto por classe presente: com uma
+    classe só, um chute fixo acerta 100% dela e marca 1,0. Apareceu de verdade
+    ao rodar a grade sobre uma extração pela metade, e o `chute_majoritario`
+    subiu para 0,70 — número que, num relatório, passaria por desempenho.
+    """
+    janelas = monta_janelas(n_participantes=10)
+    # O fold 3 fica só com gravações de alerta.
+    do_fold_3 = janelas[COLUNA_FOLD] == 3
+    mutilado = janelas[~do_fold_3 | (janelas[COLUNA_SONOLENCIA] == 0)]
+
+    resultado = tf.valida_cruzado(
+        mutilado, tf.catalogo_de_modelos()["chute_majoritario"], "chute_majoritario"
+    )
+
+    assert resultado.folds_ignorados == [3]
+    assert 3 not in [f.fold for f in resultado.folds]
+    assert resultado.acuracia_balanceada_media == pytest.approx(0.5, abs=1e-9)
+
+
+def test_a_normalizacao_por_participante_nao_e_reproduzivel_em_producao() -> None:
+    """O filtro que impede um artefato impossível de alimentar.
+
+    Um modelo treinado com features centradas na mediana do participante espera,
+    em produção, uma entrada que o navegador não tem como produzir: ela depende
+    das gravações que ainda não aconteceram. Ele não erraria alto — devolveria um
+    número plausível e errado.
+    """
+    assert tf.NORMALIZACAO_PARTICIPANTE in tf.NORMALIZACOES_VALIDAS
+    assert tf.NORMALIZACAO_PARTICIPANTE not in tf.NORMALIZACOES_REPRODUZIVEIS
+    assert set(tf.NORMALIZACOES_REPRODUZIVEIS) == {
+        tf.SEM_NORMALIZACAO,
+        tf.NORMALIZACAO_SESSAO,
+    }
+
+
 def test_o_resultado_guarda_cada_fold_e_nao_so_a_media(janelas: pd.DataFrame) -> None:
     """Com 60 pessoas, a variação entre folds é o intervalo de confiança honesto."""
     resultado = tf.valida_cruzado(

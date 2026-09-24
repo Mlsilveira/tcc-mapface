@@ -113,6 +113,18 @@ NORMALIZACAO_PARTICIPANTE = "participante"
 
 NORMALIZACOES_VALIDAS = (SEM_NORMALIZACAO, NORMALIZACAO_SESSAO, NORMALIZACAO_PARTICIPANTE)
 
+#: As que a aplicação consegue reproduzir ao vivo, e portanto as únicas
+#: elegíveis para o artefato que vai a produção.
+#:
+#: `NORMALIZACAO_PARTICIPANTE` fica de fora de propósito: ela usa todas as
+#: gravações da pessoa, inclusive as que ainda não aconteceram do ponto de vista
+#: da sessão em curso. Um modelo treinado assim receberia, em produção, entrada
+#: de outra distribuição — e não erraria alto: devolveria um número plausível e
+#: errado, que é o pior modo de falhar. Ela continua na grade porque mede o
+#: **teto**: a distância entre ela e a calibração por sessão é exatamente o que
+#: se perde por só poder olhar para o passado.
+NORMALIZACOES_REPRODUZIVEIS = (SEM_NORMALIZACAO, NORMALIZACAO_SESSAO)
+
 #: Quantas janelas do início de cada gravação formam a baseline. Seis janelas de
 #: 10s são os mesmos 60 segundos de `analista.DURACAO_CALIBRACAO`.
 JANELAS_DE_CALIBRACAO = 6
@@ -325,6 +337,11 @@ class ResultadoDaValidacao:
     normalizacao: str
     folds: List[ResultadoDoFold] = field(default_factory=list)
 
+    #: Folds que não foram avaliados porque o teste tinha uma classe só. Vazio
+    #: no dataset completo; não-vazio é aviso de que a medição está sobre um
+    #: recorte parcial, e o relatório precisa dizer isso.
+    folds_ignorados: List[int] = field(default_factory=list)
+
     @property
     def acuracia_balanceada_media(self) -> float:
         return float(np.mean([f.acuracia_balanceada for f in self.folds]))
@@ -363,13 +380,19 @@ def valida_cruzado(
     alvo: str = ALVO_BINARIO,
     normalizacao: str = NORMALIZACAO_SESSAO,
     folds: Optional[Sequence[int]] = None,
+    features: Optional[List[str]] = None,
 ) -> ResultadoDaValidacao:
-    """Leave-one-fold-out sobre os folds oficiais do dataset."""
+    """Leave-one-fold-out sobre os folds oficiais do dataset.
+
+    `features` restringe a entrada a um subconjunto — é como se mede de onde vem
+    o sinal. Uma queda pequena ao tirar um grupo de colunas diz que aquele grupo
+    era redundante; uma queda grande diz que ele carregava o que o modelo usava.
+    """
     valida_janelas(janelas)
 
     preparado = descarta_sem_baseline(normaliza(janelas, normalizacao))
     recorte, y, nomes = rotula(preparado, alvo)
-    features = colunas_features()
+    features = list(features or colunas_features())
     rotulos = sorted(y.unique())
 
     resultado = ResultadoDaValidacao(
@@ -381,6 +404,20 @@ def valida_cruzado(
         treino, teste = recorte[~e_teste], recorte[e_teste]
         if teste.empty or treino.empty:
             continue
+
+        # Fold de teste com uma classe só não mede nada, e pior: mede errado.
+        # `balanced_accuracy_score` é a média do acerto por classe presente, e
+        # com uma classe só um chute fixo acerta 100% dela — o chute passa a
+        # pontuar 1,0 naquele fold e a média da validação sobe sem que modelo
+        # nenhum tenha aprendido. Foi exatamente o que apareceu ao rodar a grade
+        # sobre uma extração pela metade: o `chute_majoritario` marcou 0,70.
+        # Com o dataset completo isto não acontece — cada fold tem doze
+        # participantes e os três estados —, mas um número absurdo precisa sair
+        # como fold ignorado, e não como desempenho.
+        if teste[COLUNA_FOLD].empty or y[e_teste].nunique() < 2:
+            resultado.folds_ignorados.append(int(fold))
+            continue
+
         verifica_independencia(treino, teste)
 
         pipeline = construtor()
@@ -424,6 +461,119 @@ def treina_final(
     pipeline = construtor()
     pipeline.fit(recorte[features], y)
     return pipeline, recorte, y
+
+
+@dataclass(frozen=True)
+class ParametrosFadiga:
+    """O contexto sem o qual o artefato é armadilha, e não modelo.
+
+    `normalizacao` é o campo que mais importa: um modelo treinado com features
+    centradas na baseline da sessão produz lixo silencioso se receber valores
+    absolutos. Ele não erra alto — devolve um número plausível e errado, que é o
+    pior modo de falhar.
+    """
+
+    modelo: str
+    alvo: str
+    normalizacao: str
+    janelas_de_calibracao: int
+    segundos_por_janela: int
+    random_state: int = RANDOM_STATE
+
+
+@dataclass(frozen=True)
+class ModeloDeFadiga:
+    """Um artefato de sonolência carregado do disco, pronto para uso.
+
+    Espelha `treino.ModeloSalvo`: o consumidor recebe isto, e não o estimador
+    nu, porque sem a ordem das features um DataFrame com as mesmas colunas em
+    outra ordem prevê errado sem reclamar.
+    """
+
+    estimador: Pipeline
+    colunas: List[str]
+    rotulos: List[int]
+    nomes_rotulos: Dict[int, str]
+    parametros: ParametrosFadiga
+    versao_sklearn: str
+
+    def _matriz(self, janelas: pd.DataFrame) -> pd.DataFrame:
+        faltando = [c for c in self.colunas if c not in janelas.columns]
+        if faltando:
+            raise TreinoInvalido(f"features faltando para predizer: {faltando}")
+        return janelas[self.colunas]
+
+    def preve(self, janelas: pd.DataFrame) -> np.ndarray:
+        return self.estimador.predict(self._matriz(janelas))
+
+    def probabilidade_de_sonolencia(self, janelas: pd.DataFrame) -> np.ndarray:
+        """Probabilidade da classe positiva, entre 0 e 1.
+
+        É o que o produto consome: um número contínuo diz "quase sonolento" e
+        permite histerese, enquanto a classe dura oscilaria entre 0 e 1 de
+        segundo a segundo na fronteira.
+        """
+        indice = list(self.rotulos).index(1)
+        return self.estimador.predict_proba(self._matriz(janelas))[:, indice]
+
+
+def salva_modelo(
+    pipeline: Pipeline,
+    parametros: ParametrosFadiga,
+    rotulos: Sequence[int],
+    nomes_rotulos: Dict[int, str],
+    caminho,
+):
+    """Serializa o pipeline com o contexto de uso."""
+    import joblib
+    import sklearn
+    from pathlib import Path
+
+    caminho = Path(caminho)
+    caminho.parent.mkdir(parents=True, exist_ok=True)
+    joblib.dump(
+        {
+            "estimador": pipeline,
+            "colunas": colunas_features(),
+            "rotulos": [int(r) for r in rotulos],
+            "nomes_rotulos": dict(nomes_rotulos),
+            "parametros": parametros,
+            "versao_sklearn": sklearn.__version__,
+        },
+        caminho,
+    )
+    return caminho
+
+
+def carrega_modelo(caminho) -> ModeloDeFadiga:
+    """Carrega um artefato salvo por `salva_modelo`, avisando de versão diferente."""
+    import warnings
+    from pathlib import Path
+
+    import joblib
+    import sklearn
+
+    artefato = joblib.load(Path(caminho))
+    obrigatorias = ("estimador", "colunas", "rotulos", "nomes_rotulos", "parametros")
+    if not isinstance(artefato, dict) or any(c not in artefato for c in obrigatorias):
+        raise TreinoInvalido(f"{caminho} não é um artefato de sonolência")
+
+    if artefato.get("versao_sklearn") != sklearn.__version__:
+        warnings.warn(
+            f"modelo treinado com scikit-learn {artefato.get('versao_sklearn')},"
+            f" carregado com {sklearn.__version__}",
+            UserWarning,
+            stacklevel=2,
+        )
+
+    return ModeloDeFadiga(
+        estimador=artefato["estimador"],
+        colunas=list(artefato["colunas"]),
+        rotulos=[int(r) for r in artefato["rotulos"]],
+        nomes_rotulos=dict(artefato["nomes_rotulos"]),
+        parametros=artefato["parametros"],
+        versao_sklearn=artefato.get("versao_sklearn", "desconhecida"),
+    )
 
 
 def importancias(pipeline: Pipeline, features: Optional[List[str]] = None) -> Dict[str, float]:
