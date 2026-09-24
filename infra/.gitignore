@@ -1,0 +1,17 @@
+# Estado e o que o Terraform baixa. Nada disto entra no repositório: o estado
+# carrega identificadores da infraestrutura real, e o diretório de plugins tem
+# centenas de MB de binário.
+.terraform/
+# O `.terraform.lock.hcl` NÃO entra aqui: ele é versionado de propósito, para
+# todo mundo usar a mesma versão do provider.
+*.tfstate
+*.tfstate.*
+crash.log
+crash.*.log
+
+# Valores de cada pessoa ou ambiente. O `.example` ao lado é o versionado.
+terraform.tfvars
+*.auto.tfvars
+
+# Planos salvos podem conter valores sensíveis em texto claro.
+*.tfplan

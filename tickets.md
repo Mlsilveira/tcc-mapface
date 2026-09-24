@@ -263,10 +263,24 @@ As seis ACs acima nasceram no épico `E02-metodos-de-estudo` do `.wize/`, e não
 
 **Bloqueada por:** Nenhuma — pode começar imediatamente, em paralelo com as demais.
 
-- [ ] Módulo Terraform para S3 (hospedagem estática do frontend)
-- [ ] Módulo Terraform para ECR (registro de imagens Docker do backend)
-- [ ] Módulo Terraform para RDS PostgreSQL, com criptografia AES-256 em repouso
-- [ ] `terraform apply` provisiona tudo sem intervenção manual
+- [x] Módulo Terraform para S3 (hospedagem estática do frontend)
+- [x] Módulo Terraform para ECR (registro de imagens Docker do backend)
+- [x] Módulo Terraform para RDS PostgreSQL, com criptografia AES-256 em repouso
+- [x] `terraform apply` provisiona tudo sem intervenção manual
+
+Tudo em `infra/`, em quatro módulos: `rede`, `site`, `registro` e `banco`. O README de lá explica como aplicar e desmontar.
+
+**O CloudFront não é enfeite — sem ele o produto não funciona.** O critério pede S3 para hospedagem estática, e o endpoint de site estático do S3 serve **apenas HTTP**. O navegador só libera `getUserMedia` em contexto seguro, então o S3 sozinho entregaria uma aplicação que carrega, faz login, deixa iniciar a sessão e falha na única coisa que ela existe para fazer: acender a webcam. O bucket ficou privado, e quem serve é a distribuição, por Origin Access Control, com redirecionamento para HTTPS. Isso tem consequência para a ticket 15: página segura não fala `ws://`, então o backend vai precisar de TLS.
+
+**A senha do banco nunca passa pelo Terraform.** `manage_master_user_password` faz a AWS gerar e guardar a credencial no Secrets Manager, e daqui sai só o ARN. O caminho comum — `random_password` no campo `password` — grava a senha **em texto claro no arquivo de estado**, e marcar a variável como `sensitive` esconde a senha do log do `apply` sem mudar nada disso.
+
+**VPC própria, e não a default.** A história de usuário 34 pede ambiente reproduzível e portátil entre contas, e a VPC default não é nenhuma das duas: não existe em toda conta, e as faixas variam. Sem NAT Gateway, que custaria por hora mais que todo o resto junto e que nada aqui usa.
+
+**O ECS Fargate ficou de fora de propósito.** Ele é critério da ticket 15, e provisionar um serviço antes de existir imagem publicada no ECR criaria um serviço que nasce em falha permanente de deploy. Os outputs já entregam o que ele vai precisar: sub-redes, endereço do banco, ARN do segredo e URL do repositório.
+
+**O estado fica local, e isso é dívida conhecida.** Com três pessoas, o `terraform.tfstate` no disco de quem aplicou é a única fonte de verdade. O backend S3 está escrito e comentado em `versions.tf`; ele precisa de um bucket criado fora deste código, senão vira o ovo antes da galinha. Na prática da PoC, uma pessoa aplica.
+
+**Bloqueadores de deploy encontrados aqui, que caem na ticket 15:** não há driver do PostgreSQL em `backend/requirements.txt` (o SQLite da PoC não precisava); o CORS está fixo em `http://localhost:4200`; e o frontend tem `ws://localhost:8000/telemetria` e `http://localhost:8000` embutidos. Nada disso impede a infraestrutura de subir, e tudo isso impede a aplicação de funcionar nela.
 
 ## 15. Deploy na AWS
 
