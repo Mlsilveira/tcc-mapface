@@ -39,6 +39,7 @@ import cv2
 import pandas as pd
 
 import agregacao
+import agregacao_producao
 import esquema
 import esquema_rldd
 import extracao
@@ -61,6 +62,7 @@ FPS_PADRAO = 30.0
 
 NOME_FRAMES = "frames.parquet"
 NOME_JANELAS = "janelas.parquet"
+NOME_JANELAS_PRODUTO = "janelas_produto.parquet"
 NOME_GRAVACOES = "gravacoes.parquet"
 DIR_SHARDS = "shards"
 
@@ -165,11 +167,27 @@ def extrai(
     return progresso
 
 
-def consolida(saida: Path, folds: dict) -> tuple[Path, Path]:
-    """Junta os shards nos dois artefatos finais: `frames` e `janelas`.
+def _monta_janelas(features: pd.DataFrame, folds: dict) -> pd.DataFrame:
+    identidade = rldd.catalogo_de_janelas(features[esquema.COLUNA_CLIPE], folds)
+    janelas = features.merge(identidade, on=esquema.COLUNA_CLIPE, how="inner")
+    janelas = janelas[esquema_rldd.colunas_janelas()].reset_index(drop=True)
+    esquema_rldd.valida_janelas(janelas)
+    return janelas
+
+
+def consolida(
+    saida: Path, folds: dict, fps: Optional[dict] = None
+) -> tuple[Path, Path, Optional[Path]]:
+    """Junta os shards nos artefatos finais: `frames`, `janelas` e o do produto.
 
     Separado da extração de propósito: é barato, idempotente, e roda sobre uma
     extração parcial para inspecionar o que já saiu sem esperar o resto.
+
+    Com `fps`, produz também `janelas_produto.parquet`, onde as features são
+    calculadas sobre **médias por segundo** — que é a única granularidade que a
+    telemetria entrega ao backend. Treinar num nível e servir noutro é
+    train/serve skew, e o sintoma é silencioso: o modelo passa a ver todo mundo
+    anormalmente parado porque o desvio de 60 frames não existe em produção.
     """
     shards = shards_existentes(saida)
     if not shards:
@@ -178,18 +196,22 @@ def consolida(saida: Path, folds: dict) -> tuple[Path, Path]:
     frames = pd.concat((pd.read_parquet(s) for s in shards), ignore_index=True)
     esquema.valida_frames(frames)
 
-    features = agregacao.agrega(frames)
-    identidade = rldd.catalogo_de_janelas(features[esquema.COLUNA_CLIPE], folds)
-
-    janelas = features.merge(identidade, on=esquema.COLUNA_CLIPE, how="inner")
-    janelas = janelas[esquema_rldd.colunas_janelas()].reset_index(drop=True)
-    esquema_rldd.valida_janelas(janelas)
+    janelas = _monta_janelas(agregacao.agrega(frames), folds)
 
     caminho_frames = saida / NOME_FRAMES
     caminho_janelas = saida / NOME_JANELAS
     frames.to_parquet(caminho_frames, index=False)
     janelas.to_parquet(caminho_janelas, index=False)
-    return caminho_frames, caminho_janelas
+
+    caminho_produto = None
+    if fps:
+        do_produto = _monta_janelas(
+            agregacao_producao.agrega_como_o_produto(frames, fps), folds
+        )
+        caminho_produto = saida / NOME_JANELAS_PRODUTO
+        do_produto.to_parquet(caminho_produto, index=False)
+
+    return caminho_frames, caminho_janelas, caminho_produto
 
 
 def _argumentos(argv: Optional[Iterable[str]] = None) -> argparse.Namespace:
@@ -217,6 +239,11 @@ def _argumentos(argv: Optional[Iterable[str]] = None) -> argparse.Namespace:
     parser.add_argument("--confianca", type=float, default=0.5, help="min_detection_confidence do Face Mesh")
     parser.add_argument("--recomecar", action="store_true", help="ignora shards existentes em vez de retomar")
     parser.add_argument("--so-consolidar", action="store_true", help="não extrai; só junta os shards já gravados")
+    parser.add_argument(
+        "--sem-produto",
+        action="store_true",
+        help="não gera janelas_produto.parquet (a versão por médias de segundo)",
+    )
     return parser.parse_args(list(argv) if argv is not None else None)
 
 
@@ -271,7 +298,12 @@ def main(argv: Optional[Iterable[str]] = None) -> int:
         for falha in progresso.falhas[:20]:
             fala(f"  {falha}")
 
-    caminho_frames, caminho_janelas = consolida(args.saida, folds)
+    fps = None
+    if not args.sem_produto:
+        fala("medindo o fps de cada gravação para a agregação por segundo")
+        fps = agregacao_producao.fps_das_gravacoes(catalogo, fps_do_video)
+
+    caminho_frames, caminho_janelas, caminho_produto = consolida(args.saida, folds, fps)
     janelas = pd.read_parquet(caminho_janelas)
     fala(f"{caminho_frames}")
     fala(
@@ -279,6 +311,8 @@ def main(argv: Optional[Iterable[str]] = None) -> int:
         f"{len(esquema.colunas_features())} features"
     )
     fala(str(janelas[esquema_rldd.COLUNA_SONOLENCIA].value_counts().sort_index().to_dict()))
+    if caminho_produto:
+        fala(f"{caminho_produto}: features como o backend as vê (médias por segundo)")
     return 0
 
 
