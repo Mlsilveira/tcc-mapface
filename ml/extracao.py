@@ -187,6 +187,116 @@ def _linha(
     }
 
 
+def reduz_para(frame: np.ndarray, largura_maxima: Optional[int]) -> np.ndarray:
+    """Encolhe o frame se ele for mais largo que o limite, mantendo a proporção.
+
+    O UTA-RLDD foi gravado em celular: há vídeo 1920x1080 ao lado de 720x1280, e
+    o Face Mesh trabalha internamente numa resolução bem menor que qualquer uma
+    das duas. Reduzir antes de detectar corta o custo (medimos ~58 -> ~70 frames
+    por segundo entre nativo e 640) **e** tira da entrada uma diferença entre
+    participantes que não tem nada a ver com sonolência.
+
+    Os landmarks voltam em coordenadas normalizadas (0..1), então a escala não
+    muda nenhuma métrica: EAR e MAR são razões entre distâncias, e a pose vem de
+    ângulos. O que muda é o número de pixels em que o detector procura — e é por
+    isso que o limite é generoso: abaixo de ~400 px de largura, olho e boca
+    começam a perder definição.
+    """
+    if largura_maxima is None or frame.shape[1] <= largura_maxima:
+        return frame
+
+    escala = largura_maxima / frame.shape[1]
+    return cv2.resize(frame, None, fx=escala, fy=escala, interpolation=cv2.INTER_AREA)
+
+
+def extrai_frames_em_janelas(
+    caminho_video: Union[str, Path],
+    prefixo: str,
+    detector: DetectorDeLandmarks,
+    frames_por_janela: int,
+    amostragem: int = 1,
+    calculadora: Optional[CalculadoraDeMetricas] = None,
+    largura_maxima: Optional[int] = None,
+    id_da_janela=lambda prefixo, indice: f"{prefixo}-{indice:04d}",
+) -> pd.DataFrame:
+    """Fatia um vídeo longo em janelas de tamanho fixo e extrai todas de uma vez.
+
+    O DAiSEE já vem cortado em clipes de 10s; o UTA-RLDD vem em gravações de dez
+    minutos com um rótulo só. Para treinar com as mesmas 39 features é preciso
+    produzir as mesmas unidades — daí o corte em janelas, feito **durante** a
+    leitura e não depois.
+
+    **Uma passada só, e sem `seek`.** Cortar depois, ou reposicionar o vídeo por
+    janela, obrigaria o decodificador a voltar ao keyframe anterior a cada corte:
+    num arquivo de 10 minutos isso é ordens de grandeza mais caro que ler em
+    frente uma vez. O índice da janela sai da divisão do índice do frame.
+
+    **O rastreamento não é reiniciado entre janelas, e aqui isso é o certo.**
+    Entre clipes do DAiSEE é obrigatório reiniciar, porque o clipe seguinte é
+    outro sujeito num corte duro. Aqui as janelas são pedaços contíguos da mesma
+    pessoa na mesma gravação: reiniciar jogaria fora exatamente o rastreamento
+    que torna a pose estável, e ainda pagaria a redetecção a cada dez segundos.
+
+    **A última janela incompleta é descartada.** `n_frames` é uma feature, e o
+    desvio-padrão de uma janela de 12 frames não é comparável ao de uma de 60.
+    Um resto de poucos segundos no fim de dez minutos não vale a heterogeneidade
+    que ele introduziria em todas as linhas do dataset.
+
+    `frames_por_janela` é contado em **frames do vídeo**, não em frames
+    processados: é o que mantém a janela com 10 segundos de relógio tanto num
+    vídeo de 25 fps quanto num de 30.
+    """
+    if amostragem < 1:
+        raise ValueError(f"amostragem deve ser >= 1, recebido {amostragem}")
+    if frames_por_janela < 1:
+        raise ValueError(f"frames_por_janela deve ser >= 1, recebido {frames_por_janela}")
+
+    calculadora = calculadora or _calculadora_padrao()
+    caminho = Path(caminho_video)
+    linhas: List[Dict[str, object]] = []
+
+    with _abre_video(caminho) as captura:
+        frame_idx = 0
+        while captura.grab():
+            if frame_idx % amostragem == 0:
+                lido, frame = captura.retrieve()
+                if not lido or frame is None:
+                    # Frame truncado no fim do arquivo: o que veio antes vale, e
+                    # `frame_idx` já é a contagem do que foi lido inteiro.
+                    break
+                janela = frame_idx // frames_por_janela
+                linhas.append(
+                    _linha(
+                        reduz_para(frame, largura_maxima),
+                        id_da_janela(prefixo, janela),
+                        frame_idx,
+                        detector,
+                        calculadora,
+                    )
+                )
+            frame_idx += 1
+
+    if not linhas:
+        raise VideoIlegivel(f"vídeo sem frames legíveis: {caminho}")
+
+    frames = pd.DataFrame(linhas, columns=COLUNAS_FRAMES)
+    frames = frames.astype({"frame_idx": "int64", "face_detectada": "bool"})
+
+    # `frame_idx` terminou valendo o total de frames lidos, então a divisão
+    # inteira dá exatamente quantas janelas fecharam. A última, se sobrou resto,
+    # fica de fora.
+    completas = {
+        id_da_janela(prefixo, i) for i in range(frame_idx // frames_por_janela)
+    }
+    frames = frames[frames[COLUNA_CLIPE].isin(completas)].reset_index(drop=True)
+
+    if frames.empty:
+        raise VideoIlegivel(
+            f"vídeo curto demais para uma janela de {frames_por_janela} frames: {caminho}"
+        )
+    return frames
+
+
 def frames_do_clipe(
     clipe: ClipeLocalizado,
     detector: DetectorDeLandmarks,

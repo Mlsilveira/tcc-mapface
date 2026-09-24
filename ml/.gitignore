@@ -1,4 +1,6 @@
 dados/
+dados_rldd/
 artefatos/
+artefatos_fadiga/
 .venv/
 __pycache__/
