@@ -163,7 +163,7 @@ Em andamento:
 
 Falta o deploy — ticket 15, que containeriza o backend, publica as duas pontas na infraestrutura da ticket 14 e liga a aplicação ao RDS — e a ticket 16, que mede as metas do capítulo 8 contra o ambiente publicado e por isso depende dele.
 
-O plano completo, com as 16 fatias verticais e suas dependências, está em [`tickets.md`](./tickets.md). O problema, as histórias de usuário e as decisões de arquitetura estão em [`spec-poc-iee.md`](./spec-poc-iee.md).
+O plano completo, com as 16 fatias verticais e suas dependências, está em [`tickets.md`](./tickets.md). O problema, as histórias de usuário e as decisões de arquitetura estão em [`spec-poc-iee.md`](./spec-poc-iee.md). O desenho da arquitetura como ela ficou — e as quatro diferenças em relação ao que foi proposto — está em [`arquitetura.md`](./arquitetura.md).
 
 ## Rodando localmente
 
