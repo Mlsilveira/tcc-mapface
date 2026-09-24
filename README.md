@@ -154,13 +154,14 @@ Implementado:
 - **Ticket 10 — Incerteza de captura.** Em pouca luz, com reflexo nos óculos ou com o rosto parcialmente ocluso, o sistema se abstém de medir em vez de emitir um score enganoso: a interface diz o que ajustar e o banco grava o ponto com `score` nulo e o motivo em `alerta`.
 - **Ticket 11 — Relatório de autopercepção.** Encerrar leva ao relatório da sessão: curva do IEE, indicadores, alertas nomeados e recomendações de autorregulação. A duração exibida vem da presença real medida pela série, não do tempo de aba aberta, e sessão interrompida rende relatório parcial.
 - **Ticket 12 — Histórico de sessões.** Lista das sessões encerradas do aluno, com o resumo de cada uma e acesso ao relatório completo.
+- **Ticket 14 — Infraestrutura como código.** Toda a infraestrutura AWS em Terraform, em `infra/`: VPC própria, bucket S3 privado servido por CloudFront em HTTPS, repositório ECR e RDS PostgreSQL criptografado em repouso, com a senha gerada e guardada pela própria AWS. Um `terraform apply` levanta tudo, sem passo no console.
 - **Ticket 13 — Sumarização e retenção.** Os indicadores são congelados em `resumo_sessao` no encerramento; passadas 24 horas, os pontos por segundo são trocados por médias por minuto. `horario_registro` e `id_sessao` são indexados.
 
 Em andamento:
 
 - **Ticket 17 — Ciclo de vida da sessão dirigido por presença e métodos de estudo.** Quem mantém a sessão viva passou a ser o rosto na câmera, com o limite de ausência vindo do método declarado. O catálogo de métodos, as colunas de contexto, a varredura por sessão, a renovação de credencial, a tabela `bloco_estudo` e a API de transições estão prontos; a tela inicial declara método, assunto e meta, a tela da sessão conduz o ciclo com cronômetro, aviso de pausa e transições gravadas, e o relatório lê a sessão por blocos. **A ticket está fechada** — falta só a revisão do Matheus.
 
-Falta a trilha de infraestrutura — tickets 14 (Terraform) e 15 (deploy na AWS) — e a ticket 16, que mede as metas do capítulo 8 contra o ambiente publicado e por isso depende delas.
+Falta o deploy — ticket 15, que containeriza o backend, publica as duas pontas na infraestrutura da ticket 14 e liga a aplicação ao RDS — e a ticket 16, que mede as metas do capítulo 8 contra o ambiente publicado e por isso depende dele.
 
 O plano completo, com as 16 fatias verticais e suas dependências, está em [`tickets.md`](./tickets.md). O problema, as histórias de usuário e as decisões de arquitetura estão em [`spec-poc-iee.md`](./spec-poc-iee.md).
 
@@ -222,6 +223,18 @@ Do npm 11 em diante, os scripts de instalação das dependências vêm bloqueado
 cd frontend && npx puppeteer browsers install chrome
 ```
 
+## Infraestrutura
+
+A infraestrutura AWS vive em [`infra/`](./infra), em Terraform. Com credenciais da AWS no ambiente:
+
+```bash
+cd infra && terraform init && terraform apply
+```
+
+Sobem VPC, bucket S3 privado servido por CloudFront, repositório ECR e RDS PostgreSQL. O `terraform destroy` desmonta tudo sem passo manual, o que é o que mantém o custo em zero entre demonstrações. Detalhes, custo e as decisões estão no [README de lá](./infra/README.md).
+
+**O CloudFront é requisito, não enfeite:** o endpoint de site estático do S3 serve apenas HTTP, e o navegador só libera a webcam em contexto seguro — é a mesma razão pela qual, localmente, `localhost` funciona e um IP na rede não.
+
 ## Organização do código
 
 ```
@@ -256,6 +269,15 @@ frontend/src/app/
   pages/             login, registro, sessão de estudo, relatório, histórico
   shared/            marca, ícones, gráfico do IEE e formatação de duração
 frontend/src/styles.css   sistema de design: tokens, botões, campos, telas
+infra/
+  main.tf          provider, tags padrão e a ligação entre os módulos
+  variables.tf     tudo que se ajusta, com os padrões da PoC
+  outputs.tf       o que o deploy da ticket 15 precisa saber
+  modules/
+    rede/          VPC, sub-redes públicas e privadas, internet gateway
+    site/          bucket S3 privado + CloudFront (o Angular compilado)
+    registro/      ECR (a imagem do FastAPI)
+    banco/         RDS PostgreSQL, criptografado em repouso
 ```
 
 As regras de negócio ficam fora do FastAPI de propósito — `app/sessoes.py`, `app/analista.py`, `app/relatorio.py`, `app/presenca.py`, `app/metodos.py`, `app/blocos.py`, `app/criterios.py` e `app/recomendacoes.py` não conhecem HTTP, banco de requisição nem UI, e é onde os testes de comportamento batem. O `AnalistaEngajamento` é o seam principal do spec: entrou na ticket 7 com a calibração e a fórmula do IEE, e recebe o fator de fadiga na ticket 8. O relatório repete o padrão — `resumir(sessao, serie)` é função pura, testável com séries sintéticas, sem banco nem HTTP.

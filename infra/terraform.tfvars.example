@@ -1,0 +1,13 @@
+# Copie para `terraform.tfvars` e ajuste. O arquivo real não é versionado.
+
+projeto  = "mapface"
+ambiente = "poc"
+regiao   = "us-east-1"
+
+# Ligue antes de guardar qualquer coisa que importe no banco.
+# protecao_contra_remocao = true
+
+# tags_extras = {
+#   Curso = "TCC-UNIP"
+#   Dono  = "time-mapface"
+# }

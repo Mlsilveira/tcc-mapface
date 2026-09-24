@@ -140,7 +140,12 @@ def test_migra_sem_depender_de_quem_importou_os_modelos(banco_antigo, tmp_path):
     script = (
         "from sqlmodel import create_engine\n"
         "from app.database import criar_tabelas\n"
-        f"criar_tabelas(create_engine('sqlite:///{banco_antigo}'))\n"
+        # `as_posix` e não o caminho cru: no Windows o `tmp_path` vem com barras
+        # invertidas, e interpolá-lo dentro de código Python transforma a barra
+        # seguida de U num escape unicode inválido — o subprocesso morre de
+        # SyntaxError antes de chegar na migração que o teste queria exercitar.
+        # O SQLite aceita barra normal nos dois sistemas.
+        f"criar_tabelas(create_engine('sqlite:///{banco_antigo.as_posix()}'))\n"
     )
 
     resultado = subprocess.run(
