@@ -1,11 +1,12 @@
 import { Injectable, InjectionToken, NgZone, OnDestroy, inject, signal } from '@angular/core';
 
+import { API_URL, baseDoWebSocket } from '../api';
 import { LeituraDaCaptura } from '../visao/landmarks.service';
 import { AuthService } from '../services/auth.service';
 import { PayloadDeTelemetria, agregar } from './agregacao';
 
 /** URL do canal de telemetria. Deriva da API para não haver duas configurações. */
-export const URL_DA_TELEMETRIA = 'ws://localhost:8000/telemetria';
+export const URL_DA_TELEMETRIA = `${baseDoWebSocket(API_URL)}/telemetria`;
 
 /**
  * De quanto em quanto tempo uma amostra é tirada da captura.

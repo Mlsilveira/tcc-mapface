@@ -1,3 +1,5 @@
+from typing import List
+
 from pydantic import AliasChoices, Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
@@ -12,6 +14,21 @@ class Settings(BaseSettings):
     """
 
     database_url: str = "sqlite:///./app.db"
+
+    # Origens que o navegador pode usar para chamar esta API.
+    #
+    # **Em produção a lista fica vazia, e isso é o desenho, não um esquecimento.**
+    # O CloudFront serve o site e encaminha `/auth`, `/sessoes`, `/metodos` e
+    # `/telemetria` para o backend, então o navegador vê **uma origem só** — e
+    # requisição de mesma origem não é requisição cross-origin: o CORS não entra
+    # na conversa. Liberar origem que ninguém vai usar seria alargar a superfície
+    # em troca de nada.
+    #
+    # O valor padrão existe para o desenvolvimento local, onde o `ng serve`
+    # responde na 4200 e o `uvicorn` na 8000 — duas origens de verdade, e aí o
+    # CORS é obrigatório. Vários valores separados por vírgula.
+    origens_permitidas: str = "http://localhost:4200"
+
     secret_key: str = "troque-esta-chave-por-um-valor-aleatorio-e-secreto"
     algorithm: str = "HS256"
     access_token_expire_minutes: int = 30
@@ -52,6 +69,18 @@ class Settings(BaseSettings):
     # request a cada 29 minutos, e o heartbeat de 60 s faz exatamente isso
     # sozinho. Com ele, o pior caso é limitado e dizível em uma frase.
     teto_de_credencial_horas: int = 12
+
+    @property
+    def lista_de_origens(self) -> List[str]:
+        """`origens_permitidas` como lista, sem entradas vazias.
+
+        String e não `List[str]` no campo porque a variável de ambiente é o
+        único canal que o ECS oferece, e o `pydantic-settings` tentaria ler uma
+        lista como **JSON** — `["http://..."]`, com aspas e colchetes dentro da
+        task definition. Vírgula é o formato que uma pessoa consegue escrever
+        sem errar.
+        """
+        return [origem.strip() for origem in self.origens_permitidas.split(",") if origem.strip()]
 
     model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8")
 

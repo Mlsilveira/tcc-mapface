@@ -2,9 +2,9 @@ import { provideHttpClient } from '@angular/common/http';
 import { HttpTestingController, provideHttpClientTesting } from '@angular/common/http/testing';
 import { TestBed } from '@angular/core/testing';
 
+import { API_URL as API } from '../api';
 import { MetodoDeEstudo, MetodoService } from './metodo.service';
 
-const API = 'http://localhost:8000';
 
 const CATALOGO: MetodoDeEstudo[] = [
   {

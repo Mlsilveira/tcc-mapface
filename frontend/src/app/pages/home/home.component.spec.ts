@@ -12,6 +12,7 @@ import { provideRouter, Router } from '@angular/router';
 
 import { signal } from '@angular/core';
 
+import { API_URL as API } from '../../core/api';
 import { AuthService } from '../../core/services/auth.service';
 import { MetodoDeEstudo } from '../../core/services/metodo.service';
 import {
@@ -26,7 +27,6 @@ import { MetricasFaciais } from '../../core/visao/metricas';
 import { MotivoDeIncerteza } from '../../core/visao/qualidade';
 import { HomeComponent } from './home.component';
 
-const API = 'http://localhost:8000';
 
 const SESSAO_EM_ANDAMENTO: Sessao = {
   id: 7,

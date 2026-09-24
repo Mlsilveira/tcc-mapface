@@ -288,11 +288,28 @@ Tudo em `infra/`, em quatro módulos: `rede`, `site`, `registro` e `banco`. O RE
 
 **Bloqueada por:** Ticket 6 e Ticket 14.
 
-- [ ] Backend containerizado (Dockerfile) publicado no ECR
+- [ ] Backend containerizado (Dockerfile) publicado no ECR — **Dockerfile pronto**, falta publicar
 - [ ] Backend rodando em ECS Fargate
 - [ ] Frontend publicado no S3
 - [ ] Variáveis de ambiente e conexão com o RDS configuradas
 - [ ] Uma sessão de estudo completa funciona no ambiente publicado
+
+### A decisão de topologia: um domínio só
+
+**O ALB não pode ter HTTPS válido sem domínio próprio.** O ACM não emite certificado para `nome-do-alb.us-east-1.elb.amazonaws.com`, e o site precisa estar em HTTPS para a webcam existir. Ou se registra um domínio, ou a API fica em HTTP e o produto não funciona.
+
+A saída escolhida é **não ter um segundo domínio**: o ALB entra como segundo origin da distribuição do CloudFront que a ticket 14 já criou, com behaviors para `/auth`, `/sessoes`, `/metodos` e `/telemetria`. O navegador fala só com `https://…cloudfront.net`, com certificado da Amazon, de graça. Disso saem três coisas de uma vez: **não há CORS**, porque mesma origem não é requisição cross-origin; **não há conteúdo misto**, porque o WebSocket herda o `https` e vira `wss`; e **não há configuração de ambiente no frontend**, porque o endereço da API passa a ser o da própria página.
+
+### O que já foi preparado para ela
+
+- **`backend/Dockerfile`** — `python:3.11-slim`, usuário sem privilégio, um worker, `--proxy-headers` para os dois saltos (CloudFront e ALB).
+- **Driver do PostgreSQL** nas dependências. Faltava, e a falta só apareceria no primeiro boot contra o RDS, como contêiner que sobe e morre.
+- **CORS configurável** por `ORIGENS_PERMITIDAS`, com a lista vazia em produção pelo motivo acima.
+- **Frontend sem URL de ambiente**: [`core/api.ts`](./frontend/src/app/core/api.ts) deriva API e WebSocket de `window.location`, com a 4200 do `ng serve` como única exceção.
+- **Modelo do MediaPipe baixado pelo `npm run build`**, em vez de instrução de README. Ele não é versionado, e esquecê-lo produz um site que só falha na hora de acender a câmera.
+- **Cadeado consultivo na migração de boot.** O rolling update do ECS sobe a task nova antes de derrubar a velha; sem ele, dois `ALTER TABLE` simultâneos fariam o deploy falhar de vez em quando, sem padrão.
+
+**Uma réplica só, e isso limita a ticket 16.** A baseline calibrada vive na memória do processo (`analista.RegistroDeAnalistas`), então `desired_count = 1`. Com uma task e RDS Single-AZ, a meta de 99,9% do capítulo 8 não é alcançável por construção — ou a 16 mede o que existe e diz isso, ou a topologia muda antes dela.
 
 ## 16. Validação de performance e resiliência
 

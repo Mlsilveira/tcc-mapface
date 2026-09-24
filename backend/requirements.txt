@@ -1,6 +1,10 @@
 fastapi==0.115.0
 uvicorn[standard]==0.30.6
 sqlmodel==0.0.22
+# Driver do PostgreSQL. O SQLite da PoC nao precisava de driver nenhum, e a
+# falta deste so apareceria no primeiro boot contra o RDS. [binary] traz a
+# libpq compilada: sem ela a imagem precisaria de compilador e libpq-dev.
+psycopg[binary]==3.3.6
 bcrypt==5.0.0
 python-jose[cryptography]==3.3.0
 pydantic-settings==2.5.2

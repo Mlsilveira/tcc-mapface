@@ -3,11 +3,11 @@ import { HttpTestingController, provideHttpClientTesting } from '@angular/common
 import { discardPeriodicTasks, fakeAsync, TestBed, tick } from '@angular/core/testing';
 import { Router } from '@angular/router';
 
+import { API_URL as API } from '../api';
 import { AuthService } from './auth.service';
 import { InactivityService, TEMPO_LIMITE_INATIVIDADE_MS } from './inactivity.service';
 import { SessaoService } from './sessao.service';
 
-const API = 'http://localhost:8000';
 
 describe('InactivityService', () => {
   let service: InactivityService;

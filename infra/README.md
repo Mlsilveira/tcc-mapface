@@ -42,8 +42,16 @@ estudo e falha na única coisa que ela existe para fazer: acender a webcam.
 
 A consequência disso recai sobre a ticket 15: com o site em HTTPS, o WebSocket
 de telemetria tem que ser `wss://`. Página segura falando `ws://` é conteúdo
-misto, e o navegador bloqueia sem perguntar — então o backend vai precisar de
-TLS, na prática um ALB com certificado do ACM.
+misto, e o navegador bloqueia sem perguntar — então o backend também precisa de
+TLS.
+
+**E aí há uma armadilha:** o ACM não emite certificado para o nome de um ALB
+(`…elb.amazonaws.com`), então HTTPS no balanceador exigiria um domínio próprio,
+registrado e validado. A decisão tomada foi **não ter um segundo domínio**: na
+ticket 15 o ALB entra como **segundo origin desta mesma distribuição**, com
+behaviors para `/auth`, `/sessoes`, `/metodos` e `/telemetria`. O navegador fala
+só com `https://…cloudfront.net`, e com isso o CORS desaparece (mesma origem), o
+`wss` funciona e o frontend não tem nenhuma URL de ambiente para configurar.
 
 ## Pré-requisitos
 

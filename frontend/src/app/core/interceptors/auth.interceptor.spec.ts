@@ -4,6 +4,7 @@ import { TestBed } from '@angular/core/testing';
 
 import { of, throwError } from 'rxjs';
 
+import { API_URL } from '../api';
 import { AuthService } from '../services/auth.service';
 import { tokenQueVenceEm } from '../services/auth.service.spec';
 import { authInterceptor } from './auth.interceptor';
@@ -120,10 +121,10 @@ describe('authInterceptor — renovação proativa', () => {
     // indefinidamente.
     authServiceSpy.credencialPertoDeExpirar.and.returnValue(true);
 
-    http.post('http://localhost:8000/auth/renovar', {}).subscribe();
+    http.post(`${API_URL}/auth/renovar`, {}).subscribe();
 
     expect(authServiceSpy.renovar).not.toHaveBeenCalled();
-    const requisicao = httpMock.expectOne('http://localhost:8000/auth/renovar');
+    const requisicao = httpMock.expectOne(`${API_URL}/auth/renovar`);
     expect(requisicao.request.headers.get('Authorization')).toBe('Bearer token-velho');
     requisicao.flush({ access_token: 'token-novo', token_type: 'bearer' });
   });
@@ -180,7 +181,7 @@ describe('authInterceptor — com o AuthService de verdade', () => {
     http.get('/recurso-a').subscribe();
     http.get('/recurso-b').subscribe();
 
-    const renovacoes = httpMock.match('http://localhost:8000/auth/renovar');
+    const renovacoes = httpMock.match(`${API_URL}/auth/renovar`);
     expect(renovacoes.length).toBe(1);
     expect(renovacoes[0].request.headers.get('Authorization')).toBe(`Bearer ${tokenAntigo}`);
     renovacoes[0].flush({ access_token: TOKEN_NOVO, token_type: 'bearer' });

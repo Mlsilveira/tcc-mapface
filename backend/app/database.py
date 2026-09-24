@@ -1,4 +1,5 @@
-from typing import Optional
+from contextlib import contextmanager
+from typing import Iterator, Optional
 
 from sqlalchemy import inspect, text
 from sqlalchemy.engine import Engine
@@ -20,6 +21,40 @@ _connect_args = (
 engine = create_engine(settings.database_url, connect_args=_connect_args)
 
 
+#: Identificador do cadeado consultivo do boot. Número arbitrário e estável — o
+#: que importa é que todas as réplicas peçam **o mesmo**.
+ID_DO_CADEADO_DE_BOOT = 8140114
+
+
+@contextmanager
+def _exclusividade_no_boot(motor: Engine) -> Iterator[None]:
+    """Garante que só uma réplica execute a migração de boot por vez.
+
+    **Por que é necessário mesmo com uma única task no ECS.** Um deploy com
+    rolling update sobe a task nova **antes** de derrubar a velha — é assim que
+    ele evita indisponibilidade. Durante esses segundos existem dois processos,
+    e os dois rodam `criar_tabelas` no lifespan. Dois `CREATE TABLE` ou dois
+    `ALTER TABLE` simultâneos na mesma tabela ou erram, ou travam um no outro
+    esperando o lock do PostgreSQL. O resultado é um deploy que falha de vez em
+    quando, sem padrão, que é o tipo de falha mais caro de diagnosticar.
+
+    Um cadeado consultivo resolve com uma linha: a segunda réplica espera, e
+    quando entra encontra o schema já em dia e não faz nada — a migração é
+    idempotente por construção. O cadeado é de **transação**, então ele se
+    solta sozinho se o processo morrer no meio; um cadeado de sessão ficaria
+    preso e o próximo boot esperaria para sempre.
+
+    No SQLite não há o que coordenar: um processo, um arquivo.
+    """
+    if motor.dialect.name != "postgresql":
+        yield
+        return
+
+    with motor.begin() as conexao:
+        conexao.execute(text("SELECT pg_advisory_xact_lock(:id)"), {"id": ID_DO_CADEADO_DE_BOOT})
+        yield
+
+
 def criar_tabelas(motor: Optional[Engine] = None) -> None:
     """Deixa o banco em dia com os modelos, criando o que falta.
 
@@ -33,10 +68,11 @@ def criar_tabelas(motor: Optional[Engine] = None) -> None:
     engine do módulo é o único que interessa.
     """
     motor = motor or engine
-    SQLModel.metadata.create_all(motor)
-    _acrescentar_colunas_faltantes(motor)
-    _preencher_obrigatorias(motor)
-    _relaxar_obrigatoriedade(motor)
+    with _exclusividade_no_boot(motor):
+        SQLModel.metadata.create_all(motor)
+        _acrescentar_colunas_faltantes(motor)
+        _preencher_obrigatorias(motor)
+        _relaxar_obrigatoriedade(motor)
 
 
 def _acrescentar_colunas_faltantes(motor: Engine) -> None:

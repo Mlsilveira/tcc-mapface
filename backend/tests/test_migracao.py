@@ -16,7 +16,7 @@ import sqlite3
 import pytest
 from sqlmodel import create_engine, text
 
-from app.database import criar_tabelas
+from app.database import ID_DO_CADEADO_DE_BOOT, _exclusividade_no_boot, criar_tabelas
 
 
 def _colunas(caminho, tabela):
@@ -566,3 +566,58 @@ def test_o_bloco_gravado_sobrevive_ao_boot_seguinte(banco_pre_ticket_10):
         assert conexao.execute("SELECT indice, tipo FROM bloco_estudo").fetchall() == [
             (1, "pausa")
         ]
+
+
+class _ConexaoFalsa:
+    """Registra o SQL que recebeu, para inspecionar o cadeado sem PostgreSQL."""
+
+    def __init__(self, executados):
+        self._executados = executados
+
+    def execute(self, comando, parametros=None):
+        self._executados.append((str(comando), parametros))
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *_):
+        return False
+
+
+class _MotorFalso:
+    """O mínimo de um Engine que `_exclusividade_no_boot` usa: o nome do dialeto."""
+
+    def __init__(self, dialeto):
+        self.dialect = type("Dialeto", (), {"name": dialeto})()
+        self.executados = []
+
+    def begin(self):
+        return _ConexaoFalsa(self.executados)
+
+
+def test_o_boot_pede_cadeado_no_postgres():
+    """Duas réplicas subindo juntas não podem migrar ao mesmo tempo.
+
+    O rolling update do ECS sobe a task nova antes de derrubar a velha, então
+    dois processos rodam a migração nos mesmos segundos. Sem o cadeado, dois
+    `ALTER TABLE` simultâneos erram ou travam um no outro — e o deploy falha de
+    vez em quando, sem padrão.
+    """
+    motor = _MotorFalso("postgresql")
+
+    with _exclusividade_no_boot(motor):
+        pass
+
+    comandos = [sql for sql, _ in motor.executados]
+    assert any("pg_advisory_xact_lock" in sql for sql in comandos), comandos
+    assert motor.executados[0][1] == {"id": ID_DO_CADEADO_DE_BOOT}
+
+
+def test_o_boot_nao_pede_cadeado_no_sqlite():
+    """No SQLite não há o que coordenar, e pedir cadeado ali seria erro de sintaxe."""
+    motor = _MotorFalso("sqlite")
+
+    with _exclusividade_no_boot(motor):
+        pass
+
+    assert motor.executados == []

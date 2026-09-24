@@ -183,6 +183,16 @@ A API sobe em `http://localhost:8000`, com documentação interativa em `http://
 
 Antes de rodar em qualquer ambiente real, troque a `SECRET_KEY` no `.env` por um valor aleatório. O `.env` não é versionado.
 
+Para rodar contra PostgreSQL basta trocar a `DATABASE_URL` por `postgresql+psycopg://usuario:senha@host:5432/mapface` — o driver já está nas dependências e a migração de boot já tem o caminho do PostgreSQL.
+
+#### Em contêiner
+
+```bash
+cd backend && docker build -t mapface-backend .
+```
+
+A imagem roda um worker só, e isso é decisão: a baseline calibrada de cada aluno vive na memória do processo (`analista.RegistroDeAnalistas`), então dois workers fariam o mesmo aluno recalibrar ao reconectar no outro. Pela mesma razão o serviço ECS roda com uma réplica só.
+
 ### Frontend
 
 ```bash
@@ -193,15 +203,15 @@ npm start
 
 A aplicação sobe em `http://localhost:4200` e espera o backend em `http://localhost:8000`.
 
+As duas portas não estão escritas em lugar nenhum como configuração: [`core/api.ts`](./frontend/src/app/core/api.ts) deriva o endereço do backend de **onde a própria página está**. Servida pela 4200, que é o `ng serve` e não sabe nada da API, ela procura o backend na 8000 ao lado; servida de qualquer outro lugar — o CloudFront, em produção —, usa a própria origem. O bundle do Angular é estático, então uma URL fixa ali obrigaria a recompilar por ambiente, e um deploy com o build errado só falharia no navegador do usuário.
+
 #### Modelo do MediaPipe
 
-Os binários WASM vêm no pacote npm e são copiados pelo build. O arquivo do modelo, não — ele precisa ser baixado uma vez para `frontend/src/assets/mediapipe/`:
+Os binários WASM vêm no pacote npm e são copiados pelo build. O arquivo do modelo, não: tem ~3,7 MB de pesos e não é versionado, porque binário grande em repositório de código incha o histórico para sempre.
 
-```bash
-mkdir -p frontend/src/assets/mediapipe && curl -L -o frontend/src/assets/mediapipe/face_landmarker.task https://storage.googleapis.com/mediapipe-models/face_landmarker/face_landmarker/float16/1/face_landmarker.task
-```
+**Não é preciso fazer nada:** `npm start` e `npm run build` baixam o modelo se ele não estiver lá, e não fazem nada se estiver — build offline continua funcionando. Para baixar sozinho, `npm run assets`.
 
-Sem ele a sessão ainda inicia e é registrada, mas sem métricas de engajamento — a interface avisa. O arquivo tem ~3 MB e não é versionado.
+Isso é um passo do build, e não uma linha de README, porque a falha de esquecê-lo é das piores de diagnosticar: o build passa, o site sobe, o login funciona, a sessão inicia, e a captura falha **só** na hora de ligar a câmera — onde se confunde com problema de permissão ou de webcam.
 
 A webcam só é liberada pelo navegador em contexto seguro: `localhost` funciona, mas um IP na rede local, não.
 

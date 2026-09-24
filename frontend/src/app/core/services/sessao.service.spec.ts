@@ -2,6 +2,7 @@ import { provideHttpClient } from '@angular/common/http';
 import { HttpTestingController, provideHttpClientTesting } from '@angular/common/http/testing';
 import { TestBed, discardPeriodicTasks, fakeAsync, tick } from '@angular/core/testing';
 
+import { API_URL as API } from '../api';
 import {
   Bloco,
   ESPERA_PARA_RETENTAR_MS,
@@ -9,8 +10,6 @@ import {
   Sessao,
   SessaoService,
 } from './sessao.service';
-
-const API = 'http://localhost:8000';
 
 const SESSAO_EM_ANDAMENTO: Sessao = {
   id: 7,
