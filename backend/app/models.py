@@ -277,6 +277,12 @@ class ResumoSessao(SQLModel, table=True):
     pico: Optional[float] = Field(default=None)
     vale: Optional[float] = Field(default=None)
 
+    #: Média da leitura de sonolência, congelada junto com o resto. Sem
+    #: isto ela sumiria na retenção da ticket 13, que troca os pontos por
+    #: segundo por médias por minuto — e o relatório de uma sessão de duas
+    #: semanas atrás mostraria um traço onde havia número.
+    sonolencia_media: Optional[float] = Field(default=None)
+
     pontos_medidos: int = Field(default=0)
     pontos_incertos: int = Field(default=0)
     pontos_zerados: int = Field(default=0)

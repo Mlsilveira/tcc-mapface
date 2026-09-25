@@ -16,6 +16,7 @@ const RELATORIO: Relatorio = {
   media: 72.5,
   pico: 95,
   vale: 0,
+  sonolencia_media: null,
   pontos_medidos: 1750,
   pontos_incertos: 50,
   pontos_zerados: 12,
