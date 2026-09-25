@@ -30,6 +30,7 @@ from typing import Iterable, List, Optional, Set
 import pandas as pd
 
 import agregacao
+import agregacao_producao
 import daisee
 import esquema
 import extracao
@@ -205,6 +206,50 @@ def consolida(saida: Path, catalogo: pd.DataFrame) -> tuple[Path, Path]:
     return caminho_frames, caminho_clipes
 
 
+#: Frames por segundo dos clipes do DAiSEE. Constante porque o dataset é
+#: homogêneo: todos os clipes têm 10s e ~300 frames, gravados pela mesma
+#: captura de webcam. O UTA-RLDD, gravado por 60 celulares diferentes, precisa
+#: medir o fps arquivo por arquivo; aqui isso seria 8570 aberturas de vídeo para
+#: confirmar um número que o dataset garante.
+FPS_DO_DAISEE = 30.0
+
+NOME_CLIPES_PRODUTO = "clipes_produto.parquet"
+
+
+def consolida_produto(saida: Path, catalogo: pd.DataFrame) -> Path:
+    """Monta `clipes_produto.parquet`: as features como o backend as veria.
+
+    Existe pela mesma razão que o arquivo irmão do UTA-RLDD: o backend recebe a
+    telemetria a 1 Hz, já resumida no navegador, e não os ~60 frames a 6 fps que
+    saem do vídeo. Comparar os dois datasets — ou transferir um modelo de um para
+    o outro — exige que os dois estejam na mesma granularidade, senão a diferença
+    medida é de amostragem, não de comportamento.
+
+    **O sintoma disso apareceu de verdade.** Na primeira comparação de domínios,
+    `n_frames` tinha um `d` de Cohen de 112: 60 no DAiSEE contra 10,7 no RLDD.
+    Uma feature que separa os datasets perfeitamente é uma bandeira de origem
+    disfarçada — no treino conjunto, o modelo podia ler "n_frames = 60, logo
+    DAiSEE, logo engajado" sem olhar para o rosto.
+    """
+    shards = caminhos_de_shard(saida)
+    if not shards:
+        raise FileNotFoundError(f"nenhum shard em {saida / DIR_SHARDS}; rode a extração antes")
+
+    frames = pd.concat((pd.read_parquet(s) for s in shards), ignore_index=True)
+    esquema.valida_frames(frames)
+
+    do_catalogo = set(catalogo[esquema.COLUNA_CLIPE].astype(str))
+    frames = frames[frames[esquema.COLUNA_CLIPE].astype(str).isin(do_catalogo)]
+
+    fps = {str(clipe): FPS_DO_DAISEE for clipe in frames[esquema.COLUNA_CLIPE].unique()}
+    features = agregacao_producao.agrega_como_o_produto(frames, fps)
+    clipes = agregacao.junta_rotulos(features, catalogo)
+
+    caminho = saida / NOME_CLIPES_PRODUTO
+    clipes.to_parquet(caminho, index=False)
+    return caminho
+
+
 def _argumentos(argv: Optional[Iterable[str]] = None) -> argparse.Namespace:
     parser = argparse.ArgumentParser(
         description="Extrai features de EAR/Head Pose/MAR dos vídeos do DAiSEE (ticket 1).",
@@ -218,6 +263,11 @@ def _argumentos(argv: Optional[Iterable[str]] = None) -> argparse.Namespace:
     parser.add_argument("--clipes-por-shard", type=int, default=CLIPES_POR_SHARD)
     parser.add_argument("--recomecar", action="store_true", help="ignora shards existentes em vez de retomar")
     parser.add_argument("--so-consolidar", action="store_true", help="não extrai; só junta os shards já gravados")
+    parser.add_argument(
+        "--como-o-produto",
+        action="store_true",
+        help="gera também clipes_produto.parquet, com as features por médias de segundo",
+    )
     return parser.parse_args(list(argv) if argv is not None else None)
 
 
@@ -266,6 +316,9 @@ def main(argv: Optional[Iterable[str]] = None) -> int:
             fala(f"  {falha}")
 
     caminho_frames, caminho_clipes = consolida(args.saida, catalogo)
+    if args.como_o_produto:
+        caminho_produto = consolida_produto(args.saida, catalogo)
+        fala(f"{caminho_produto}: features como o backend as vê (médias por segundo)")
     frames = pd.read_parquet(caminho_frames, columns=[esquema.COLUNA_CLIPE])
     clipes = pd.read_parquet(caminho_clipes)
     fala(f"{caminho_frames}: {len(frames)} frames")

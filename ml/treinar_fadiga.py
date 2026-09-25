@@ -38,8 +38,11 @@ from esquema import COLUNAS_METRICAS, colunas_features
 from esquema_rldd import COLUNA_PARTICIPANTE, COLUNA_SONOLENCIA
 
 AQUI = Path(__file__).parent
-JANELAS_PADRAO = AQUI / "dados_rldd" / "janelas.parquet"
-DAISEE_PADRAO = AQUI / "dados" / "clipes.parquet"
+# Os dois padrões apontam para a versão **por segundo** de cada dataset: é a
+# granularidade que o backend tem, e comparar ou transferir entre duas
+# granularidades mede amostragem em vez de comportamento.
+JANELAS_PADRAO = AQUI / "dados_rldd" / "janelas_produto.parquet"
+DAISEE_PADRAO = AQUI / "dados" / "clipes_produto.parquet"
 SAIDA_PADRAO = AQUI / "artefatos_fadiga"
 
 NOME_MODELO = "random_forest_fadiga.joblib"
@@ -129,10 +132,33 @@ def melhor(
     if not elegiveis:
         raise SystemExit("nenhuma configuração reproduzível em produção na grade")
 
-    return max(
-        elegiveis,
-        key=lambda r: (round(r.acuracia_balanceada_media, 4), -r.acuracia_balanceada_desvio),
-    )
+    ordem = lambda r: (round(r.acuracia_balanceada_media, 4), -r.acuracia_balanceada_desvio)
+    topo = max(elegiveis, key=ordem)
+
+    # **Empate técnico é decidido pela robustez a câmera, não pela terceira casa
+    # decimal.** A validação cruzada mede desempenho dentro do UTA-RLDD, onde
+    # todo mundo gravou de celular. Ela é estruturalmente incapaz de medir a
+    # única transposição que o produto precisa fazer: para a webcam de um aluno,
+    # noutra distância, noutra lente, noutra iluminação.
+    #
+    # A comparação de domínio com o DAiSEE mede justamente isso, e é gritante:
+    # em valor absoluto, `ear_esq_min` separa os dois datasets com d de Cohen de
+    # 0,97 — mais do que separa as pessoas dentro de cada um. Depois de centrar
+    # cada pessoa na própria mediana, cai para 0,23. Um modelo treinado em
+    # valores absolutos aprende a lente; um treinado em desvios da baseline
+    # aprende a pessoa.
+    #
+    # Por isso, entre configurações a menos de um desvio-padrão de distância — ou
+    # seja, indistinguíveis pela medição que temos — vence a que calibra por
+    # sessão.
+    candidatas = [
+        r
+        for r in elegiveis
+        if r.normalizacao == tf.NORMALIZACAO_SESSAO
+        and topo.acuracia_balanceada_media - r.acuracia_balanceada_media
+        <= max(topo.acuracia_balanceada_desvio, r.acuracia_balanceada_desvio)
+    ]
+    return max(candidatas, key=ordem) if candidatas else topo
 
 
 def roda_ablacao(
@@ -167,7 +193,7 @@ def roda_ablacao(
 
 
 def roda_combinacao(
-    janelas: pd.DataFrame, caminho_daisee: Path, pipeline, fala
+    janelas: pd.DataFrame, caminho_daisee: Path, pipeline, normalizacao: str, fala
 ) -> Optional[Dict[str, object]]:
     """Comparação de domínio, transferência e treino conjunto com o DAiSEE."""
     if not caminho_daisee.is_file():
@@ -187,7 +213,21 @@ def roda_combinacao(
     )
 
     fala("  transferindo para o DAiSEE")
-    transferencia = cb.transfere_para_daisee(pipeline, daisee)
+    # **A entrada precisa estar na mesma forma em que o modelo foi treinado.**
+    # Um modelo treinado com features centradas na baseline recebendo valores
+    # absolutos não erra alto: ele devolve um número plausível e errado. Foi o
+    # que aconteceu na primeira execução — a sonolência prevista ficou em 0,80
+    # para praticamente todo clipe, entediado ou não, e o AUC virou ruído.
+    #
+    # O DAiSEE não agrupa clipes em sessões, só em usuários, então a mediana do
+    # sujeito é o análogo mais próximo que existe da calibração por sessão. Não
+    # é idêntico, e a diferença entra nas limitações.
+    entrada = (
+        cb.normaliza_por_sujeito(daisee)
+        if normalizacao != tf.SEM_NORMALIZACAO
+        else daisee
+    )
+    transferencia = cb.transfere_para_daisee(pipeline, entrada)
 
     fala("  treino conjunto")
     junto = cb.empilha(cb.normaliza_por_sujeito(daisee), cb.normaliza_por_sujeito(rldd))
@@ -281,7 +321,16 @@ def monta_relatorio(
         "## A configuração escolhida",
         "",
         f"`{escolhido.modelo}`, normalização `{escolhido.normalizacao}`, alvo "
-        f"`{escolhido.alvo}`. É a melhor entre as reproduzíveis em produção.",
+        f"`{escolhido.alvo}`.",
+        "",
+        "Escolhida entre as reproduzíveis em produção. **Empate técnico é decidido "
+        "pela robustez a câmera, não pela terceira casa decimal:** a validação "
+        "cruzada mede desempenho dentro do UTA-RLDD, onde todo mundo gravou de "
+        "celular, e é estruturalmente incapaz de medir a única transposição que o "
+        "produto precisa fazer — para a webcam de um aluno, noutra distância e "
+        "noutra lente. A comparação de domínio abaixo mede isso, e entre "
+        "configurações a menos de um desvio-padrão de distância vence a que "
+        "calibra por sessão.",
         "",
         rf.veredito(escolhido),
         "",
@@ -423,6 +472,12 @@ def _secao_daisee(c: Dict[str, object]) -> List[str]:
         "AUC de 0,50 é moeda. Acima disso há concordância, e ela não pode vir de "
         "ajuste ao DAiSEE: o modelo nunca viu uma linha dele.",
         "",
+        "As features do DAiSEE entram centradas na mediana de cada usuário — o "
+        "análogo mais próximo da calibração por sessão que este dataset permite, "
+        "já que ele agrupa clipes por pessoa e não por sessão. Alimentar o modelo "
+        "com valores absolutos devolveria um número plausível e errado, e não um "
+        "erro visível.",
+        "",
         "### Treino conjunto",
         "",
         "Os dois datasets empilhados sob um alvo compartilhado de **baixo alerta**, "
@@ -493,7 +548,9 @@ def main(argv: Optional[Iterable[str]] = None) -> int:
 
     combinacao = None
     if not args.sem_daisee:
-        combinacao = roda_combinacao(janelas, args.daisee, pipeline, fala)
+        combinacao = roda_combinacao(
+            janelas, args.daisee, pipeline, escolhido.normalizacao, fala
+        )
 
     args.saida.mkdir(parents=True, exist_ok=True)
     parametros = tf.ParametrosFadiga(
