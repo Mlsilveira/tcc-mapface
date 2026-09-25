@@ -15,7 +15,7 @@ Escrito para quem vai **defender** este código, não só rodá-lo.
 3. [Frontend — o que roda no navegador](#3-frontend--o-que-roda-no-navegador)
 4. [Backend — o que roda no servidor](#4-backend--o-que-roda-no-servidor)
 5. [Trilha de ML — o que roda offline](#5-trilha-de-ml--o-que-roda-offline)
-6. [Infraestrutura](#6-infraestrutura)
+6. [Infraestrutura, serviços AWS e custo](#6-infraestrutura)
 7. [Os dez trechos que mais importam](#7-os-dez-trechos-que-mais-importam)
 8. [As ferramentas, e por que cada uma](#8-as-ferramentas-e-por-que-cada-uma)
 9. [Roteiro de estudo em cinco sessões](#9-roteiro-de-estudo-em-cinco-sessões)
@@ -256,6 +256,71 @@ AES-256).
 HTTP, e o navegador só libera `getUserMedia` em contexto seguro. Sem ele, o
 produto carrega, faz login, deixa iniciar a sessão e falha na única coisa que
 existe para fazer.
+
+### 6.1 Os serviços da AWS, um a um
+
+Região `us-east-1`. A coluna de custo é **estimativa de lista**, para uma PoC
+rodando 24/7 no volume de algumas sessões de estudo por dia — não é fatura
+observada. Preço de nuvem muda; confira no
+[calculadora da AWS](https://calculator.aws) antes de citar na monografia.
+
+| Serviço | O que faz aqui | Como está configurado | Custo/mês (estimado) |
+| --- | --- | --- | --- |
+| **VPC** | Rede própria, isolando o banco da internet | /16, 2 sub-redes públicas + 2 privadas em 2 AZs, internet gateway | **US$ 0** |
+| **S3** | Guarda o `dist/` do Angular | Bucket privado, versionado, AES-256, sem website endpoint | **< US$ 0,05** (39 MB) |
+| **CloudFront** | Serve o site em HTTPS e encaminha a API | `PriceClass_All`, OAC, certificado `*.cloudfront.net` | **US$ 0** no nível gratuito |
+| **ECR** | Registro da imagem do FastAPI | Varredura no push, expira além de 10 imagens | **~US$ 0,15** |
+| **RDS PostgreSQL** | O banco | `db.t4g.micro`, 20 GB gp3, Single-AZ, backup de 7 dias, criptografado | **~US$ 14** · **US$ 0** no nível gratuito |
+| **Secrets Manager** | Senha do banco, gerada pela própria AWS | Um segredo, criado por `manage_master_user_password` | **~US$ 0,40** |
+| **ECS Fargate** *(ticket 15)* | Roda o backend | 0,25 vCPU, 0,5 GB, uma task | **~US$ 9** |
+| **ALB** *(ticket 15)* | TLS e endereço estável para o ECS | Um balanceador, tráfego baixo | **~US$ 18** |
+| **CloudWatch Logs** | Log das tasks e do RDS | Retenção padrão | **~US$ 0,50** |
+
+**Totais:**
+
+| Cenário | Estimativa |
+| --- | --- |
+| Conta nova, primeiros 12 meses (nível gratuito) | **~US$ 28/mês** |
+| Fora do nível gratuito | **~US$ 42/mês** |
+| Com `terraform destroy` entre demonstrações | **centavos** |
+
+Com os **US$ 100 de crédito** de conta nova, isso dá cerca de três meses
+rodando continuamente — ou a entrega inteira do TCC com folga larga, se o
+ambiente subir só para testar e demonstrar.
+
+### 6.2 As quatro decisões de custo que já foram tomadas
+
+**Não há NAT Gateway.** Ele custa por hora **mais do que todo o resto desta
+infraestrutura junto** — algo em torno de US$ 33/mês só pela existência, mais o
+tráfego. E nada aqui precisa dele: o RDS não fala com a internet, e a task do
+ECS roda em sub-rede pública com IP público, alcançando o ECR pelo mesmo
+caminho.
+
+**O ALB é o item mais caro, e não tem substituto.** Ele responde por ~43% da
+conta fora do nível gratuito. Existe porque o CloudFront precisa de um endereço
+estável na origem, e uma task Fargate com IP público não tem. A alternativa —
+publicar o backend em HTTP — quebra o produto, porque página em HTTPS não fala
+`ws://`.
+
+**`PriceClass_All` no CloudFront, e não uma classe mais barata.** É a única
+classe que inclui a América do Sul. As mais baratas não deixam de funcionar —
+roteiam para a borda incluída mais próxima —, mas fazem cada requisição
+atravessar o oceano. No volume de uma PoC a diferença de preço é nula e a de
+latência não.
+
+**Single-AZ no RDS, e uma task só no ECS.** Alta disponibilidade dobraria o
+custo do banco. E a task é única porque a baseline calibrada vive na memória do
+processo — é a mesma razão técnica que torna a meta de 99,9% de uptime
+inalcançável hoje (ver [relatório 02, seção 4.1](./02-o-projeto-e-a-banca.md)).
+
+### 6.3 O que **não** custa, e por quê
+
+`terraform destroy` funciona sem passo manual: o bucket tem `force_destroy`, o
+ECR tem `force_delete` e o banco tem `skip_final_snapshot`. É por isso que
+`protecao_contra_remocao` vem **desligada** por padrão — numa PoC que é montada
+e desmontada para demonstração, um banco que se recusa a morrer deixa custo
+rodando e obriga a apagar na mão no console, que é exatamente o passo manual
+que a ticket 14 existe para eliminar.
 
 ---
 
