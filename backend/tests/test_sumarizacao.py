@@ -79,7 +79,9 @@ class TestResumoCongelado:
 
         assert registro.media is None
         assert registro.pontos_incertos == 2
-        assert registro.motivos_de_incerteza == {"baixa-luz": 2}
+        # Dois pontos contíguos de baixa luz são um episódio; a duração
+        # continua legível em `pontos_incertos`, logo acima.
+        assert registro.motivos_de_incerteza == {"baixa-luz": 1}
 
 
 class TestRetencao:

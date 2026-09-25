@@ -44,7 +44,7 @@ const RELATORIO: Relatorio = {
       codigo: 'pausa',
       titulo: 'Faça uma pausa curta',
       texto: 'Cinco a dez minutos longe da tela.',
-      motivo: 'Bocejos: 3 registros.',
+      motivo: 'Bocejos: 3 episódios.',
     },
   ],
   serie: [
@@ -276,7 +276,7 @@ describe('RelatorioComponent', () => {
       montar();
 
       expect(texto('relatorio-fadiga')).toContain('Bocejos');
-      expect(texto('relatorio-fadiga')).toContain('3 registros');
+      expect(texto('relatorio-fadiga')).toContain('3 episódios');
     });
 
     it('separa condição de captura de sinal observado no aluno', () => {
@@ -295,7 +295,7 @@ describe('RelatorioComponent', () => {
       montar();
 
       expect(texto('relatorio-recomendacoes')).toContain('Faça uma pausa curta');
-      expect(texto('relatorio-recomendacoes')).toContain('Bocejos: 3 registros.');
+      expect(texto('relatorio-recomendacoes')).toContain('Bocejos: 3 episódios.');
     });
 
     it('continua aparecendo numa sessão sem medições', () => {

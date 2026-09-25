@@ -229,7 +229,7 @@ def _incerteza_relevante(resumo: "ResumoDaSessao") -> Optional[str]:
 def _ocorrencias(codigo: str, alertas: Dict[str, int]) -> str:
     quantidade = alertas.get(codigo, 0)
     plural = "s" if quantidade != 1 else ""
-    return f"{nome_do_alerta(codigo)}: {quantidade} registro{plural}."
+    return f"{nome_do_alerta(codigo)}: {quantidade} episódio{plural}."
 
 
 def _minutos(duracao: timedelta) -> str:

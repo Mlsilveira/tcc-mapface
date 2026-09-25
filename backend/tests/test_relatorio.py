@@ -165,8 +165,13 @@ class TestAlertas:
 
         resumo = relatorio.resumir(sessao(fim=5), serie)
 
-        assert resumo.alertas_de_fadiga == {"bocejos": 2, "palpebras-pesadas": 1}
-        assert resumo.motivos_de_incerteza == {"baixa-luz": 2, "oclusao": 1}
+        # Os dois pontos de `bocejos` são **contíguos**, logo um episódio só:
+        # a janela de fadiga é de 60 s e mantém o rótulo aceso enquanto a
+        # penalidade dura. Contar os dois separadamente é o que transformava um
+        # bocejo em dezenas de "registros" na tela.
+        assert resumo.alertas_de_fadiga == {"bocejos": 1, "palpebras-pesadas": 1}
+        # `baixa-luz` também é contíguo: um episódio, não dois pontos.
+        assert resumo.motivos_de_incerteza == {"baixa-luz": 1, "oclusao": 1}
 
     def test_ponto_sem_alerta_nao_entra_em_nenhum_agrupamento(self):
         serie = [ponto(80.0, 0), ponto(75.0, 1), ponto(None, 2)]
@@ -226,3 +231,64 @@ def test_a_sonolencia_nao_entra_na_media_do_score():
 
     assert indicadores.media == pytest.approx(70.0)
     assert indicadores.sonolencia_media == pytest.approx(0.95)
+
+
+# --- Episódios, e não pontos -----------------------------------------------
+
+
+def _com_alerta(segundo: int, alerta, score=70.0):
+    return LogEngajamento(
+        id_sessao=1,
+        score=score,
+        alerta=alerta,
+        horario_registro=datetime(2026, 9, 24, 10, 0, segundo, tzinfo=timezone.utc),
+    )
+
+
+def test_um_sinal_continuo_conta_como_um_episodio():
+    """O defeito que apareceu no primeiro teste com gente de verdade.
+
+    A janela do `DetectorDeFadiga` é de 60 segundos, e o rótulo do ponto diz
+    qual sinal domina a janela **naquele instante**. Um único bocejo mantinha o
+    rótulo aceso em dezenas de pontos seguidos, e contar pontos virava "47
+    bocejos" na tela de quem bocejou duas vezes. O número não errava por pouco:
+    ele media outra coisa.
+    """
+    serie = [_com_alerta(s, "bocejos") for s in range(40)]
+
+    assert resumir_serie(serie).alertas_de_fadiga == {"bocejos": 1}
+
+
+def test_sinais_separados_por_silencio_sao_episodios_distintos():
+    serie = (
+        [_com_alerta(s, "bocejos") for s in range(5)]
+        + [_com_alerta(s, None) for s in range(5, 20)]
+        + [_com_alerta(s, "bocejos") for s in range(20, 25)]
+    )
+
+    assert resumir_serie(serie).alertas_de_fadiga == {"bocejos": 2}
+
+
+def test_sinais_alternados_contam_cada_um_a_sua_corrida():
+    serie = (
+        [_com_alerta(s, "bocejos") for s in range(3)]
+        + [_com_alerta(s, "palpebras-pesadas") for s in range(3, 6)]
+        + [_com_alerta(s, "bocejos") for s in range(6, 9)]
+    )
+
+    assert resumir_serie(serie).alertas_de_fadiga == {
+        "bocejos": 2,
+        "palpebras-pesadas": 1,
+    }
+
+
+def test_a_incerteza_tambem_conta_por_episodio():
+    """Mesma regra dos dois lados: sete segundos de reflexo são um episódio."""
+    serie = [_com_alerta(s, "reflexo-ocular", score=None) for s in range(7)]
+
+    indicadores = resumir_serie(serie)
+
+    assert indicadores.motivos_de_incerteza == {"reflexo-ocular": 1}
+    assert indicadores.alertas_de_fadiga == {}
+    # A duração continua disponível, e por outro caminho: são sete pontos.
+    assert indicadores.pontos_incertos == 7

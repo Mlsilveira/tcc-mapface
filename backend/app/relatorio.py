@@ -8,7 +8,7 @@ from collections import Counter
 from dataclasses import dataclass
 from datetime import timedelta
 from statistics import mean
-from typing import TYPE_CHECKING, Dict, List, Optional, Sequence, Tuple
+from typing import TYPE_CHECKING, Dict, Iterable, List, Optional, Sequence, Tuple
 
 from app import presenca, recomendacoes
 from app.models import ENCERRAMENTO_POR_INATIVIDADE, LogEngajamento, SessaoEstudo
@@ -126,8 +126,8 @@ def resumir_serie(serie: Sequence[LogEngajamento]) -> IndicadoresDaSerie:
     # que decide qual vocabulário a coluna `alerta` está usando naquele ponto
     # (ver `_alerta_do`, em routers/telemetria.py). Classificar pelo rótulo
     # deixaria um motivo novo cair silenciosamente no balde errado.
-    fadiga = Counter(p.alerta for p in serie if p.score is not None and p.alerta)
-    incerteza = Counter(p.alerta for p in serie if p.score is None and p.alerta)
+    fadiga = _episodios(p.alerta if p.score is not None else None for p in serie)
+    incerteza = _episodios(p.alerta if p.score is None else None for p in serie)
 
     return IndicadoresDaSerie(
         media=mean(medidos) if houve_medida else None,
@@ -140,6 +140,38 @@ def resumir_serie(serie: Sequence[LogEngajamento]) -> IndicadoresDaSerie:
         motivos_de_incerteza=dict(incerteza),
         sonolencia_media=mean(sonolencias) if sonolencias else None,
     )
+
+
+def _episodios(rotulos: Iterable[Optional[str]]) -> Counter:
+    """Conta **episódios**, não pontos: trechos contíguos com o mesmo rótulo.
+
+    **O defeito que isto corrige.** A janela do `DetectorDeFadiga` é de 60
+    segundos, e o rótulo do ponto diz qual sinal domina a janela *naquele
+    instante*. Um único bocejo, portanto, mantém o rótulo `bocejos` aceso em
+    até 60 pontos consecutivos — e contar pontos transformava um bocejo em
+    "47 registros" na tela do aluno. O número não estava errado por um fator
+    pequeno: ele media outra coisa.
+
+    O detector sempre contou episódios corretamente, dentro da janela
+    (`Fadiga.bocejos`); o que se perdia era na agregação da série, aqui.
+
+    **O que é um episódio.** Uma corrida de pontos consecutivos com o mesmo
+    rótulo dominante. A definição tem um limite conhecido e aceito: se uma
+    incerteza de captura de um segundo cortar o meio de um bocejo, ele vira
+    dois episódios. Errar por um, para cima, num evento raro, é melhor que
+    errar por sessenta em todos eles — e a alternativa, costurar corridas
+    separadas por outro rótulo, exigiria decidir quanto tempo de interrupção
+    ainda é o mesmo bocejo, que é palpite sem dado para sustentá-lo.
+    """
+    contagem: Counter = Counter()
+    anterior: Optional[str] = None
+
+    for rotulo in rotulos:
+        if rotulo and rotulo != anterior:
+            contagem[rotulo] += 1
+        anterior = rotulo
+
+    return contagem
 
 
 def resumir(sessao: SessaoEstudo, serie: Sequence[LogEngajamento]) -> ResumoDaSessao:
