@@ -566,3 +566,27 @@ def test_canal_sem_validade_conhecida_e_fechado_na_conferencia(
         ws.send_json({"ear": 0.30, "yaw": 0.0, "rosto_detectado": True})
 
         assert ws.receive_json() == {"tipo": "erro", "motivo": "nao-autenticado"}
+
+
+def test_a_leitura_de_sonolencia_volta_no_score(client, com_sessao_ativa):
+    """Ela vai junto do score, e não só para o banco.
+
+    A primeira versão gravava a leitura e não a devolvia: o relatório a
+    mostrava, a tela ao vivo não. Apareceu ao rodar uma sessão de verdade
+    contra o servidor, não na suíte — e é o tipo de diferença que passa porque
+    cada lado, sozinho, funciona.
+
+    O campo vem `None` enquanto a primeira janela de 10s não fecha depois da
+    calibração, que é o caso deste teste: o que se afirma aqui é a **presença
+    da chave**, porque é ela que faltava.
+    """
+    with client.websocket_connect("/telemetria") as ws:
+        ws.send_json({"token": com_sessao_ativa})
+        assert ws.receive_json() == {"tipo": "autenticado"}
+
+        ws.send_json({"ear": 0.30, "yaw": 0.0, "rosto_detectado": True})
+        resposta = ws.receive_json()
+
+    assert resposta["tipo"] == "score"
+    assert "sonolencia" in resposta
+    assert resposta["sonolencia"] is None

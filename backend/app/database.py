@@ -1,3 +1,4 @@
+import logging
 from contextlib import contextmanager
 from typing import Iterator, Optional
 
@@ -6,6 +7,8 @@ from sqlalchemy.engine import Engine
 from sqlmodel import Session, SQLModel, create_engine
 
 from app.config import settings
+
+logger = logging.getLogger(__name__)
 
 # Importado pelo efeito colateral: uma tabela só entra em `SQLModel.metadata`
 # quando o módulo que a define é carregado. Sem isto, `criar_tabelas` percorre um
@@ -177,6 +180,20 @@ def _relaxar_obrigatoriedade(motor: Engine) -> None:
     que fazer com as linhas que já estão lá com `NULL` — inventar valor, apagar
     linha, recusar o boot —, e essa é uma decisão de produto que uma migração
     automática não tem como tomar sozinha.
+
+    **A coluna órfã entra aqui pelo mesmo motivo, e o caso é pior.** Quando um
+    campo é *removido* do modelo, a coluna continua no banco — a migração é
+    estreita de propósito e não derruba coluna. Se ela for `NOT NULL` e sem
+    default, nada mais a preenche, e **todo `INSERT` naquela tabela passa a
+    falhar**. Não é degradação: é a tabela inteira parando, para sempre, em
+    qualquer banco anterior à remoção.
+
+    Foi o que aconteceu com `sessao_estudo.resumida`, removida quando o resumo
+    congelado da ticket 13 passou a guardar esse estado em
+    `resumo_sessao.granular_descartado`. Bancos novos nascem sem a coluna e
+    nunca viram o problema; a suíte também não, porque cada teste cria o banco a
+    partir dos modelos de hoje. Apareceu ao subir a aplicação contra um `app.db`
+    de desenvolvimento e tentar abrir uma sessão de estudo.
     """
     inspetor = inspect(motor)
     existentes = set(inspetor.get_table_names())
@@ -186,6 +203,8 @@ def _relaxar_obrigatoriedade(motor: Engine) -> None:
             continue
 
         no_banco = {coluna["name"]: coluna for coluna in inspetor.get_columns(tabela.name)}
+        do_modelo = {coluna.name for coluna in tabela.columns}
+
         a_relaxar = [
             coluna.name
             for coluna in tabela.columns
@@ -194,8 +213,34 @@ def _relaxar_obrigatoriedade(motor: Engine) -> None:
             and coluna.name in no_banco
             and not no_banco[coluna.name]["nullable"]
         ]
+        # As órfãs: existem no banco, ninguém mais as declara, e exigem valor
+        # que nada tem para dar. Ver a nota no topo.
+        a_relaxar += [
+            nome
+            for nome, coluna in no_banco.items()
+            if nome not in do_modelo
+            and not coluna["nullable"]
+            and coluna.get("default") is None
+            and not coluna.get("primary_key")
+        ]
         if not a_relaxar:
             continue
+
+        orfas = [nome for nome in a_relaxar if nome not in do_modelo]
+        if orfas:
+            # Barulho de propósito. No PostgreSQL a coluna só perde o `NOT NULL`
+            # e os dados ficam; no SQLite a reconstrução a deixa para trás, e
+            # apagar coluna em silêncio não é coisa que um boot deva fazer sem
+            # dizer.
+            logger.warning(
+                "colunas de %s existem no banco e ninguém mais as declara: %s — "
+                "%s",
+                tabela.name,
+                orfas,
+                "serão descartadas na reconstrução (SQLite)"
+                if motor.dialect.name == "sqlite"
+                else "perderão apenas o NOT NULL",
+            )
 
         if motor.dialect.name == "sqlite":
             # O SQLite não tem ALTER COLUMN: a receita oficial é reconstruir a
