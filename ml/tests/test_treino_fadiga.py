@@ -345,3 +345,83 @@ def test_modelo_sem_introspeccao_devolve_vazio(janelas: pd.DataFrame) -> None:
     pipeline, _, _ = tf.treina_final(janelas, tf.catalogo_de_modelos()["regressao_logistica"])
 
     assert tf.importancias(pipeline) == {}
+
+
+# --- Escolha da configuração que vai a produção ----------------------------
+
+
+def _resultado(modelo: str, normalizacao: str, media: float, desvio: float):
+    """Um `ResultadoDaValidacao` com as médias forçadas, para testar a escolha.
+
+    Os folds são sintéticos porque o que está sob teste é a **regra de decisão**,
+    não a medição: interessa qual configuração ela escolhe dadas as médias, e
+    montar isso com treino de verdade tornaria o teste lento e indireto.
+    """
+    from relatorio import Media, Metricas
+
+    vazio = Metricas(
+        acuracia=media,
+        por_classe=[],
+        macro=Media(media, media, media),
+        ponderada=Media(media, media, media),
+        matriz_confusao=[[1, 0], [0, 1]],
+        rotulos=[0, 1],
+        n_amostras=2,
+    )
+    resultado = tf.ResultadoDaValidacao(
+        modelo=modelo, alvo=tf.ALVO_BINARIO, normalizacao=normalizacao
+    )
+    for fold, ajuste in enumerate((-desvio, 0.0, desvio), start=1):
+        resultado.folds.append(
+            tf.ResultadoDoFold(
+                fold=fold,
+                n_treino=10,
+                n_teste=5,
+                acuracia_balanceada=media + ajuste,
+                f1_macro=media + ajuste,
+                metricas=vazio,
+            )
+        )
+    return resultado
+
+
+def test_a_normalizacao_por_participante_nunca_vira_artefato() -> None:
+    import treinar_fadiga as cli
+
+    grade = [
+        _resultado("arvores", tf.NORMALIZACAO_PARTICIPANTE, 0.90, 0.01),
+        _resultado("arvores", tf.NORMALIZACAO_SESSAO, 0.60, 0.01),
+    ]
+
+    assert cli.melhor(grade).normalizacao == tf.NORMALIZACAO_SESSAO
+
+
+def test_empate_tecnico_vai_para_a_calibracao_por_sessao() -> None:
+    """A validação cruzada não mede a transposição para a webcam do aluno.
+
+    Ela roda dentro do UTA-RLDD, onde todo mundo gravou de celular. Em valor
+    absoluto, `ear_esq_min` separa RLDD e DAiSEE com d de Cohen de 0,97 — mais
+    do que separa as pessoas dentro de cada um; depois de centrar cada pessoa na
+    própria mediana, cai para 0,23. Entre duas configurações que a medição não
+    distingue, vence a que aprende a pessoa em vez da lente.
+    """
+    import treinar_fadiga as cli
+
+    grade = [
+        _resultado("arvores", tf.SEM_NORMALIZACAO, 0.6688, 0.0134),
+        _resultado("arvores", tf.NORMALIZACAO_SESSAO, 0.6553, 0.0180),
+    ]
+
+    assert cli.melhor(grade).normalizacao == tf.NORMALIZACAO_SESSAO
+
+
+def test_diferenca_maior_que_um_desvio_nao_e_empate() -> None:
+    """A preferência é desempate, não regra absoluta — perda real ganha da teoria."""
+    import treinar_fadiga as cli
+
+    grade = [
+        _resultado("arvores", tf.SEM_NORMALIZACAO, 0.75, 0.01),
+        _resultado("arvores", tf.NORMALIZACAO_SESSAO, 0.60, 0.01),
+    ]
+
+    assert cli.melhor(grade).normalizacao == tf.SEM_NORMALIZACAO
