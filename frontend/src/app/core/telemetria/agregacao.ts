@@ -27,6 +27,23 @@ export interface PayloadDeTelemetria {
   mar: number;
   rosto_detectado: boolean;
   incerteza: MotivoDeIncerteza | null;
+
+  /**
+   * Os quatro campos que o classificador de sonolência acrescentou.
+   *
+   * O modelo foi treinado com os olhos separados e com a pose completa; o IEE
+   * usa só o EAR médio e o yaw, e continua assim. São opcionais no contrato
+   * porque o backend aceita um cliente que não os mande — ali eles viram
+   * ausência de medida, que o pipeline do modelo sabe tratar, em vez de
+   * derrubarem o payload inteiro.
+   *
+   * **Continua não havendo landmark nenhum aqui.** São quatro números
+   * derivados, do mesmo tipo dos três que já trafegavam.
+   */
+  ear_esq?: number;
+  ear_dir?: number;
+  pitch?: number;
+  roll?: number;
 }
 
 /**
@@ -113,11 +130,27 @@ export function agregar(
   // segundos, então a média de um segundo dentro dele já fica perto do pico; o
   // máximo, em compensação, subiria com um único quadro em que o MediaPipe
   // errou o contorno do lábio, e viraria bocejo fantasma.
+  // Os olhos separados só vão se **todas** as leituras da janela os trouxerem:
+  // uma média tirada de metade da janela descreveria outra coisa que o modelo,
+  // treinado sobre janelas inteiras, não tem como distinguir de um segundo
+  // qualquer.
+  const porOlho = comRosto.every(
+    (leitura) => leitura.earDireito !== undefined && leitura.earEsquerdo !== undefined,
+  );
+
   return {
     ear: media(comRosto.map((leitura) => leitura.ear)),
     yaw: media(comRosto.map((leitura) => leitura.cabeca.yaw)),
     mar: media(comRosto.map((leitura) => leitura.mar)),
     rosto_detectado: true,
     incerteza,
+    ...(porOlho
+      ? {
+          ear_esq: media(comRosto.map((leitura) => leitura.earEsquerdo as number)),
+          ear_dir: media(comRosto.map((leitura) => leitura.earDireito as number)),
+        }
+      : {}),
+    pitch: media(comRosto.map((leitura) => leitura.cabeca.pitch)),
+    roll: media(comRosto.map((leitura) => leitura.cabeca.roll)),
   };
 }

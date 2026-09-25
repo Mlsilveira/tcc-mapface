@@ -17,7 +17,7 @@ ilimitada** — imune à expiração do token e imune ao logout. O buraco não �
 criado pela renovação; ele já existia e era escondido pelo teto de 30 minutos.
 """
 from datetime import datetime, timedelta
-from typing import NamedTuple, Optional, Tuple
+from typing import NamedTuple, Optional
 
 from fastapi import APIRouter, Depends, WebSocket, WebSocketDisconnect
 from sqlmodel import Session, select
@@ -74,10 +74,33 @@ def _autenticar(db: Session, mensagem: dict) -> Optional[Credencial]:
     return Credencial(aluno=aluno, expira_em=expiracao_do_token(token))
 
 
-def _ler_metricas(
-    payload: object,
-) -> Optional[Tuple[float, float, bool, Optional[float], Optional[str]]]:
-    """Extrai (ear, yaw, rosto_detectado, mar, incerteza) do payload, ou `None`.
+class MetricasDaLeitura(NamedTuple):
+    """O que um payload de telemetria carrega, já validado.
+
+    Virou um tipo nomeado quando os campos passaram de cinco para nove: uma
+    tupla de nove posições desempacotada na chamada é um erro esperando a
+    próxima adição, e trocar `pitch` por `roll` sem querer não produziria erro
+    nenhum — só uma feature com o valor da outra.
+
+    Os quatro últimos campos entraram junto com o classificador de sonolência,
+    que precisa dos olhos separados e da pose completa. São opcionais pela mesma
+    razão que `mar` foi opcional na ticket 8: um cliente anterior ao deploy
+    continua sendo aceito, só sem o sinal novo.
+    """
+
+    ear: float
+    yaw: float
+    rosto_detectado: bool
+    mar: Optional[float]
+    incerteza: Optional[str]
+    ear_esq: Optional[float] = None
+    ear_dir: Optional[float] = None
+    pitch: Optional[float] = None
+    roll: Optional[float] = None
+
+
+def _ler_metricas(payload: object) -> Optional[MetricasDaLeitura]:
+    """Valida o payload e devolve as métricas dele, ou `None` se estiver quebrado.
 
     Booleano não é aceito como número apesar de `bool` ser subclasse de `int`
     em Python: `{"ear": true}` é payload quebrado, não um EAR de 1,0.
@@ -116,8 +139,20 @@ def _ler_metricas(
 
     # `mar` malformado é tratado como ausente, e não como payload inválido: a
     # medição de bocejo se degrada sozinha sem custar a leitura de EAR e yaw,
-    # que são o que sustenta o score.
-    return ear, yaw, rosto_detectado, numero("mar"), incerteza
+    # que são o que sustenta o score. O mesmo vale para os quatro campos do
+    # classificador de sonolência — ausentes, as features correspondentes saem
+    # `nan`, que é o que o imputador do pipeline sabe tratar.
+    return MetricasDaLeitura(
+        ear=ear,
+        yaw=yaw,
+        rosto_detectado=rosto_detectado,
+        mar=numero("mar"),
+        incerteza=incerteza,
+        ear_esq=numero("ear_esq"),
+        ear_dir=numero("ear_dir"),
+        pitch=numero("pitch"),
+        roll=numero("roll"),
+    )
 
 
 def _alerta_do(resultado: analista.ResultadoIEE) -> Optional[str]:
@@ -203,10 +238,18 @@ async def telemetria_ws(
             await websocket.send_json({"tipo": "erro", "motivo": "payload-invalido"})
             continue
 
-        ear, yaw, rosto_detectado, mar, incerteza = metricas
         resultado = engajamento.observar(
-            ear=ear, yaw=yaw, rosto_detectado=rosto_detectado, mar=mar, incerteza=incerteza
+            ear=metricas.ear,
+            yaw=metricas.yaw,
+            rosto_detectado=metricas.rosto_detectado,
+            mar=metricas.mar,
+            incerteza=metricas.incerteza,
+            ear_esq=metricas.ear_esq,
+            ear_dir=metricas.ear_dir,
+            pitch=metricas.pitch,
+            roll=metricas.roll,
         )
+        rosto_detectado = metricas.rosto_detectado
 
         telemetria.registrar_log(
             db,
@@ -214,6 +257,7 @@ async def telemetria_ws(
             score=resultado.score,
             fadiga=resultado.fadiga.fator,
             alerta=_alerta_do(resultado),
+            sonolencia=resultado.sonolencia,
         )
 
         # Presença é **rosto na câmera**, não payload recebido — e esta linha é a

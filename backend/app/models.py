@@ -232,6 +232,18 @@ class LogEngajamento(SQLModel, table=True):
     #: casos nunca se confundem porque `score` os separa.
     alerta: Optional[str] = Field(default=None)
 
+    #: Probabilidade de sonolência lida pelo classificador treinado no UTA-RLDD,
+    #: entre 0 e 1, ou `None` — sem modelo carregado, durante os 60 segundos de
+    #: calibração, ou quando a janela de 10s ainda não fechou.
+    #:
+    #: **Continua não havendo nada de imagem aqui.** O que entra é um número
+    #: derivado das mesmas métricas que já trafegavam; nenhum landmark, nenhum
+    #: quadro. É também uma coluna **paralela** a `fadiga`, e não substituta: o
+    #: fator que desconta do IEE segue vindo das regras, e esta é a segunda
+    #: opinião, registrada para o relatório poder mostrar as duas e para a
+    #: orientação poder decidir, com dado na mão, se uma vira a outra.
+    sonolencia: Optional[float] = Field(default=None)
+
 
 class ResumoSessao(SQLModel, table=True):
     """Os indicadores de uma sessão, congelados no encerramento (ticket 13).

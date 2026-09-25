@@ -524,9 +524,16 @@ def salva_modelo(
     nomes_rotulos: Dict[int, str],
     caminho,
 ):
-    """Serializa o pipeline com o contexto de uso."""
+    """Serializa o pipeline com o contexto de uso.
+
+    **Os parâmetros viram dicionário, e não a dataclass.** Um pickle que carrega
+    `ParametrosFadiga` só abre onde `treino_fadiga` for importável — e quem mais
+    precisa abrir este arquivo é o backend, que não tem a trilha de ML no
+    ambiente. O sintoma seria um `ModuleNotFoundError` no boot, longe daqui.
+    """
     import joblib
     import sklearn
+    from dataclasses import asdict
     from pathlib import Path
 
     caminho = Path(caminho)
@@ -537,7 +544,7 @@ def salva_modelo(
             "colunas": colunas_features(),
             "rotulos": [int(r) for r in rotulos],
             "nomes_rotulos": dict(nomes_rotulos),
-            "parametros": parametros,
+            "parametros": asdict(parametros),
             "versao_sklearn": sklearn.__version__,
         },
         caminho,
@@ -566,12 +573,16 @@ def carrega_modelo(caminho) -> ModeloDeFadiga:
             stacklevel=2,
         )
 
+    parametros = artefato["parametros"]
+    if isinstance(parametros, dict):
+        parametros = ParametrosFadiga(**parametros)
+
     return ModeloDeFadiga(
         estimador=artefato["estimador"],
         colunas=list(artefato["colunas"]),
         rotulos=[int(r) for r in artefato["rotulos"]],
         nomes_rotulos=dict(artefato["nomes_rotulos"]),
-        parametros=artefato["parametros"],
+        parametros=parametros,
         versao_sklearn=artefato.get("versao_sklearn", "desconhecida"),
     )
 

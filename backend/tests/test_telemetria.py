@@ -74,4 +74,9 @@ def test_schema_do_log_nao_tem_campo_de_imagem_ou_video():
         "score",
         "fadiga",
         "alerta",
+        # Entrou com o classificador de sonolência, e a pergunta que esta lista
+        # existe para provocar foi feita: é um `float` entre 0 e 1, derivado das
+        # mesmas métricas agregadas que já trafegavam — EAR, MAR e pose. Nenhum
+        # landmark, nenhum quadro. Os landmarks continuam morrendo no navegador.
+        "sonolencia",
     }

@@ -26,6 +26,9 @@ WORKDIR /app
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
+# O modelo vai junto com o código, e não num volume: um artefato e um montador
+# de features que discordam sobre o que é uma feature produzem número plausível
+# e errado, então os dois precisam ser a mesma versão. São 4,5 MB.
 COPY app ./app
 
 # Usuário sem privilégio. Um processo que não precisa de root não deve rodar
