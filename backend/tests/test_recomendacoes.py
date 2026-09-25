@@ -101,7 +101,7 @@ class TestFadiga:
         """Sugestão sem o dado que a originou é conselho genérico."""
         sugestoes = recomendacoes.recomendar(resumo(alertas_de_fadiga={"bocejos": 4}))
 
-        assert "Bocejos: 4 registros" in sugestoes[0].motivo
+        assert "Bocejos: 4 episódios" in sugestoes[0].motivo
 
 
 class TestEstrategiaEDuracao:

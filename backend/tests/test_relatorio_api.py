@@ -108,7 +108,8 @@ class TestRelatorioAoEncerrar:
         corpo = client.get(f"/sessoes/{id_sessao}/relatorio", headers=cabecalhos).json()
 
         assert corpo["alertas_de_fadiga"] == [
-            {"codigo": "bocejos", "nome": "Bocejos", "ocorrencias": 2}
+            # Dois pontos contíguos do mesmo sinal são **um** episódio.
+            {"codigo": "bocejos", "nome": "Bocejos", "ocorrencias": 1}
         ]
         assert corpo["motivos_de_incerteza"][0]["nome"] == "Pouca luz no ambiente"
 
