@@ -10,6 +10,7 @@ respondendo a uma pergunta diferente.
 | [03 — Arquitetura em Mermaid](./03-arquitetura-mermaid.md) | Como o sistema se organiza, em duas versões | Slides e capítulo de arquitetura |
 | [04 — O treinamento do Random Forest](./04-o-treinamento-do-random-forest.md) | O que foi tentado no ML, o que falhou, e por quê | Capítulo de metodologia e resultados |
 | [05 — Linha do tempo](./05-linha-do-tempo.md) | Que feature entrou quando, o que ela quebrou e o que a quebra ensinou | Capítulo de desenvolvimento e cronograma |
+| [06 — Deploy na AWS](./06-deploy-na-aws.md) | Como subir para produção, passo a passo, e o que ainda bloqueia | Quem for operar a conta AWS |
 
 ## Ordem sugerida de leitura
 

@@ -53,6 +53,10 @@ behaviors para `/auth`, `/sessoes`, `/metodos` e `/telemetria`. O navegador fala
 só com `https://…cloudfront.net`, e com isso o CORS desaparece (mesma origem), o
 `wss` funciona e o frontend não tem nenhuma URL de ambiente para configurar.
 
+> **Subindo pela primeira vez?** O passo a passo completo, desde proteger a
+> conta da AWS até publicar as duas pontas, está em
+> [`relatorios&mermaid/06-deploy-na-aws.md`](../relatorios&mermaid/06-deploy-na-aws.md).
+
 ## Pré-requisitos
 
 - Terraform **1.9 ou mais novo**
