@@ -306,11 +306,33 @@ Tudo em `infra/`, em quatro módulos: `rede`, `site`, `registro` e `banco`. O RE
 
 **Bloqueada por:** Ticket 6 e Ticket 14.
 
-- [ ] Backend containerizado (Dockerfile) publicado no ECR — **Dockerfile pronto**, falta publicar
-- [ ] Backend rodando em ECS Fargate
-- [ ] Frontend publicado no S3
-- [ ] Variáveis de ambiente e conexão com o RDS configuradas
-- [ ] Uma sessão de estudo completa funciona no ambiente publicado
+- [x] Backend containerizado (Dockerfile) **e o Terraform que o publica** — falta rodar contra uma conta
+- [x] Backend rodando em ECS Fargate — cluster, task definition e serviço declarados
+- [x] Frontend publicado no S3 — bucket, distribuição e o passo a passo do `s3 sync`
+- [x] Variáveis de ambiente e conexão com o RDS configuradas
+- [ ] Uma sessão de estudo completa funciona no ambiente publicado — **exige a conta AWS**
+
+O código está escrito e validado (`terraform fmt -check` e `terraform validate`). O último critério é o único que não dá para fechar sem credencial: ele pede uma sessão real no ambiente publicado.
+
+### O que a ticket acrescentou
+
+O módulo `servico` — ECS Fargate, ALB, duas roles de IAM, o grupo de log e o segredo da aplicação — mais o segundo origin no CloudFront. Vinte e um recursos novos.
+
+### As seis decisões que valem a defesa
+
+**A `SECRET_KEY` saiu do código.** Era o único item bloqueante por segurança: com o placeholder de `app/config.py`, qualquer pessoa que lesse o repositório conseguiria forjar um token de qualquer aluno. Agora ela é gerada no apply e vive no Secrets Manager.
+
+**A senha do banco viaja sozinha.** O ECS injeta segredo em **uma variável de ambiente**, não no meio de uma URL. Montar a `DATABASE_URL` completa exigiria alguém concatenar a senha com o resto — e esse alguém teria a senha em texto claro, no estado do Terraform ou no log do contêiner. Por isso `app/config.py` passou a compor a URL a partir de peças separadas, em memória, com a senha escapada: senha gerada pela AWS contém `@`, `/` e `:`, e sem escapar a URL parte no lugar errado e o erro que aparece é "host desconhecido".
+
+**O ALB só aceita o CloudFront.** Ele fala HTTP — o TLS termina na distribuição, e o ACM não emite certificado para nome de ALB —, mas o security group usa a lista de prefixos gerenciada `com.amazonaws.global.cloudfront.origin-facing`. Não há como chegar nele por fora e conversar em texto claro.
+
+**O banco fechou para a VPC.** A ticket 14 deixou escrito no código que, quando o serviço existisse, a regra de `cidr_ipv4` deveria virar `referenced_security_group_id`. Foi feito: com `publicar_backend = true`, a porta 5432 aceita **só o security group da task**. A regra mora na raiz porque depende dos dois módulos, e colocá-la em qualquer um criaria dependência circular.
+
+**Os timeouts foram ajustados para o WebSocket.** O padrão de 30 s do origin do CloudFront derrubaria a telemetria a cada meio minuto, e o cliente reconectaria perdendo a baseline em memória. Foram para 60 s, junto com `deregistration_delay` de 30 s no target group.
+
+**`publicar_backend` existe para quebrar o ovo e a galinha.** Um serviço ECS apontando para repositório ECR vazio entra em ciclo permanente de falha de deploy. Com `false`, sobe só a infraestrutura da ticket 14; publica-se a imagem; volta-se para `true`. A mesma chave desliga o item mais caro da conta — o ALB é ~43% do custo mensal — sem destruir o resto.
+
+**Uma réplica, com validação que recusa mais.** A baseline calibrada vive na memória do processo; com duas tasks, o mesmo aluno reconectando recalibra do zero no meio da sessão. A variável aceita 0 (para parar de pagar Fargate) e 1, e recusa 2 com mensagem explicando o porquê.
 
 ### A decisão de topologia: um domínio só
 

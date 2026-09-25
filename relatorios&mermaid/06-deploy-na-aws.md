@@ -2,17 +2,16 @@
 
 Do momento em que você recebe o acesso à conta até a aplicação no ar.
 
-> ## Leia isto primeiro
+> ## Estado deste tutorial
 >
-> **A trilha para no passo 6.** O Terraform de hoje (ticket 14) provisiona rede,
-> S3 + CloudFront, ECR e RDS. Ele **não** cria o ECS, o ALB nem os *behaviors*
-> do CloudFront que encaminham a API — isso é a ticket 15, e ela não está
-> escrita.
+> **A ticket 15 foi escrita.** O Terraform provisiona a infraestrutura inteira —
+> rede, S3 + CloudFront, ECR, RDS, ECS Fargate, ALB, IAM e os segredos —, e os
+> *behaviors* do CloudFront encaminham a API pelo mesmo domínio do site.
 >
-> Na prática: você consegue subir toda a infraestrutura e publicar o frontend.
-> O backend fica sem lugar para rodar, e a aplicação abre mas não faz login.
->
-> A [seção 6](#6-o-que-falta-a-ticket-15) lista exatamente o que falta.
+> Tudo aqui está validado com `terraform fmt -check` e `terraform validate`,
+> mas **nunca rodou contra uma conta AWS de verdade**. O primeiro `apply` é o
+> primeiro teste real; os pontos onde ele tem mais chance de tropeçar estão em
+> [Os erros mais prováveis](#os-erros-mais-prováveis).
 
 > ## Sobre as credenciais
 >
@@ -34,8 +33,8 @@ Do momento em que você recebe o acesso à conta até a aplicação no ar.
 3. [Configurar as credenciais](#3-configurar-as-credenciais)
 4. [Provisionar a infraestrutura](#4-provisionar-a-infraestrutura)
 5. [Publicar o frontend](#5-publicar-o-frontend)
-6. [O que falta — a ticket 15](#6-o-que-falta-a-ticket-15)
-7. [Publicar o backend *(depois da 15)*](#7-publicar-o-backend-depois-da-15)
+6. [Publicar a imagem do backend](#6-publicar-a-imagem-do-backend)
+7. [Ligar o backend](#7-ligar-o-backend)
 8. [Verificar que funciona](#8-verificar-que-funciona)
 9. [Desmontar e controlar custo](#9-desmontar-e-controlar-custo)
 10. [Checklist](#10-checklist)
@@ -168,8 +167,12 @@ cd /d/tcc/infra && terraform plan
 Deve listar ~19 recursos. Confira que não há nada sendo destruído (é a primeira
 execução, então não deveria haver).
 
+**Suba primeiro sem o backend.** Um serviço ECS apontando para um repositório
+ECR vazio entra em ciclo permanente de falha de deploy, e a imagem ainda não
+existe:
+
 ```bash
-cd /d/tcc/infra && terraform apply
+cd /d/tcc/infra && terraform apply -var publicar_backend=false
 ```
 
 Digite `yes` quando pedir. **Leva de 8 a 12 minutos**, quase tudo esperando o
@@ -226,8 +229,8 @@ cd /d/tcc/infra && terraform output -raw endereco_do_site
 ```
 
 **O que você vai ver:** a tela de login carrega, com a marca e o design certos,
-em HTTPS. Ao tentar entrar, a requisição falha — não há backend. É o esperado
-até a ticket 15 existir.
+em HTTPS. Ao tentar entrar, a requisição ainda falha — o backend só entra no
+passo 7. É o esperado nesta altura.
 
 > **A coisa mais importante aqui já funciona:** o site está em **HTTPS**, e é
 > isso que faz o navegador liberar a webcam. Foi por causa disso que o
@@ -235,52 +238,7 @@ até a ticket 15 existir.
 
 ---
 
-## 6. O que falta: a ticket 15
-
-A partir daqui o tutorial descreve trabalho que ainda não foi escrito.
-
-### O que precisa ser criado no Terraform
-
-| Recurso | Papel |
-| --- | --- |
-| `aws_ecs_cluster` | onde a task roda |
-| `aws_ecs_task_definition` | 0,25 vCPU, 0,5 GB, a imagem do ECR, as variáveis de ambiente |
-| `aws_ecs_service` | mantém **uma** task viva (`desired_count = 1`) |
-| `aws_lb` + `aws_lb_target_group` + `aws_lb_listener` | endereço estável e health check em `/health` |
-| `aws_security_group` × 2 | ALB aceita do CloudFront; task aceita do ALB |
-| `aws_iam_role` × 2 | execução (puxar do ECR, ler segredo, escrever log) e da task |
-| `aws_secretsmanager_secret` | a `SECRET_KEY` da aplicação |
-| `aws_cloudwatch_log_group` | log da task |
-| *no módulo `site`* | segundo origin (o ALB) + behaviors para `/auth`, `/sessoes`, `/metodos` e `/telemetria` |
-
-### As três decisões já tomadas que isso precisa respeitar
-
-**Uma réplica só.** `desired_count = 1`, e um worker no uvicorn. A baseline
-calibrada de cada aluno vive na memória do processo — com duas tasks, o mesmo
-aluno recalibraria ao reconectar na outra.
-
-**Os behaviors do CloudFront precisam de cache desligado** e de encaminhar todos
-os headers (`AllViewerExceptHostHeader`), senão a API é cacheada e o WebSocket
-não estabelece.
-
-**A `SECRET_KEY` tem que vir do Secrets Manager.** Hoje ela tem um placeholder
-como padrão em `app/config.py`. **Subir assim significa que qualquer pessoa que
-leia o repositório consegue forjar um token de qualquer aluno.** É o único item
-desta lista que é bloqueante por segurança, não por funcionalidade.
-
-### Por que o ALB, e não algo mais barato
-
-O CloudFront precisa de um endereço **estável** na origem, e uma task Fargate
-com IP público não tem. O ALB é ~US$ 18/mês e é 43% da conta — não há
-substituto sem trocar a arquitetura.
-
-E ele entra como **segundo origin do mesmo CloudFront**, não como domínio
-próprio: o ACM não emite certificado para nome de ALB, então HTTPS direto no
-balanceador exigiria registrar e validar um domínio.
-
----
-
-## 7. Publicar o backend *(depois da 15)*
+## 6. Publicar a imagem do backend
 
 Autentique o Docker no ECR:
 
@@ -294,15 +252,43 @@ Construa e envie:
 cd /d/tcc/backend && docker build -t mapface-backend . && docker tag mapface-backend:latest "$(cd ../infra && terraform output -raw repositorio_do_backend):latest" && docker push "$(cd ../infra && terraform output -raw repositorio_do_backend):latest"
 ```
 
-Force o ECS a pegar a imagem nova:
+A imagem tem ~400 MB — scikit-learn, numpy, scipy e pandas somam a maior parte.
+O primeiro envio leva alguns minutos; os seguintes reaproveitam as camadas.
+
+---
+
+## 7. Ligar o backend
+
+Agora que existe imagem, suba o resto:
 
 ```bash
-aws ecs update-service --cluster mapface-poc --service mapface-poc-backend --force-new-deployment --region us-east-1
+cd /d/tcc/infra && terraform apply
 ```
 
-> **Na primeira vez, construa a imagem antes de criar o serviço ECS.** Um
-> serviço apontando para um repositório vazio entra em ciclo de falha de deploy,
-> e diagnosticar isso custa mais que inverter a ordem.
+Isto cria o cluster ECS, a task, o serviço, o ALB, as roles de IAM e o segredo
+da aplicação — e acrescenta o backend como segundo origin do CloudFront, com os
+*behaviors* de `/auth`, `/sessoes`, `/metodos`, `/telemetria` e `/health`.
+
+**Leva de 5 a 8 minutos**, quase tudo esperando o CloudFront propagar a
+distribuição atualizada.
+
+Três coisas acontecem aqui, e vale saber:
+
+- A `SECRET_KEY` é gerada e guardada no Secrets Manager. **Ela não aparece em
+  lugar nenhum que você precise copiar** — o ECS a injeta direto no contêiner.
+- O banco **fecha**: a porta 5432 deixa de aceitar a VPC inteira e passa a
+  aceitar só o security group da task.
+- O ALB nasce público mas só atende a lista de prefixos do CloudFront. Acessar
+  o DNS dele direto do seu navegador dá timeout, e isso é o comportamento
+  correto.
+
+### Nos deploys seguintes
+
+Depois de um `docker push`, force o ECS a pegar a imagem nova:
+
+```bash
+cd /d/tcc/infra && aws ecs update-service --cluster "$(terraform output -raw cluster_do_backend)" --service "$(terraform output -raw servico_do_backend)" --force-new-deployment --region us-east-1
+```
 
 ---
 
@@ -396,24 +382,50 @@ folga larga se o ambiente subir só para testar e demonstrar.
 - [ ] Cache invalidado
 - [ ] Tela de login carrega
 
-**Backend** *(bloqueado pela ticket 15)*
-- [ ] ECS, ALB, IAM e behaviors escritos no Terraform
-- [ ] **`SECRET_KEY` vindo do Secrets Manager** ← bloqueante por segurança
+**Backend**
+- [x] ECS, ALB, IAM e behaviors escritos e validados no Terraform
+- [x] `SECRET_KEY` vindo do Secrets Manager
 - [ ] Imagem construída e enviada ao ECR
+- [ ] `terraform apply` completo, com `publicar_backend` no padrão
 - [ ] `/health` respondendo pelo endereço do CloudFront
 - [ ] Uma sessão de estudo completa, do login ao relatório
 
 ---
 
-## Os três erros mais prováveis
+## Os erros mais prováveis
+
+> Nada do que está escrito aqui jamais rodou contra uma conta AWS de verdade —
+> o Terraform está validado, não aplicado. Estes são os pontos onde o primeiro
+> `apply` tem mais chance de tropeçar.
+
+**A task sobe e morre em ciclo.** Veja o log com
+`aws logs tail "$(terraform output -raw grupo_de_log_do_backend)" --since 10m`.
+As três causas prováveis, em ordem: a imagem não existe no ECR; o banco ainda
+não aceita a task (confira que o `apply` completo rodou, e não o
+`-var publicar_backend=false`); ou a `DATABASE_PASSWORD` chegou como o JSON
+inteiro em vez da senha — o que significa que o sufixo `:password::` do
+`valueFrom` não foi aplicado.
+
+**`terraform apply` falha dizendo que o nome do segredo já existe.** É a janela
+de recuperação do Secrets Manager. O módulo usa `recovery_window_in_days = 0`
+justamente para evitar isso, mas se o segredo foi criado antes dessa
+configuração, espere ou apague com
+`aws secretsmanager delete-secret --force-delete-without-recovery`.
+
+**O ALB fica com o target *unhealthy*.** O health check bate em `/health` e
+espera 200. Se a task está de pé e o check falha, quase sempre é o security
+group: a task precisa aceitar a porta 8000 vinda do grupo do ALB.
+
+
 
 **A webcam não é pedida.** O site não está em contexto seguro. Confira que você
 abriu o endereço do **CloudFront** (`https://...cloudfront.net`) e não o do
 bucket S3.
 
-**Login falha com erro de rede.** É o caso esperado antes da ticket 15 — não há
-backend. Depois dela, confira os behaviors do CloudFront: se `/auth` não estiver
-encaminhado para o ALB, o CloudFront tenta servir do S3 e devolve 403.
+**Login falha com erro de rede.** Se o backend já subiu, confira os *behaviors*
+do CloudFront: quando `/auth` não está encaminhado para o ALB, a distribuição
+tenta servir do S3 e devolve 403. Lembre também que a propagação do CloudFront
+leva alguns minutos depois do `apply`.
 
 **A tela abre a versão antiga depois do deploy.** Faltou a invalidação do
 CloudFront. Rode o comando do passo 5 e espere de 2 a 5 minutos.

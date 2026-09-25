@@ -82,6 +82,20 @@ data "aws_cloudfront_cache_policy" "otimizado" {
   name = "Managed-CachingOptimized"
 }
 
+# A API não pode ser cacheada: cada resposta depende do aluno autenticado, e um
+# relatório servido do cache seria o de outra pessoa.
+data "aws_cloudfront_cache_policy" "sem_cache" {
+  name = "Managed-CachingDisabled"
+}
+
+# Encaminha tudo o que o navegador mandou — inclusive `Authorization`, sem o
+# qual nenhuma rota protegida funciona, e os cabeçalhos de upgrade, sem os quais
+# o WebSocket nunca estabelece. O `ExceptHostHeader` é obrigatório aqui: o ALB
+# precisa receber o host dele, não o do CloudFront.
+data "aws_cloudfront_origin_request_policy" "tudo_menos_host" {
+  name = "Managed-AllViewerExceptHostHeader"
+}
+
 resource "aws_cloudfront_distribution" "site" {
   enabled             = true
   comment             = var.nome
@@ -99,6 +113,32 @@ resource "aws_cloudfront_distribution" "site" {
     origin_access_control_id = aws_cloudfront_origin_access_control.site.id
   }
 
+  # O backend entra como **segundo origin da mesma distribuição**, e é isso que
+  # faz site e API compartilharem domínio. Ver `var.dominio_do_backend`.
+  dynamic "origin" {
+    for_each = var.dominio_do_backend == null ? [] : [var.dominio_do_backend]
+
+    content {
+      origin_id   = "alb-backend"
+      domain_name = origin.value
+
+      custom_origin_config {
+        origin_protocol_policy = "http-only"
+        http_port              = 80
+        https_port             = 443
+        # O TLS termina aqui, no CloudFront. Daqui para dentro é rede da AWS, e
+        # o security group do ALB só aceita a lista de prefixos do CloudFront.
+        origin_ssl_protocols = ["TLSv1.2"]
+
+        # O WebSocket de telemetria fica aberto pela sessão inteira. O padrão de
+        # 30 s derrubaria a conexão de quem estuda a cada meio minuto, e o
+        # cliente reconectaria perdendo a baseline em memória.
+        origin_read_timeout      = 60
+        origin_keepalive_timeout = 60
+      }
+    }
+  }
+
   default_cache_behavior {
     target_origin_id = "s3-site"
     # Redirecionar e não apenas permitir: quem digitar `http://` chega no
@@ -108,6 +148,31 @@ resource "aws_cloudfront_distribution" "site" {
     cached_methods         = ["GET", "HEAD"]
     compress               = true
     cache_policy_id        = data.aws_cloudfront_cache_policy.otimizado.id
+  }
+
+  dynamic "ordered_cache_behavior" {
+    for_each = var.dominio_do_backend == null ? [] : var.caminhos_da_api
+
+    content {
+      path_pattern     = ordered_cache_behavior.value
+      target_origin_id = "alb-backend"
+
+      # Redirecionar, e não apenas permitir: uma chamada em `http://` seria
+      # respondida em texto claro, com o token dentro.
+      viewer_protocol_policy = "redirect-to-https"
+
+      # Todos os métodos: o `OPTIONS` do preflight, o `POST` do login e o `GET`
+      # com upgrade que abre o WebSocket.
+      allowed_methods = ["GET", "HEAD", "OPTIONS", "PUT", "POST", "PATCH", "DELETE"]
+      cached_methods  = ["GET", "HEAD"]
+
+      cache_policy_id          = data.aws_cloudfront_cache_policy.sem_cache.id
+      origin_request_policy_id = data.aws_cloudfront_origin_request_policy.tudo_menos_host.id
+
+      # Comprimir uma resposta de API a 1 Hz custa CPU e não economiza nada: os
+      # payloads do score têm dezenas de bytes.
+      compress = false
+    }
   }
 
   # O Angular é uma SPA: `/home` e `/relatorio/7` não são objetos no bucket, e o

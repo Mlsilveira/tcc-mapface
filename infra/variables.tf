@@ -78,3 +78,38 @@ variable "tags_extras" {
   type        = map(string)
   default     = {}
 }
+
+variable "publicar_backend" {
+  description = <<-TEXTO
+    Cria o ECS, o ALB e liga a API ao CloudFront (ticket 15).
+
+    `false` reproduz exatamente a ticket 14: só site, banco e registro. É o que
+    permite subir a infraestrutura **antes** de existir imagem no ECR — um
+    serviço apontando para repositório vazio entra em ciclo permanente de falha
+    de deploy.
+
+    Também é a chave para desligar o item mais caro da conta sem destruir o
+    resto: o ALB sozinho é ~43% do custo mensal.
+  TEXTO
+  type        = bool
+  default     = true
+}
+
+variable "tag_da_imagem" {
+  description = "Tag da imagem do backend a rodar. `latest` casa com o fluxo de deploy do README."
+  type        = string
+  default     = "latest"
+}
+
+variable "replicas_do_backend" {
+  description = <<-TEXTO
+    Quantas tasks do backend rodam. Zero para parar de pagar Fargate sem
+    destruir nada.
+
+    **Não passe de 1.** A baseline calibrada de cada aluno vive na memória do
+    processo; com duas tasks, o mesmo aluno reconectando recalibra do zero no
+    meio da sessão.
+  TEXTO
+  type        = number
+  default     = 1
+}

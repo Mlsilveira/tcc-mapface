@@ -18,10 +18,12 @@ logger = logging.getLogger(__name__)
 # passe pelo `app.main` (um script de manutenção, um shell) não teria essa sorte.
 from app import models  # noqa: F401
 
-_connect_args = (
-    {"check_same_thread": False} if settings.database_url.startswith("sqlite") else {}
-)
-engine = create_engine(settings.database_url, connect_args=_connect_args)
+#: A URL vem de `settings.url_do_banco`, e não de `settings.database_url`: em
+#: produção a senha chega sozinha do Secrets Manager, numa variável própria, e a
+#: URL é composta em memória. Ver a nota em `app.config`.
+_url = settings.url_do_banco
+_connect_args = {"check_same_thread": False} if _url.startswith("sqlite") else {}
+engine = create_engine(_url, connect_args=_connect_args)
 
 
 #: Identificador do cadeado consultivo do boot. Número arbitrário e estável — o
