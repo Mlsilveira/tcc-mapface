@@ -9,15 +9,22 @@ respondendo a uma pergunta diferente.
 | [02 — O projeto e a banca](./02-o-projeto-e-a-banca.md) | Para que serve, o que dá para medir, o que perguntam e como responder | Quem vai escrever a monografia e apresentar |
 | [03 — Arquitetura em Mermaid](./03-arquitetura-mermaid.md) | Como o sistema se organiza, em duas versões | Slides e capítulo de arquitetura |
 | [04 — O treinamento do Random Forest](./04-o-treinamento-do-random-forest.md) | O que foi tentado no ML, o que falhou, e por quê | Capítulo de metodologia e resultados |
+| [05 — Linha do tempo](./05-linha-do-tempo.md) | O que foi construído quando, e o que cada quebra ensinou | Capítulo de desenvolvimento e cronograma |
 
 ## Ordem sugerida de leitura
 
-Para **entender o projeto**: 02 → 03 → 04 → 01.
+Para **entender o projeto**: 05 → 02 → 03 → 04 → 01. A linha do tempo primeiro dá
+o contexto de *por que* o sistema é como é antes de você ver *o que* ele é.
 
 Para **mexer no código**: 01 → 03, e depois 04 se for tocar na trilha de ML.
 
-Para **preparar a defesa**: 02 inteiro, depois a seção 7 do 04 (as armadilhas) —
-é de lá que saem as melhores respostas sobre rigor metodológico.
+Para **preparar a defesa**: 02 inteiro, depois a seção 7 do 04 (as armadilhas) e as
+dez descobertas do 05 — é de lá que saem as melhores respostas sobre rigor
+metodológico.
+
+> **Antes de qualquer coisa, leia a nota de autoria no começo do 05.** O
+> histórico do Git não bate com a divisão de trabalho declarada no spec, e isso
+> precisa ser resolvido antes da entrega.
 
 ## Documentos relacionados, fora desta pasta
 
