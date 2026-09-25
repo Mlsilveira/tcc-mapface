@@ -621,3 +621,91 @@ def test_o_boot_nao_pede_cadeado_no_sqlite():
         pass
 
     assert motor.executados == []
+
+
+def test_coluna_orfa_obrigatoria_deixa_de_travar_o_insert(tmp_path):
+    """Campo removido do modelo não pode parar a tabela inteira.
+
+    **O caso real.** `sessao_estudo.resumida` saiu do modelo quando o resumo
+    congelado da ticket 13 passou a guardar esse estado em
+    `resumo_sessao.granular_descartado`. A migração é estreita de propósito e
+    não derruba coluna, então ela ficou no banco — `NOT NULL`, sem default, e
+    sem ninguém para preenchê-la. Resultado: **todo `INSERT` em
+    `sessao_estudo` passou a falhar**, para sempre, em qualquer banco anterior
+    à remoção.
+
+    Nem a suíte pegava (cada teste cria o banco a partir dos modelos de hoje)
+    nem um banco novo sofria (nasce sem a coluna). Apareceu ao subir a
+    aplicação contra um `app.db` de desenvolvimento e tentar abrir uma sessão.
+    """
+    caminho = tmp_path / "com_orfa.db"
+
+    with sqlite3.connect(caminho) as conexao:
+        conexao.executescript(
+            """
+            CREATE TABLE aluno (
+                id INTEGER PRIMARY KEY, nome VARCHAR, email VARCHAR, senha_hash VARCHAR
+            );
+            CREATE TABLE sessao_estudo (
+                id INTEGER PRIMARY KEY, id_aluno INTEGER NOT NULL,
+                inicio DATETIME NOT NULL, fim DATETIME,
+                ultima_atividade DATETIME NOT NULL,
+                resumida BOOLEAN NOT NULL
+            );
+            INSERT INTO aluno VALUES (1, 'Alguem', 'a@b.com', 'x');
+            INSERT INTO sessao_estudo VALUES
+                (1, 1, '2026-08-20 10:00:00', NULL, '2026-08-20 10:00:00', 0);
+            """
+        )
+
+    motor = create_engine(f"sqlite:///{caminho.as_posix()}")
+    criar_tabelas(motor)
+
+    # O que já estava gravado continua lá: a reconstrução copia as linhas.
+    with sqlite3.connect(caminho) as conexao:
+        assert conexao.execute("SELECT COUNT(*) FROM sessao_estudo").fetchone()[0] == 1
+
+    # E agora dá para gravar de novo, que é o que estava impossível.
+    with motor.begin() as conexao:
+        conexao.execute(
+            text(
+                "INSERT INTO sessao_estudo (id_aluno, inicio, ultima_atividade)"
+                " VALUES (1, '2026-08-21 09:00:00', '2026-08-21 09:00:00')"
+            )
+        )
+
+    with sqlite3.connect(caminho) as conexao:
+        assert conexao.execute("SELECT COUNT(*) FROM sessao_estudo").fetchone()[0] == 2
+        colunas = {linha[1] for linha in conexao.execute("PRAGMA table_info(sessao_estudo)")}
+
+    # A órfã não sobrevive à reconstrução no SQLite, e isso sai no log como
+    # aviso — ver `_relaxar_obrigatoriedade`. No PostgreSQL ela perderia apenas
+    # o `NOT NULL` e os dados ficariam.
+    assert "resumida" not in colunas
+
+
+def test_coluna_orfa_opcional_nao_incomoda_ninguem(tmp_path):
+    """Só a obrigatória trava o INSERT; a que aceita nulo fica quieta.
+
+    Reconstruir a tabela por causa de uma coluna inofensiva seria pagar cópia
+    de dados a cada boot sem nada a ganhar.
+    """
+    caminho = tmp_path / "orfa_opcional.db"
+
+    with sqlite3.connect(caminho) as conexao:
+        conexao.executescript(
+            """
+            CREATE TABLE aluno (
+                id INTEGER PRIMARY KEY, nome VARCHAR, email VARCHAR, senha_hash VARCHAR,
+                apelido VARCHAR
+            );
+            INSERT INTO aluno VALUES (1, 'Alguem', 'a@b.com', 'x', 'ninguem');
+            """
+        )
+
+    criar_tabelas(create_engine(f"sqlite:///{caminho.as_posix()}"))
+
+    with sqlite3.connect(caminho) as conexao:
+        colunas = {linha[1] for linha in conexao.execute("PRAGMA table_info(aluno)")}
+        assert "apelido" in colunas
+        assert conexao.execute("SELECT apelido FROM aluno").fetchone()[0] == "ninguem"

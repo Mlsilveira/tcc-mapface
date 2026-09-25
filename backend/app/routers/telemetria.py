@@ -301,5 +301,12 @@ async def telemetria_ws(
                 "fadiga": resultado.fadiga.fator,
                 "motivos_fadiga": list(resultado.fadiga.motivos),
                 "incerteza": resultado.incerteza,
+                # Vai junto, mas não é o mesmo tipo de coisa que os campos
+                # acima: `fadiga` explica o desconto que o score sofreu, e isto
+                # é uma leitura paralela que não entrou na conta. `None`
+                # enquanto a primeira janela de 10s não fecha depois da
+                # calibração — e `None` continua sendo "não dá para afirmar",
+                # nunca zero.
+                "sonolencia": resultado.sonolencia,
             }
         )
