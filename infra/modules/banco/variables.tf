@@ -43,6 +43,20 @@ variable "retencao_de_backup_dias" {
   type        = number
 }
 
+variable "abrir_para_a_vpc" {
+  description = <<-TEXTO
+    Libera a porta 5432 para toda a faixa da VPC.
+
+    Fica `true` enquanto não existe serviço: sem nenhuma regra, um banco
+    recém-criado é inalcançável até por quem foi criá-lo, e o diagnóstico disso
+    custa caro. Quando a ticket 15 entra, a raiz passa `false` e cria no lugar
+    uma regra que referencia **o security group da task** — aí só o backend
+    entra, e não qualquer coisa que venha a existir na VPC.
+  TEXTO
+  type        = bool
+  default     = true
+}
+
 variable "protecao_contra_remocao" {
   description = "Impede que o `destroy` apague o banco."
   type        = bool

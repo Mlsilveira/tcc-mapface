@@ -37,13 +37,15 @@ resource "aws_security_group" "banco" {
 }
 
 resource "aws_vpc_security_group_ingress_rule" "postgres" {
+  # A promessa que a ticket 14 deixou escrita aqui — "quando o serviço ECS
+  # existir, trocar por `referenced_security_group_id`" — foi cumprida na
+  # ticket 15: a raiz passa `abrir_para_a_vpc = false` e cria a regra estreita.
+  # Esta continua existindo para quando não há serviço nenhum.
+  count = var.abrir_para_a_vpc ? 1 : 0
+
   security_group_id = aws_security_group.banco.id
   description       = "PostgreSQL a partir da propria VPC"
 
-  # A faixa da VPC, e não `0.0.0.0/0`: o banco não está na internet, e mesmo
-  # que estivesse, a regra não o exporia. Quando o serviço ECS existir, o certo
-  # é trocar isto por `referenced_security_group_id` apontando para o grupo da
-  # task — aí só o backend entra, nem o resto da VPC.
   cidr_ipv4   = var.cidr_da_vpc
   ip_protocol = "tcp"
   from_port   = 5432

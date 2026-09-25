@@ -6,6 +6,12 @@ terraform {
       source  = "hashicorp/aws"
       version = "~> 6.0"
     }
+    # Gera a SECRET_KEY da aplicação. Ver a nota no módulo `servico` sobre o
+    # que isso custa e por que não há alternativa melhor para segredo de app.
+    random = {
+      source  = "hashicorp/random"
+      version = "~> 3.6"
+    }
   }
 
   # O estado fica **local** por enquanto, e isso é uma limitação conhecida, não

@@ -1,4 +1,5 @@
-from typing import List
+from typing import List, Optional
+from urllib.parse import quote
 
 from pydantic import AliasChoices, Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
@@ -14,6 +15,28 @@ class Settings(BaseSettings):
     """
 
     database_url: str = "sqlite:///./app.db"
+
+    # As peças do PostgreSQL, para quando a URL inteira não puder ser escrita
+    # num lugar só.
+    #
+    # **Por que isto existe.** Em produção a senha do banco é gerada e guardada
+    # pela própria AWS no Secrets Manager, e o ECS injeta um segredo em **uma
+    # variável de ambiente**, não no meio de uma URL. Montar a `DATABASE_URL`
+    # completa exigiria que alguém — o Terraform, um entrypoint de shell —
+    # concatenasse a senha com o resto, e esse alguém passaria a ter a senha em
+    # texto claro: no arquivo de estado, no log do contêiner, ou nos dois.
+    #
+    # Com as peças separadas, a senha viaja sozinha do Secrets Manager para a
+    # variável de ambiente do processo, e a URL é montada aqui dentro, já em
+    # memória.
+    #
+    # `DATABASE_URL` continua tendo precedência: quem escreve a URL inteira —
+    # todo ambiente de desenvolvimento, e o SQLite — não muda nada.
+    database_host: Optional[str] = None
+    database_port: int = 5432
+    database_name: str = "mapface"
+    database_user: str = "mapface"
+    database_password: Optional[str] = None
 
     # Origens que o navegador pode usar para chamar esta API.
     #
@@ -81,6 +104,28 @@ class Settings(BaseSettings):
         sem errar.
         """
         return [origem.strip() for origem in self.origens_permitidas.split(",") if origem.strip()]
+
+    @property
+    def url_do_banco(self) -> str:
+        """A URL de conexão, montada das peças quando não vier pronta.
+
+        **`DATABASE_URL` vence sempre que estiver definida diferente do padrão.**
+        É o que mantém o desenvolvimento local e a suíte de testes exatamente
+        como estavam: quem não define `DATABASE_HOST` nunca chega na composição.
+
+        A senha passa por `quote`: senhas geradas pela AWS contêm caracteres que
+        têm significado dentro de uma URL — `@`, `/`, `:`, `#`. Sem escapar, uma
+        senha com `@` parte a URL no lugar errado e o erro que aparece é
+        "host desconhecido", que não se parece nem um pouco com a causa.
+        """
+        if self.database_host is None:
+            return self.database_url
+
+        senha = f":{quote(self.database_password, safe='')}" if self.database_password else ""
+        return (
+            f"postgresql+psycopg://{quote(self.database_user, safe='')}{senha}"
+            f"@{self.database_host}:{self.database_port}/{self.database_name}"
+        )
 
     model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8")
 
