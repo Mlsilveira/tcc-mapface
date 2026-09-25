@@ -24,6 +24,7 @@ def registrar_log(
     fadiga: float = 0.0,
     alerta: Optional[str] = None,
     agora: Optional[datetime] = None,
+    sonolencia: Optional[float] = None,
 ) -> LogEngajamento:
     """Grava um ponto da série de engajamento da sessão.
 
@@ -37,6 +38,7 @@ def registrar_log(
         score=score,
         fadiga=fadiga,
         alerta=alerta,
+        sonolencia=sonolencia,
         horario_registro=agora or agora_utc(),
     )
     db.add(log)

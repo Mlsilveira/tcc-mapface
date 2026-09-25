@@ -5,6 +5,15 @@ sqlmodel==0.0.22
 # falta deste so apareceria no primeiro boot contra o RDS. [binary] traz a
 # libpq compilada: sem ela a imagem precisaria de compilador e libpq-dev.
 psycopg[binary]==3.3.6
+# O classificador de sonolencia. E um pipeline do scikit-learn serializado, e
+# ler um pipeline do scikit-learn exige o scikit-learn: nao ha como consumir o
+# .joblib sem ele. Sao ~200 MB somados a imagem, e a alternativa seria reescrever
+# 300 arvores de decisao a mao para evitar a dependencia.
+# As versoes sao as mesmas do ml/requirements.txt de proposito: pickle entre
+# versoes diferentes do sklearn e fonte conhecida de incompatibilidade silenciosa.
+scikit-learn==1.5.2
+joblib==1.4.2
+pandas==2.2.3
 bcrypt==5.0.0
 python-jose[cryptography]==3.3.0
 pydantic-settings==2.5.2

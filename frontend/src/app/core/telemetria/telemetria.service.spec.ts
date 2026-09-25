@@ -18,7 +18,14 @@ import {
 const TOKEN = 'jwt-de-teste';
 
 function leitura(ear: number, yaw = 0): MetricasFaciais {
-  return { ear, mar: 0.05, cabeca: { yaw, pitch: 0, roll: 0 }, assimetriaOcular: 0 };
+  return {
+    ear,
+    mar: 0.05,
+    cabeca: { yaw, pitch: 0, roll: 0 },
+    assimetriaOcular: 0,
+    earDireito: ear,
+    earEsquerdo: ear,
+  };
 }
 
 class CanalFalso implements CanalDeTelemetria {
@@ -429,14 +436,24 @@ describe('TelemetriaService', () => {
     // A fronteira de privacidade, afirmada no ponto exato onde os dados saem
     // do navegador. `mar` entrou na ticket 8 para a detecção de bocejo;
     // `incerteza` na ticket 10, e é rótulo, não medida.
+    //
+    // `ear_esq`, `ear_dir`, `pitch` e `roll` entraram com o classificador de
+    // sonolência, que foi treinado com os olhos separados e a pose completa. A
+    // pergunta que esta lista existe para provocar foi feita: são quatro
+    // números derivados, do mesmo tipo dos que já saíam. Os 478 landmarks
+    // continuam morrendo no navegador, e nenhum quadro atravessa.
     conectarEAutenticar();
     tick(INTERVALO_DE_ENVIO_MS * 2);
 
     for (const payload of canal().payloads.slice(1)) {
       expect(Object.keys(payload).sort()).toEqual([
         'ear',
+        'ear_dir',
+        'ear_esq',
         'incerteza',
         'mar',
+        'pitch',
+        'roll',
         'rosto_detectado',
         'yaw',
       ]);

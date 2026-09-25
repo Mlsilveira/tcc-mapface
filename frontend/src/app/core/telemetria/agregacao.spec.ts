@@ -4,6 +4,18 @@ import { MotivoDeIncerteza } from '../visao/qualidade';
 import { agregar } from './agregacao';
 
 function metricas(ear: number, yaw: number): MetricasFaciais {
+  return {
+    ear,
+    mar: 0.05,
+    cabeca: { yaw, pitch: 0, roll: 0 },
+    assimetriaOcular: 0,
+    earDireito: ear,
+    earEsquerdo: ear,
+  };
+}
+
+/** Métricas de um cliente anterior ao classificador: sem os olhos separados. */
+function metricasAntigas(ear: number, yaw: number): MetricasFaciais {
   return { ear, mar: 0.05, cabeca: { yaw, pitch: 0, roll: 0 }, assimetriaOcular: 0 };
 }
 
@@ -17,6 +29,20 @@ function semRosto(incerteza: MotivoDeIncerteza | null = null): LeituraDaCaptura 
 }
 
 describe('agregar', () => {
+  it('só manda os olhos separados se toda a janela os trouxer', () => {
+    // Uma média tirada de metade da janela descreveria outra coisa, e o
+    // modelo — treinado sobre janelas inteiras — não teria como distingui-la
+    // de um segundo qualquer. Melhor ausente: ausência o pipeline sabe tratar.
+    const mista = agregar([
+      { metricas: metricas(0.3, 0), incerteza: null },
+      { metricas: metricasAntigas(0.3, 0), incerteza: null },
+    ]);
+
+    expect(mista!.ear_esq).toBeUndefined();
+    expect(mista!.ear_dir).toBeUndefined();
+    expect(mista!.pitch).toBe(0);
+  });
+
   it('tira a média das leituras da janela', () => {
     // A captura roda a ~30 FPS e a telemetria sobe a 1 Hz: cada payload
     // representa a janela inteira, não o último quadro dela. Média de
@@ -70,12 +96,22 @@ describe('agregar', () => {
     // entrou na ticket 10 e é o único campo que não é medição — é o veredito
     // sobre ela. A luminância que o produziu, essa sim derivada de pixels, não
     // atravessa.
+    //
+    // `ear_esq`, `ear_dir`, `pitch` e `roll` entraram com o classificador de
+    // sonolência, que foi treinado com os olhos separados e a pose completa. A
+    // pergunta que esta lista existe para provocar foi feita: são quatro
+    // números derivados, do mesmo tipo dos que já saíam. Os 478 landmarks
+    // continuam morrendo no navegador, e nenhum quadro atravessa.
     const payload = agregar([leitura(0.3, 0)]);
 
     expect(Object.keys(payload!).sort()).toEqual([
       'ear',
+      'ear_dir',
+      'ear_esq',
       'incerteza',
       'mar',
+      'pitch',
+      'roll',
       'rosto_detectado',
       'yaw',
     ]);

@@ -31,8 +31,12 @@ from datetime import datetime, timedelta
 from statistics import median
 from typing import Deque, Dict, List, Optional, Tuple
 
-from app import metodos
+import logging
+
+from app import janela, metodos
 from app.tempo import agora_utc
+
+logger = logging.getLogger(__name__)
 
 PESO_OCULAR = 0.6
 PESO_ORIENTACAO = 0.4
@@ -180,6 +184,22 @@ class ResultadoIEE:
     baseline: Baseline
     fadiga: Fadiga = SEM_FADIGA
     incerteza: Optional[str] = None
+
+    #: Probabilidade de sonolência da última janela de 10s fechada, entre 0 e 1,
+    #: ou `None` enquanto não há janela, não há classificador, ou a sessão ainda
+    #: está nos 60 segundos de calibração.
+    #:
+    #: **Não entra na fórmula do IEE, e isso é deliberado.** O fator `F` continua
+    #: vindo das regras do `DetectorDeFadiga`, que são objetivas e explicáveis ao
+    #: aluno. Esta é uma segunda leitura, medida, registrada e mostrada ao lado —
+    #: com 0,6553 de acurácia balanceada, ela é informação real e está longe de
+    #: um veredito. Promovê-la a decisão é uma linha de código e uma conversa com
+    #: a orientação, não um efeito colateral.
+    #:
+    #: O valor vale até a próxima janela fechar, no mesmo regime de retenção do
+    #: fator de fadiga: uma janela dura dez segundos, e zerar entre elas faria a
+    #: série piscar sem que nada tivesse mudado no aluno.
+    sonolencia: Optional[float] = None
 
 
 def _entre_zero_e_um(valor: float) -> float:
@@ -370,10 +390,17 @@ class AnalistaEngajamento:
         duracao_calibracao: timedelta = DURACAO_CALIBRACAO,
         tolerancia_ausencia: timedelta = TOLERANCIA_AUSENCIA,
         minimo_de_amostras: int = MINIMO_DE_AMOSTRAS,
+        classificador=None,
     ) -> None:
         self._duracao = duracao_calibracao
         self._tolerancia = tolerancia_ausencia
         self._minimo = minimo_de_amostras
+
+        # Injetado, e `None` é o caso normal em teste: o ciclo inteiro do IEE se
+        # exercita sem carregar modelo nenhum. Ver `app.sonolencia.carregar`.
+        self._classificador = classificador
+        self._janelas = janela.AcumuladorDeJanelas()
+        self._ultima_sonolencia: Optional[float] = None
 
         self._baseline: Optional[Baseline] = None
         self._ear: List[float] = []
@@ -409,6 +436,10 @@ class AnalistaEngajamento:
         agora: Optional[datetime] = None,
         mar: Optional[float] = None,
         incerteza: Optional[str] = None,
+        ear_esq: Optional[float] = None,
+        ear_dir: Optional[float] = None,
+        pitch: Optional[float] = None,
+        roll: Optional[float] = None,
     ) -> ResultadoIEE:
         """Registra uma leitura e devolve o IEE do instante.
 
@@ -437,6 +468,18 @@ class AnalistaEngajamento:
             agora=agora, ear=ear, baseline=baseline, mar=mar, rosto_detectado=houve_rosto
         )
 
+        self._alimentar_janela(
+            agora=agora,
+            houve_rosto=houve_rosto,
+            ear=ear,
+            ear_esq=ear_esq,
+            ear_dir=ear_dir,
+            mar=mar,
+            yaw=yaw,
+            pitch=pitch,
+            roll=roll,
+        )
+
         score = (
             None
             if not confiavel
@@ -455,7 +498,60 @@ class AnalistaEngajamento:
             baseline=baseline,
             fadiga=self._ultima_fadiga,
             incerteza=incerteza,
+            sonolencia=self._ultima_sonolencia,
         )
+
+    def _alimentar_janela(
+        self,
+        agora: datetime,
+        houve_rosto: bool,
+        ear: float,
+        ear_esq: Optional[float],
+        ear_dir: Optional[float],
+        mar: Optional[float],
+        yaw: float,
+        pitch: Optional[float],
+        roll: Optional[float],
+    ) -> None:
+        """Acumula a leitura na janela de 10s e classifica quando ela fecha.
+
+        Sem classificador nada disto custa nada além de uma lista crescendo e
+        sendo esvaziada — e é assim que a maior parte dos testes roda.
+
+        Um cliente anterior a esta entrega não manda `ear_esq`, `pitch` nem
+        `roll`. A leitura entra assim mesmo, com os campos ausentes, e as
+        features correspondentes saem `nan` — que é exatamente o que o
+        `SimpleImputer` do pipeline sabe tratar. A alternativa, exigir os campos
+        novos, encerraria a sessão de quem está com a aba aberta desde antes do
+        deploy.
+        """
+        if self._classificador is None:
+            return
+
+        fechada = self._janelas.observar(
+            janela.Leitura(
+                horario=agora,
+                rosto_detectado=houve_rosto,
+                ear=ear if houve_rosto else None,
+                ear_esq=ear_esq if houve_rosto else None,
+                ear_dir=ear_dir if houve_rosto else None,
+                mar=mar if houve_rosto else None,
+                yaw=yaw if houve_rosto else None,
+                pitch=pitch if houve_rosto else None,
+                roll=roll if houve_rosto else None,
+            )
+        )
+        if fechada is None:
+            return
+
+        try:
+            self._ultima_sonolencia = self._classificador.avaliar(fechada).probabilidade
+        except Exception:  # noqa: BLE001
+            # Uma falha na leitura secundária não pode derrubar a sessão de
+            # estudo de ninguém. O score, o fator de fadiga e o relatório todos
+            # seguem sem ela.
+            logger.exception("falha ao classificar a janela de sonolência")
+            self._ultima_sonolencia = None
 
     # --- Calibração --------------------------------------------------------
 
@@ -522,10 +618,22 @@ class RegistroDeAnalistas:
     daqui para o banco.
     """
 
-    def __init__(self, validade: Optional[timedelta] = None) -> None:
+    def __init__(
+        self,
+        validade: Optional[timedelta] = None,
+        carregar_classificador=None,
+    ) -> None:
         self._validade = validade
         self._analistas: Dict[int, AnalistaEngajamento] = {}
         self._ultimo_uso: Dict[int, datetime] = {}
+
+        # Carregado uma vez, na primeira sessão, e não na importação do módulo:
+        # são 4,5 MB de artefato e o scikit-learn junto, e a maior parte da
+        # suíte nunca chega aqui. `None` como resultado é caso previsto — ver
+        # `app.sonolencia.carregar`.
+        self._carregar = carregar_classificador
+        self._classificador = None
+        self._tentou_carregar = False
 
     def _limite(self) -> timedelta:
         # Não é um relógio próprio: é derivação do teto de ausência. Nenhuma
@@ -541,11 +649,43 @@ class RegistroDeAnalistas:
 
         analista = self._analistas.get(id_sessao)
         if analista is None:
-            analista = AnalistaEngajamento()
+            analista = AnalistaEngajamento(classificador=self._classificador_de_sonolencia())
             self._analistas[id_sessao] = analista
 
         self._ultimo_uso[id_sessao] = agora
         return analista
+
+    def preparar(self) -> None:
+        """Força o carregamento do classificador, antes de servir a primeira sessão.
+
+        Chamado no `lifespan` da aplicação. **Carregar sob demanda dentro do
+        handler do WebSocket seria um erro de verdade:** são alguns segundos de
+        `joblib.load` no meio do primeiro payload de uma sessão de estudo, e o
+        loop da telemetria roda a 1 Hz — o aluno pagaria o atraso, e a primeira
+        conferência de credencial sairia deslocada pelo mesmo tanto.
+
+        Um teste encontrou isso antes da produção: com o carregamento no
+        caminho da requisição, a reavaliação de token passou a acontecer um
+        minuto depois do instante certo.
+        """
+        self._classificador_de_sonolencia()
+
+    def _classificador_de_sonolencia(self):
+        """O classificador compartilhado, carregado sob demanda e uma vez só.
+
+        Compartilhar a instância entre sessões é seguro porque o estimador do
+        scikit-learn não guarda estado entre predições — o que tem estado é a
+        janela, e essa é uma por analista. Carregar um modelo por aluno
+        multiplicaria 4,5 MB por sessão simultânea sem nada a ganhar.
+        """
+        if not self._tentou_carregar:
+            self._tentou_carregar = True
+            if self._carregar is None:
+                from app import sonolencia
+
+                self._carregar = sonolencia.carregar
+            self._classificador = self._carregar()
+        return self._classificador
 
     def descartar(self, id_sessao: int) -> None:
         self._analistas.pop(id_sessao, None)

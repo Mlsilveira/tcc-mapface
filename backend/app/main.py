@@ -3,6 +3,7 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
+from app.analista import registro
 from app.config import settings
 from app.database import criar_tabelas
 from app.routers import auth, sessoes, telemetria
@@ -11,6 +12,11 @@ from app.routers import auth, sessoes, telemetria
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     criar_tabelas()
+    # O classificador de sonolência entra aqui, e não na primeira sessão: são
+    # alguns segundos de `joblib.load`, e pagá-los no meio do primeiro payload
+    # atrasaria o loop de telemetria de um aluno de verdade. Ausência do
+    # artefato não impede o boot — ver `app.sonolencia.carregar`.
+    registro.preparar()
     yield
 
 

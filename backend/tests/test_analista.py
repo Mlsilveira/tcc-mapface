@@ -12,7 +12,9 @@ Os testes de fórmula que usam `BASELINE_PROVISORIA` são os mesmos números da
 ticket 6, de propósito: a estrutura de pesos não mudou na ticket 7, só a origem
 das referências. Se eles se moverem, alguma coisa quebrou no caminho.
 """
+import math
 from datetime import datetime, timedelta, timezone
+from types import SimpleNamespace
 
 import pytest
 
@@ -24,6 +26,7 @@ from app.analista import (
     RegistroDeAnalistas,
     calcular_iee,
 )
+from app.janela import nomes_das_features
 
 T0 = datetime(2026, 8, 18, 12, 0, 0, tzinfo=timezone.utc)
 
@@ -326,3 +329,141 @@ def test_descartar_esquece_a_sessao():
 
     registro.descartar(1)
     assert registro.obter(1, agora=em(61)).calibrando is True
+
+
+# --- A leitura de sonolência (classificador do UTA-RLDD) -------------------
+
+
+class ClassificadorFalso:
+    """Responde uma probabilidade fixa e guarda as janelas que recebeu."""
+
+    def __init__(self, probabilidade: float = 0.8) -> None:
+        self.probabilidade = probabilidade
+        self.janelas = []
+
+    def avaliar(self, features):
+        self.janelas.append(features)
+        return SimpleNamespace(probabilidade=self.probabilidade, sonolento=True)
+
+
+class ClassificadorQueExplode:
+    def avaliar(self, features):
+        raise RuntimeError("modelo pifou")
+
+
+def _observar_segundos(analista, inicio, quantos, ear=0.30, **extras):
+    """Alimenta o analista com uma leitura por segundo e devolve a última."""
+    resultado = None
+    for segundo in range(quantos):
+        resultado = analista.observar(
+            ear=ear,
+            yaw=0.0,
+            rosto_detectado=True,
+            mar=0.05,
+            agora=inicio + timedelta(seconds=segundo),
+            ear_esq=ear,
+            ear_dir=ear,
+            pitch=0.0,
+            roll=0.0,
+            **extras,
+        )
+    return resultado
+
+
+def test_sem_classificador_a_sonolencia_fica_none():
+    """O caminho normal da suíte: o ciclo inteiro roda sem carregar modelo."""
+    analista = AnalistaEngajamento()
+
+    resultado = _observar_segundos(analista, T0, 90)
+
+    assert resultado.sonolencia is None
+
+
+def test_nao_ha_sonolencia_durante_a_calibracao_das_janelas():
+    """Sem baseline, o número seria medido contra um rosto genérico.
+
+    São as mesmas seis janelas de dez segundos que somam os 60 segundos de
+    calibração do IEE — os dois relógios batem de propósito.
+    """
+    classificador = ClassificadorFalso()
+    analista = AnalistaEngajamento(classificador=classificador)
+
+    resultado = _observar_segundos(analista, T0, 55)
+
+    assert resultado.sonolencia is None
+    assert classificador.janelas == []
+
+
+def test_depois_da_calibracao_a_sonolencia_aparece():
+    classificador = ClassificadorFalso(probabilidade=0.82)
+    analista = AnalistaEngajamento(classificador=classificador)
+
+    resultado = _observar_segundos(analista, T0, 90)
+
+    assert resultado.sonolencia == pytest.approx(0.82)
+    assert len(classificador.janelas) >= 1
+    assert set(classificador.janelas[0]) == set(nomes_das_features())
+
+
+def test_a_sonolencia_vale_ate_a_proxima_janela_fechar():
+    """Zerar entre janelas faria a série piscar sem nada ter mudado no aluno.
+
+    É o mesmo regime de retenção do fator de fadiga.
+    """
+    classificador = ClassificadorFalso(probabilidade=0.6)
+    analista = AnalistaEngajamento(classificador=classificador)
+
+    _observar_segundos(analista, T0, 75)
+    seguinte = analista.observar(
+        ear=0.30, yaw=0.0, rosto_detectado=True, agora=T0 + timedelta(seconds=76)
+    )
+
+    assert seguinte.sonolencia == pytest.approx(0.6)
+
+
+def test_falha_do_classificador_nao_derruba_a_leitura():
+    """O score, o fator de fadiga e o relatório seguem sem a leitura secundária."""
+    analista = AnalistaEngajamento(classificador=ClassificadorQueExplode())
+
+    resultado = _observar_segundos(analista, T0, 90)
+
+    assert resultado.sonolencia is None
+    assert resultado.score is not None
+    assert resultado.calibrando is False
+
+
+def test_a_sonolencia_nao_mexe_no_score_nem_na_fadiga():
+    """A separação inteira desta entrega, escrita como teste.
+
+    O fator que desconta do IEE vem das regras do `DetectorDeFadiga`. Se um dia
+    alguém quiser que o modelo decida, será uma mudança deliberada — e este
+    teste é quem vai falhar para provocar a conversa.
+    """
+    com_modelo = AnalistaEngajamento(classificador=ClassificadorFalso(probabilidade=0.99))
+    sem_modelo = AnalistaEngajamento()
+
+    a = _observar_segundos(com_modelo, T0, 90)
+    b = _observar_segundos(sem_modelo, T0, 90)
+
+    assert a.score == pytest.approx(b.score)
+    assert a.fadiga.fator == pytest.approx(b.fadiga.fator)
+    assert a.sonolencia == pytest.approx(0.99)
+    assert b.sonolencia is None
+
+
+def test_cliente_antigo_sem_os_campos_novos_continua_sendo_aceito():
+    """Exigir `ear_esq` encerraria a sessão de quem está com a aba aberta
+    desde antes do deploy. As features ausentes saem `nan`, que é o que o
+    imputador do pipeline sabe tratar."""
+    classificador = ClassificadorFalso()
+    analista = AnalistaEngajamento(classificador=classificador)
+
+    resultado = None
+    for segundo in range(90):
+        resultado = analista.observar(
+            ear=0.30, yaw=0.0, rosto_detectado=True, agora=T0 + timedelta(seconds=segundo)
+        )
+
+    assert resultado.sonolencia is not None
+    assert math.isnan(classificador.janelas[0]["pitch_media"])
+    assert not math.isnan(classificador.janelas[0]["ear_media"])

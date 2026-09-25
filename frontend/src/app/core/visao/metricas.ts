@@ -33,6 +33,17 @@ export interface MetricasFaciais {
    * o contorno da pálpebra perdido — reflexo no óculos, sombra, oclusão parcial.
    */
   assimetriaOcular: number;
+
+  /**
+   * EAR de cada olho, separado.
+   *
+   * Opcionais porque entraram depois, com o classificador de sonolência, que
+   * foi treinado com as duas colunas. Nada do que existia antes depende delas —
+   * o EAR médio continua sendo o que alimenta o IEE —, e deixá-las obrigatórias
+   * quebraria todo lugar que monta uma `MetricasFaciais` à mão.
+   */
+  earDireito?: number;
+  earEsquerdo?: number;
 }
 
 /**
@@ -216,10 +227,14 @@ export function calcularMetricas(
   matriz: MatrizDeTransformacao,
   aspecto: number,
 ): MetricasFaciais {
+  const porOlho = calcularEARPorOlho(landmarks, aspecto);
+
   return {
-    ear: calcularEAR(landmarks, aspecto),
+    ear: (porOlho.direito + porOlho.esquerdo) / 2,
     mar: calcularMAR(landmarks, aspecto),
     cabeca: extrairAngulosDaCabeca(matriz),
     assimetriaOcular: calcularAssimetriaOcular(landmarks, aspecto),
+    earDireito: porOlho.direito,
+    earEsquerdo: porOlho.esquerdo,
   };
 }
