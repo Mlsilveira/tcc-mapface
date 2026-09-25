@@ -116,6 +116,23 @@
                   {{ dados.vale !== null ? (dados.vale | number: '1.0-0') : '—' }}
                 </dd>
               </div>
+
+              <!-- Fica ao lado dos outros, e não dentro deles, porque é uma
+                 leitura independente: ela não entrou no cálculo do índice. A
+                 nota diz a acurácia junto com o número de propósito — um
+                 indicador que acerta dois terços das vezes apresentado sem essa
+                 ressalva viraria um veredito na cabeça de quem lê. -->
+              @if (dados.sonolencia_media !== null) {
+                <div class="indicador">
+                  <dt>Sinais de sonolência</dt>
+                  <dd data-teste="relatorio-sonolencia">
+                    {{ dados.sonolencia_media * 100 | number: '1.0-0' }}%
+                  </dd>
+                  <p class="indicador__nota">
+                    leitura de um modelo treinado em 60 pessoas, à parte do índice
+                  </p>
+                </div>
+              }
             </dl>
 
             <section class="relatorio__grafico">

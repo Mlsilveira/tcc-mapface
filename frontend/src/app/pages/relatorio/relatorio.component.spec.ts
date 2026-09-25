@@ -33,6 +33,7 @@ const RELATORIO: Relatorio = {
   media: 72.4,
   pico: 95,
   vale: 12,
+  sonolencia_media: null,
   pontos_medidos: 1750,
   pontos_incertos: 50,
   pontos_zerados: 12,
@@ -131,6 +132,7 @@ function comoVazio(): Relatorio {
     media: null,
     pico: null,
     vale: null,
+    sonolencia_media: null,
     pontos_medidos: 0,
     pontos_incertos: 0,
     pontos_zerados: 0,
@@ -224,6 +226,27 @@ describe('RelatorioComponent', () => {
 
       expect(texto('relatorio-duracao')).toBe('30min');
       expect(texto('relatorio-duracao-total')).toContain('40min');
+    });
+
+    it('mostra a leitura de sonolência como indicador à parte', () => {
+      // À parte de propósito: ela não entrou no cálculo do índice. E a nota
+      // vem junto do número porque um indicador que acerta dois terços das
+      // vezes, apresentado sem ressalva, vira veredito na cabeça de quem lê.
+      relatorioService.buscar.and.returnValue(of({ ...RELATORIO, sonolencia_media: 0.62 }));
+      montar();
+
+      expect(texto('relatorio-sonolencia')).toBe('62%');
+      expect(texto('relatorio-media')).toBe('72');
+    });
+
+    it('esconde a sonolência quando não houve leitura', () => {
+      // Sessão sem modelo carregado, ou curta demais para fechar a primeira
+      // janela depois da calibração. Mostrar 0% diria "perfeitamente desperto",
+      // que é afirmação diferente de "não houve leitura".
+      relatorioService.buscar.and.returnValue(of({ ...RELATORIO, sonolencia_media: null }));
+      montar();
+
+      expect(elemento('relatorio-sonolencia')).toBeNull();
     });
 
     it('mostra média, pico e vale arredondados', () => {

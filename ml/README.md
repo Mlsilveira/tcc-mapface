@@ -12,6 +12,55 @@ A extração processou **8570 clipes** — os 8570 que pareiam vídeo em disco c
 
 **A meta de 80% não foi atingida, e a evidência é de que ela não é alcançável com estas features.** Ver [O resultado do baseline](#o-resultado-do-baseline).
 
+## A segunda trilha: sonolência no UTA-RLDD
+
+Depois do resultado acima, a trilha de ML ganhou um segundo alvo — e um modelo que funciona.
+
+**A pergunta mudou porque o rótulo mudou.** O DAiSEE não rotula sonolência; ele rotula engajamento, tédio, confusão e frustração. O [UTA-RLDD](https://sites.google.com/view/utarldd/home) rotula exatamente o que faltava: 60 participantes gravando três vídeos de ~10 minutos cada, com o estado declarado por eles mesmos (0 alerta, 5 vigilância baixa, 10 sonolento).
+
+| | DAiSEE (engajamento) | UTA-RLDD (sonolência) |
+| --- | --- | --- |
+| Unidades | 8570 clipes de 10s | 11.279 janelas de 10s |
+| Classes | 95/5 | 33/33/33 |
+| Acurácia balanceada | **0,4997** — empata com chute fixo | **0,6553 ± 0,0180** |
+
+As **39 features são as mesmas**, calculadas pelo mesmo extrator e pela mesma agregação. É isso que permite treinar, comparar e cruzar os dois.
+
+```bash
+cd ml
+.venv/bin/python extrair_rldd.py --raiz ~/datasets/UTA-RLDD
+.venv/bin/python treinar_fadiga.py
+```
+
+A extração paraleliza com `--fatia i/n` — oito processos levaram ~3h para as 182 gravações, contra ~24h em série. Um shard por gravação: morrer no meio da 97ª custa dez minutos de vídeo, não dez horas.
+
+### Três armadilhas que a medição revelou
+
+**Treinar com os frames do vídeo produziria um modelo inútil em produção.** O backend recebe telemetria a 1 Hz, já resumida no navegador; a extração produz ~60 frames a 6 fps. O `ear_desvio` de 60 medições é 36% maior que o de 10 médias por segundo — o modelo aprenderia uma escala que em produção nunca aparece e passaria a ver todo mundo anormalmente parado, sem erro nenhum no log. `agregacao_producao.py` monta as features como o backend as vê, e alinhar os dois custou 0,0015 de acurácia.
+
+**Um fold de teste com uma classe só fazia o chute fixo marcar 0,70.** `balanced_accuracy_score` é a média do acerto por classe *presente*. Apareceu numa corrida sobre extração parcial; num relatório, teria passado por desempenho.
+
+**A normalização que mais ajuda é impossível de usar em produção.** Centrar cada feature na mediana do participante chega a 0,7366 — mas usa as três gravações dele, inclusive o que, da perspectiva de uma sessão em curso, ainda não aconteceu. Ela fica na grade como **teto**; o artefato só sai da calibração por sessão, que é a que o navegador consegue fazer. A diferença, 0,068, é o preço de só poder olhar para o passado.
+
+### O que o modelo usa, e o que não usa
+
+| Conjunto de features | Acurácia balanceada |
+| --- | --- |
+| Todas as 39 | 0,6688 |
+| Só as 4 derivadas (`prop_olhos_fechados` e companhia) | 0,6645 |
+| Só cabeça (15) | 0,5125 |
+| Só boca (5) | 0,5103 |
+
+O sinal está nos olhos. Cabeça e boca sozinhas ficam no chão — o que **valida por medição** o desenho do `DetectorDeFadiga`, construído sobre PERCLOS e fechamento prolongado antes de este modelo existir.
+
+### Os dois datasets juntos
+
+Empilhá-los sob um alvo compartilhado de "baixo alerta" **piora os dois**: -0,0073 no DAiSEE, -0,052 no UTA-RLDD, cada um avaliado no próprio teste contra o modelo treinado só nele. Sonolência e desengajamento não compartilham assinatura facial suficiente, e o número diz isso.
+
+O que funciona é usar o DAiSEE como **validação cruzada de domínio**: o modelo treinado no RLDD, aplicado a 8570 clipes que ele nunca viu, ordena-os de acordo com o desengajamento anotado por humanos com AUC de 0,6142. Fraco, consistentemente acima da moeda, e não pode vir de ajuste — ele nunca viu uma linha do DAiSEE.
+
+Relatório completo: [`resultado_sonolencia.md`](../resultado_sonolencia.md).
+
 ## Setup
 
 ```bash

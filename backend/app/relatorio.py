@@ -50,6 +50,17 @@ class ResumoDaSessao:
     pontos_zerados: int
     alertas_de_fadiga: Dict[str, int]
     motivos_de_incerteza: Dict[str, int]
+
+    #: Média da probabilidade de sonolência lida pelo classificador treinado no
+    #: UTA-RLDD, ou `None` quando não houve leitura — sem modelo carregado, ou
+    #: sessão curta demais para fechar a primeira janela depois da calibração.
+    #:
+    #: **É uma segunda opinião, não o fator de fadiga.** `alertas_de_fadiga`
+    #: continua vindo das regras, e é ele que explica o desconto no score. Este
+    #: número existe para o aluno e a orientação verem os dois lado a lado — e
+    #: para a decisão de promover um ao outro, se vier, ser tomada com dado na
+    #: mão em vez de por analogia.
+    sonolencia_media: Optional[float] = None
     duracao_total: timedelta = timedelta(0)
     duracao_presente: timedelta = timedelta(0)
 
@@ -74,6 +85,17 @@ class IndicadoresDaSerie:
     alertas_de_fadiga: Dict[str, int]
     motivos_de_incerteza: Dict[str, int]
 
+    #: Média da probabilidade de sonolência lida pelo classificador treinado no
+    #: UTA-RLDD, ou `None` quando não houve leitura — sem modelo carregado, ou
+    #: sessão curta demais para fechar a primeira janela depois da calibração.
+    #:
+    #: **É uma segunda opinião, não o fator de fadiga.** `alertas_de_fadiga`
+    #: continua vindo das regras, e é ele que explica o desconto no score. Este
+    #: número existe para o aluno e a orientação verem os dois lado a lado — e
+    #: para a decisão de promover um ao outro, se vier, ser tomada com dado na
+    #: mão em vez de por analogia.
+    sonolencia_media: Optional[float] = None
+
 
 def resumir_serie(serie: Sequence[LogEngajamento]) -> IndicadoresDaSerie:
     """Os indicadores de um trecho de série, do tamanho que ele for.
@@ -84,6 +106,11 @@ def resumir_serie(serie: Sequence[LogEngajamento]) -> IndicadoresDaSerie:
     """
     medidos: List[float] = [p.score for p in serie if p.score is not None]
     houve_medida = bool(medidos)
+
+    # Independente de `score`: a sonolência descreve uma janela de dez segundos,
+    # não aquele instante. Amarrá-la ao score descartaria janelas inteiras por
+    # causa de um reflexo de óculos em um segundo.
+    sonolencias = [p.sonolencia for p in serie if p.sonolencia is not None]
 
     # Score zero é medição verdadeira — diferente da incerteza, que é a recusa
     # de medir —, então continua dentro de `pontos_medidos` e da média.
@@ -111,6 +138,7 @@ def resumir_serie(serie: Sequence[LogEngajamento]) -> IndicadoresDaSerie:
         pontos_zerados=len(zerados),
         alertas_de_fadiga=dict(fadiga),
         motivos_de_incerteza=dict(incerteza),
+        sonolencia_media=mean(sonolencias) if sonolencias else None,
     )
 
 
@@ -134,6 +162,7 @@ def resumir(sessao: SessaoEstudo, serie: Sequence[LogEngajamento]) -> ResumoDaSe
         pontos_zerados=indicadores.pontos_zerados,
         alertas_de_fadiga=indicadores.alertas_de_fadiga,
         motivos_de_incerteza=indicadores.motivos_de_incerteza,
+        sonolencia_media=indicadores.sonolencia_media,
         duracao_total=presenca.duracao_total(sessao.inicio, sessao.fim),
         # Os pontos incertos entram como evidência de presença junto com os
         # medidos: incerteza é a recusa de afirmar um *score*, não a afirmação

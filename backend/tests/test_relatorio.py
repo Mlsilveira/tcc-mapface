@@ -14,6 +14,7 @@ import pytest
 
 from app import relatorio
 from app.models import LogEngajamento, SessaoEstudo
+from app.relatorio import resumir_serie
 
 T0 = datetime(2026, 9, 19, 12, 0, 0, tzinfo=timezone.utc)
 
@@ -174,3 +175,54 @@ class TestAlertas:
 
         assert resumo.alertas_de_fadiga == {}
         assert resumo.motivos_de_incerteza == {}
+
+
+# --- A leitura de sonolência no relatório ----------------------------------
+
+
+def _ponto(segundo: int, score=70.0, sonolencia=None):
+    return LogEngajamento(
+        id_sessao=1,
+        score=score,
+        sonolencia=sonolencia,
+        horario_registro=datetime(2026, 9, 24, 10, 0, segundo, tzinfo=timezone.utc),
+    )
+
+
+def test_a_sonolencia_media_sai_nos_indicadores():
+    indicadores = resumir_serie(
+        [_ponto(0, sonolencia=0.2), _ponto(1, sonolencia=0.8), _ponto(2, sonolencia=0.5)]
+    )
+
+    assert indicadores.sonolencia_media == pytest.approx(0.5)
+
+
+def test_sem_leitura_de_sonolencia_o_indicador_fica_none():
+    """Sessão sem modelo carregado, ou curta demais para fechar a primeira
+    janela depois da calibração. `None` é "não houve leitura"; zero seria
+    "o aluno estava perfeitamente desperto", que é afirmação diferente."""
+    indicadores = resumir_serie([_ponto(0), _ponto(1)])
+
+    assert indicadores.sonolencia_media is None
+
+
+def test_a_sonolencia_de_um_ponto_incerto_continua_valendo():
+    """Ela descreve uma janela de dez segundos, não aquele instante.
+
+    Amarrá-la ao `score` faria um reflexo de óculos em um segundo descartar a
+    leitura da janela inteira.
+    """
+    indicadores = resumir_serie(
+        [_ponto(0, score=None, sonolencia=0.9), _ponto(1, score=None, sonolencia=0.7)]
+    )
+
+    assert indicadores.pontos_medidos == 0
+    assert indicadores.sonolencia_media == pytest.approx(0.8)
+
+
+def test_a_sonolencia_nao_entra_na_media_do_score():
+    """A separação que a entrega inteira depende: são dois números diferentes."""
+    indicadores = resumir_serie([_ponto(0, score=70.0, sonolencia=0.95)])
+
+    assert indicadores.media == pytest.approx(70.0)
+    assert indicadores.sonolencia_media == pytest.approx(0.95)

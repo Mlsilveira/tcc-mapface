@@ -105,7 +105,7 @@ Duas decisões que valem a defesa: a baseline usa a **mediana** das amostras, n�
 
 **Bloqueada por:** Ticket 7 e Ticket 2.
 
-- [ ] ~~Modelo da Ticket 2 carregado pelo backend~~ — **substituído por regras**, ver abaixo
+- [x] Modelo carregado pelo backend — **não o da ticket 2**, e não para o `F`. Ver "O modelo que entrou depois", no fim desta ticket.
 - [x] `AnalistaEngajamento.validar_fadiga` classifica padrões sequenciais atípicos
 - [x] Fator F subtraído do score do IEE quando fadiga é detectada
 - [x] Testes unitários com sequências sintéticas de fadiga
@@ -121,6 +121,24 @@ Implementado em `DetectorDeFadiga` ([`backend/app/analista.py`](./backend/app/an
 Duas decisões que valem a defesa: o limiar de olho fechado é **metade da abertura neutra do aluno**, não o 0,20 absoluto da literatura — quem tem EAR neutro de 0,18 estaria permanentemente "de olhos fechados" por um limiar fixo, que é o mesmo problema que a ticket 7 resolveu no score. E ausência de rosto **não** conta como olho fechado nem entra no denominador do PERCLOS: sem rosto não sabemos o que a pálpebra fazia, e contar ausência como fechamento transformaria "saiu para pegar água" em "cochilou".
 
 O payload do WebSocket passou a levar `mar`, que já era calculado no navegador desde a ticket 5 mas parava lá. Os testes que travam as chaves do payload — a fronteira de privacidade — foram atualizados de propósito, em `agregacao.spec.ts` e `telemetria.service.spec.ts`.
+
+### O modelo que entrou depois
+
+A ticket fechou com o `F` vindo de regras, e isso não mudou. O que mudou é que a trilha de ML voltou a ter um modelo **em produção** — treinado noutro dataset, respondendo outra pergunta, e sem entrar na fórmula.
+
+**Por que outro dataset.** O DAiSEE rotula engajamento, tédio, confusão e frustração. Nenhum deles é sonolência, e é por isso que o modelo da ticket 2 não servia para o `F`. O [UTA-RLDD](https://sites.google.com/view/utarldd/home) rotula exatamente o que faltava: 60 participantes gravaram três vídeos de ~10 minutos cada, declarando o próprio estado — alerta, vigilância baixa, sonolento. Classes equilibradas por construção, e cinco folds disjuntos por participante distribuídos pelos autores.
+
+**O resultado.** 182 gravações extraídas sem nenhuma falha de leitura, 31 horas de vídeo viraram 11.279 janelas de 10 segundos. O modelo **discrimina**: 0,6553 ± 0,0180 de acurácia balanceada em validação cruzada por participante, contra 0,50 de um chute fixo, com todos os cinco folds acima do chão. É o oposto do que aconteceu no DAiSEE, onde a floresta empatava com o chute.
+
+**Onde ele entra.** Uma janela de 10 segundos da telemetria vira as mesmas 39 features do treino ([`backend/app/janela.py`](./backend/app/janela.py)), calibradas contra a baseline da própria sessão — as mesmas seis janelas que somam os 60 segundos de calibração do IEE. O [`ClassificadorDeSonolencia`](./backend/app/sonolencia.py) devolve uma probabilidade, que é gravada em `log_engajamento.sonolencia` e mostrada no relatório.
+
+**Onde ele não entra: na fórmula.** O `F` continua vindo das regras. A leitura do modelo é segunda opinião, apresentada com a acurácia ao lado — um indicador que acerta dois terços das vezes, exibido sem ressalva, vira veredito na cabeça de quem lê. Há teste travando a separação: com e sem modelo carregado, o score e o fator de fadiga saem idênticos.
+
+**A ablação confirma o desenho desta ticket por medição.** O sinal está quase todo nos olhos: cabeça sozinha dá 0,5125 e boca sozinha 0,5103 — as duas no chão —, enquanto as quatro features derivadas sozinhas (entre elas o `prop_olhos_fechados`, que é PERCLOS) chegam a 0,6645 das 0,6688 obtidas com todas as 39. O `DetectorDeFadiga` foi construído sobre exatamente esses sinais antes de o modelo existir.
+
+**Empilhar os dois datasets piora os dois.** Medido: -0,0073 no DAiSEE e -0,052 no UTA-RLDD, cada um avaliado no próprio teste contra o modelo treinado só nele. Sonolência e desengajamento não compartilham assinatura facial suficiente. Os dois continuam sendo usados — um por construto, mais o DAiSEE como validação cruzada de domínio do modelo que roda em produção.
+
+Os números completos, a grade de experimentos e as três correções que a medição exigiu estão em [`resultado_sonolencia.md`](./resultado_sonolencia.md).
 
 **Pendência conhecida:** `LIMIAR_MAR_BOCEJO` está em 0,30, escolhido a partir da distribuição observada no DAiSEE (p99,9 = 0,2884). O valor herdado de 0,60 disparava em 7 clipes de 8570 — bocejo nenhum. A Sprint 11 já reserva tempo para recalibrar thresholds de fadiga com dados reais de teste.
 

@@ -98,6 +98,16 @@ export interface Relatorio {
   pico: number | null;
   vale: number | null;
 
+  /**
+   * Média da leitura do classificador de sonolência, entre 0 e 1.
+   *
+   * `null` quando não houve leitura: sessão sem modelo carregado, ou curta
+   * demais para fechar a primeira janela depois da calibração. Nunca 0 nesse
+   * caso — zero diria "o aluno estava perfeitamente desperto", que é afirmação
+   * diferente de "não houve leitura".
+   */
+  sonolencia_media: number | null;
+
   pontos_medidos: number;
   pontos_incertos: number;
   pontos_zerados: number;

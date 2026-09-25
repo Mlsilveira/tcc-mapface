@@ -370,6 +370,12 @@ class RelatorioPublico(BaseModel):
     pico: Optional[float] = None
     vale: Optional[float] = None
 
+    #: Média da leitura do classificador de sonolência, entre 0 e 1, ou `None`
+    #: quando não houve nenhuma. A interface a mostra **ao lado** dos alertas de
+    #: fadiga, e não no lugar deles: os alertas explicam o desconto que o score
+    #: sofreu; isto é uma leitura independente, que não entrou na conta.
+    sonolencia_media: Optional[float] = None
+
     pontos_medidos: int
     pontos_incertos: int
     pontos_zerados: int
@@ -414,6 +420,7 @@ class RelatorioPublico(BaseModel):
             media=resumo.media,
             pico=resumo.pico,
             vale=resumo.vale,
+            sonolencia_media=resumo.sonolencia_media,
             pontos_medidos=resumo.pontos_medidos,
             pontos_incertos=resumo.pontos_incertos,
             pontos_zerados=resumo.pontos_zerados,

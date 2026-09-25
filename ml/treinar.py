@@ -1,7 +1,7 @@
 """CLI da ticket 2: dataset tabular → Random Forest treinado, avaliado e serializado.
 
 Lê o `clipes.parquet` produzido pela ticket 1, treina o modelo com `treino`,
-escreve o artefato `.joblib` que o backend vai carregar na ticket 8, e emite o
+escreve o artefato `.joblib` e emite o
 relatório de métricas em Markdown (para versionar junto do TCC) e em JSON (para
 comparar execuções sem ler texto).
 
