@@ -54,9 +54,20 @@ variable "armazenamento_do_banco_gb" {
 }
 
 variable "retencao_de_backup_dias" {
-  description = "Dias de retenção do backup automático do RDS. Zero desliga os backups."
+  description = <<-TEXTO
+    Dias de retenção do backup automático do RDS. Zero desliga os backups.
+
+    **Um, e não sete, por causa do plano gratuito.** O primeiro `apply` contra
+    uma conta real falhou com `FreeTierRestrictionError`: o Free Tier da AWS
+    limita a retenção, e sete dias passa do teto. A mensagem não diz qual é o
+    teto — só que o valor pedido excede.
+
+    Um dia mantém o backup automático existindo, que é o que importa para
+    demonstrar o recurso. Conta fora do plano gratuito pode subir isto à
+    vontade; `0` desliga de vez, para o caso de o teto ser ainda menor.
+  TEXTO
   type        = number
-  default     = 7
+  default     = 1
 }
 
 variable "protecao_contra_remocao" {

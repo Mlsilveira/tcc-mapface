@@ -31,6 +31,13 @@ RUN pip install --no-cache-dir -r requirements.txt
 # e errado, então os dois precisam ser a mesma versão. São 4,5 MB.
 COPY app ./app
 
+# Scripts de manutenção, rodados como task avulsa do ECS. Vão para a imagem
+# porque o banco é inalcançável de fora — sub-rede sem rota, sem IP público e
+# security group que só aceita a task. Perguntar de dentro é o único caminho
+# que não exige abrir o banco, e abrir um banco com dados comportamentais de
+# estudantes para a mesa de alguém não é troca que valha a conveniência.
+COPY scripts ./scripts
+
 # Usuário sem privilégio. Um processo que não precisa de root não deve rodar
 # como root — e este não precisa: ele abre uma porta alta e não escreve em
 # disco, já que o estado todo vive no RDS.
