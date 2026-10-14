@@ -198,6 +198,32 @@ Desktop **não liga sozinho** depois de instalado.
 
 Só depois disso o comando `docker` responde.
 
+### 2.3.1 Uma armadilha do Git Bash
+
+O projeto é desenvolvido no Windows, e muita gente roda os comandos no **Git
+Bash** por causa da sintaxe POSIX. Ele tem um comportamento que estraga
+comandos da AWS sem avisar:
+
+> Quando um argumento **começa com `/`**, o Git Bash assume que é um caminho
+> POSIX e o traduz para Windows antes de entregar a um programa nativo. Para um
+> caminho de arquivo isso salva o dia. Para o nome de um log group — que por
+> acaso começa com `/` e não é caminho nenhum — ele destrói o valor:
+>
+> ```
+> você escreve:   /ecs/mapface-poc
+> o aws.exe recebe:  C:/Program Files/Git/ecs/mapface-poc
+> ```
+>
+> O erro que aparece é `InvalidParameterException ... failed to satisfy
+> constraint`, e não menciona o Git Bash em lugar nenhum.
+
+**Duas saídas:** prefixe com `MSYS_NO_PATHCONV=1`, ou rode esse comando no
+PowerShell, que não faz a tradução. Os comandos deste tutorial que precisam
+disso já vêm com o prefixo.
+
+Só afeta argumento que começa com `/`. ARNs, nomes de bucket, ids de
+distribuição e tags de imagem não começam, e passam intactos.
+
 ### 2.4 Conferir tudo
 
 Feche as janelas abertas, abra um PowerShell **normal** e rode:
@@ -390,7 +416,7 @@ curl -i "$(cd /d/tcc/infra && terraform output -raw endereco_do_site)/health"
 **O log da task não tem erro de boot:**
 
 ```bash
-aws logs tail /ecs/mapface-poc --since 10m --region us-east-1
+MSYS_NO_PATHCONV=1 aws logs tail /ecs/mapface-poc --since 10m --region us-east-1
 ```
 
 Procure por `Application startup complete` e por
@@ -428,7 +454,7 @@ A task leva ~40 segundos. O resultado sai no CloudWatch, no fluxo
 `backend/backend/<id-da-task>`:
 
 ```bash
-cd /d/tcc/infra && aws logs tail "$(terraform output -raw grupo_de_log_do_backend)" --since 5m --region us-east-1
+cd /d/tcc/infra && MSYS_NO_PATHCONV=1 aws logs tail "$(terraform output -raw grupo_de_log_do_backend)" --since 5m --region us-east-1
 ```
 
 `scripts/inspecionar_banco.py` mostra alunos, sessões, pontos da série, blocos e
@@ -524,7 +550,7 @@ folga larga se o ambiente subir só para testar e demonstrar.
 > `apply` tem mais chance de tropeçar.
 
 **A task sobe e morre em ciclo.** Veja o log com
-`aws logs tail "$(terraform output -raw grupo_de_log_do_backend)" --since 10m`.
+`MSYS_NO_PATHCONV=1 aws logs tail "$(terraform output -raw grupo_de_log_do_backend)" --since 10m`.
 As três causas prováveis, em ordem: a imagem não existe no ECR; o banco ainda
 não aceita a task (confira que o `apply` completo rodou, e não o
 `-var publicar_backend=false`); ou a `DATABASE_PASSWORD` chegou como o JSON
