@@ -409,6 +409,46 @@ Procure por `Application startup complete` e por
 
 ---
 
+## 8.1 Olhar dentro do banco
+
+O RDS é **inalcançável do seu notebook**, e isso é o desenho: sub-rede sem rota
+para a internet, `publicly_accessible = false`, e security group que só aceita o
+grupo da task. Um banco com dados comportamentais de estudantes não deve estar a
+um cliente SQL de distância de qualquer mesa.
+
+O caminho é perguntar **de dentro**: uma task avulsa, com a mesma imagem, as
+mesmas credenciais e a mesma rede do backend.
+
+```bash
+cd /d/tcc/infra && aws ecs run-task --cluster "$(terraform output -raw cluster_do_backend)" --task-definition mapface-poc-backend --launch-type FARGATE --network-configuration "awsvpcConfiguration={subnets=[$(terraform output -json subredes_publicas | tr -d '[]
+ "' )],securityGroups=[$(aws ec2 describe-security-groups --filters Name=group-name,Values=mapface-poc-task --region us-east-1 --query 'SecurityGroups[0].GroupId' --output text)],assignPublicIp=ENABLED}" --overrides '{"containerOverrides":[{"name":"backend","command":["python","-m","scripts.inspecionar_banco"]}]}' --region us-east-1 --query 'tasks[0].taskArn' --output text
+```
+
+A task leva ~40 segundos. O resultado sai no CloudWatch, no fluxo
+`backend/backend/<id-da-task>`:
+
+```bash
+cd /d/tcc/infra && aws logs tail "$(terraform output -raw grupo_de_log_do_backend)" --since 5m --region us-east-1
+```
+
+`scripts/inspecionar_banco.py` mostra alunos, sessões, pontos da série, blocos e
+resumos — **sem senha nem hash**. Hash é inútil para diagnóstico e perigoso num
+log que fica guardado.
+
+> **O script só existe na imagem a partir do build em que ele entrou.** Se o seu
+> `docker push` é anterior a ele, use um `python -c` com a consulta direto no
+> `command`, ou reconstrua a imagem.
+
+**As alternativas, e por que não são o caminho padrão.** Abrir o banco para o
+seu IP (`publicly_accessible = true` mais uma regra de ingress) funciona e
+permite usar DBeaver — mas é mudança de postura de segurança que alguém precisa
+lembrar de reverter, e "alguém precisa lembrar" é como furos nascem. Habilitar
+`enable_execute_command` dá um shell interativo dentro da task, é melhor para
+depurar de verdade, e custa uma permissão de SSM na role da task mais um novo
+deploy.
+
+---
+
 ## 9. Desmontar e controlar custo
 
 **Entre demonstrações, desmonte.** É o que mantém o crédito.
