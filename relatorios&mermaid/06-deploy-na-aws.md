@@ -104,25 +104,110 @@ mude lá — mas note que certificado do ACM para CloudFront **só** existe em
 
 ## 2. Preparar a máquina
 
-Cinco ferramentas. Confira cada uma:
+Cinco ferramentas. Esta seção é para **Windows 11**, que é onde o projeto foi
+desenvolvido.
 
-```bash
-aws --version && terraform version && docker --version && node --version && python --version
+### 2.0 Onde digitar os comandos
+
+Os comandos de **instalação** precisam de privilégio de administrador:
+
+1. Tecla **Windows**
+2. Digite `powershell`
+3. Botão **direito** em *Windows PowerShell* → **Executar como administrador**
+4. Confirme o aviso do Windows
+
+A janela que abre — fundo azul, título "Administrador" — é onde vão os comandos
+da seção 2. Os comandos do resto do tutorial (`terraform`, `aws`, `npm`) rodam
+num PowerShell **normal**, sem administrador.
+
+> **A pegadinha que pega todo mundo.** Depois de instalar um programa, o
+> terminal que já estava aberto **não o enxerga**. O `PATH` é lido uma vez, na
+> abertura. Se um comando recém-instalado der "não é reconhecido", feche a
+> janela e abra outra **antes** de desconfiar da instalação.
+
+### 2.1 O que já costuma estar lá
+
+```powershell
+node --version; npm --version; python --version; git --version
 ```
 
-O que instalar, se faltar:
+- **Node 18+** — compila o Angular. Se faltar: [nodejs.org](https://nodejs.org)
+- **Python 3.11+** — roda a suíte do backend
+- **Git** — já está, se você clonou o projeto
 
-| Ferramenta | Para quê | Onde |
+### 2.2 AWS CLI e Terraform
+
+A forma curta, com o gerenciador de pacotes que já vem no Windows 11:
+
+```powershell
+winget install --id Amazon.AWSCLI --accept-source-agreements --accept-package-agreements
+```
+
+```powershell
+winget install --id Hashicorp.Terraform --accept-source-agreements --accept-package-agreements
+```
+
+Se o `winget` não existir ou falhar, baixe na mão:
+
+| Ferramenta | Link | Observação |
 | --- | --- | --- |
-| **AWS CLI v2** | falar com a AWS | [aws.amazon.com/cli](https://aws.amazon.com/cli/) |
-| **Terraform ≥ 1.9** | provisionar | [developer.hashicorp.com/terraform/install](https://developer.hashicorp.com/terraform/install) |
-| **Docker Desktop** | construir a imagem do backend | [docker.com](https://www.docker.com/products/docker-desktop/) |
-| **Node 18+** | compilar o Angular | [nodejs.org](https://nodejs.org) |
-| **Python 3.11** | rodar a suíte do backend | já instalado no projeto |
+| **AWS CLI v2** | [awscli.amazonaws.com/AWSCLIV2.msi](https://awscli.amazonaws.com/AWSCLIV2.msi) | instalador comum, duplo clique |
+| **Terraform ≥ 1.9** | [developer.hashicorp.com/terraform/install](https://developer.hashicorp.com/terraform/install) | vem em ZIP: extraia em `C:\terraform` e acrescente a pasta ao `PATH` |
 
-> O Docker é o único que costuma dar trabalho no Windows: ele exige WSL2
-> habilitado e virtualização ligada na BIOS. Resolva isso antes do dia da
-> demonstração, não no dia.
+### 2.3 Docker — três etapas, e uma delas reinicia o computador
+
+O Docker constrói a imagem do backend. No Windows ele roda sobre o **WSL2**, e é
+por isso que esta é a instalação mais trabalhosa das cinco.
+
+**Antes de começar**, confirme que a virtualização está ligada na BIOS:
+
+```powershell
+(Get-CimInstance Win32_ComputerSystem).HypervisorPresent
+```
+
+Se responder `False`, entre na BIOS e habilite *Intel VT-x* ou *AMD-V*. Sem
+isso, nada do resto desta seção funciona.
+
+**Etapa 1 — instalar o WSL2.** Na janela de administrador:
+
+```powershell
+wsl --install
+```
+
+Leva uns 5 minutos e **pede para reiniciar**. Reinicie de verdade — o Docker não
+instala sem isso.
+
+Depois do reboot o Windows abre sozinho uma janela do Ubuntu pedindo usuário e
+senha. **Pode fechar.** Você não precisa do Ubuntu, só do motor que ele trouxe.
+
+**Etapa 2 — instalar o Docker Desktop.** Abra o PowerShell como administrador de
+novo:
+
+```powershell
+winget install --id Docker.DockerDesktop --accept-source-agreements --accept-package-agreements
+```
+
+**Etapa 3 — abrir o Docker uma vez, na mão.** É o passo mais esquecido: o Docker
+Desktop **não liga sozinho** depois de instalado.
+
+1. Tecla **Windows** → `Docker Desktop` → Enter
+2. Aceite os termos — é gratuito para uso pessoal e acadêmico
+3. Pode pular o login
+4. **Espere a baleia no canto inferior esquerdo ficar verde**, com "Engine
+   running"
+
+Só depois disso o comando `docker` responde.
+
+### 2.4 Conferir tudo
+
+Feche as janelas abertas, abra um PowerShell **normal** e rode:
+
+```powershell
+aws --version; terraform version; docker --version; node --version; python --version
+```
+
+As cinco precisam responder com um número de versão. Se alguma reclamar, volte
+para a subseção dela — e lembre de abrir um terminal novo antes.
 
 ---
 
