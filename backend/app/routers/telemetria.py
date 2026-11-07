@@ -16,8 +16,11 @@ horas, e um WebSocket que autentica uma vez vira **canal autenticado de vida
 ilimitada** — imune à expiração do token e imune ao logout. O buraco não é
 criado pela renovação; ele já existia e era escondido pelo teto de 30 minutos.
 """
+import logging
+import math
+import time
 from datetime import datetime, timedelta
-from typing import NamedTuple, Optional
+from typing import List, NamedTuple, Optional
 
 from fastapi import APIRouter, Depends, WebSocket, WebSocketDisconnect
 from sqlmodel import Session, select
@@ -29,6 +32,8 @@ from app.security import decodificar_token, expiracao_do_token
 from app.tempo import agora_utc
 
 router = APIRouter(tags=["telemetria"])
+
+logger = logging.getLogger(__name__)
 
 #: De quanto em quanto tempo a validade do token é reconferida no canal aberto.
 #:
@@ -43,6 +48,62 @@ router = APIRouter(tags=["telemetria"])
 #: fino não compra segurança perceptível; mais grosso começa a ser sobrevida
 #: relevante.
 INTERVALO_DE_REAVALIACAO = timedelta(minutes=1)
+
+
+def _ler_t0(payload: object) -> Optional[float]:
+    """O carimbo de envio do cliente, se ele mandou um, para ser devolvido intacto.
+
+    **Por que existe (parecer do TC2, F01).** A meta de latência do WebSocket
+    precisa de um número medido no ambiente publicado, e medir ida e volta exige
+    saber a qual envio cada resposta corresponde. O servidor não interpreta este
+    valor — não sabe nem em que relógio ele está —, só o devolve. Quem enviou é
+    quem subtrai.
+
+    Opcional e ignorado se malformado: um cliente que não manda carimbo é o
+    navegador de todo dia, e um carimbo torto não pode custar a leitura de EAR
+    do segundo. Booleano não conta como número, pela mesma razão de
+    `_ler_metricas`.
+    """
+    if not isinstance(payload, dict):
+        return None
+    valor = payload.get("t0")
+    if isinstance(valor, bool) or not isinstance(valor, (int, float)):
+        return None
+    return float(valor) if math.isfinite(valor) else None
+
+
+def percentil(valores: List[float], p: float) -> Optional[float]:
+    """Percentil por posição mais próxima (*nearest-rank*), sem interpolar.
+
+    Sem interpolação de propósito: o p95 de 60 medições tem de ser **uma das
+    medições**, para que quem lê o relatório possa apontar o segundo em que ela
+    aconteceu. Uma interpolação devolveria um número que nenhum pacote teve.
+    """
+    if not valores:
+        return None
+    ordenados = sorted(valores)
+    posicao = max(1, math.ceil(p / 100 * len(ordenados)))
+    return ordenados[posicao - 1]
+
+
+def _registrar_latencia(id_sessao: int, tempos_ms: List[float]) -> None:
+    """Uma linha de log por conexão com o tempo de processamento do servidor.
+
+    Por conexão, e não por mensagem: a 1 Hz por aluno, uma linha por payload
+    afogaria o log em ruído, e o que a medição precisa é a distribuição — que
+    cabe numa linha só. Os valores individuais continuam disponíveis para quem
+    precisar deles, em cada resposta (`processamento_ms`).
+    """
+    if not tempos_ms:
+        return
+    logger.info(
+        "latencia do canal: sessao=%s n=%d p50=%.2fms p95=%.2fms max=%.2fms",
+        id_sessao,
+        len(tempos_ms),
+        percentil(tempos_ms, 50),
+        percentil(tempos_ms, 95),
+        max(tempos_ms),
+    )
 
 
 class Credencial(NamedTuple):
@@ -211,11 +272,46 @@ async def telemetria_ws(
     # validado por `decodificar_token`, que já recusa expirado.
     proxima_conferencia = agora_utc() + INTERVALO_DE_REAVALIACAO
 
+    # Tempo de processamento de cada payload neste canal, em ms. Vira uma linha
+    # de log quando a conexão termina — por qualquer um dos caminhos de saída,
+    # daí o `finally`.
+    tempos_ms: List[float] = []
+    try:
+        await _laco_do_canal(
+            websocket, db, credencial, sessao, engajamento, proxima_conferencia, tempos_ms
+        )
+    finally:
+        _registrar_latencia(sessao.id, tempos_ms)
+
+
+async def _laco_do_canal(
+    websocket: WebSocket,
+    db: Session,
+    credencial: "Credencial",
+    sessao,
+    engajamento,
+    proxima_conferencia: datetime,
+    tempos_ms: List[float],
+) -> None:
+    """O laço de um canal autenticado: payload entra, score sai.
+
+    Separado de `telemetria_ws` só para o `finally` de lá registrar a latência
+    em todos os caminhos de saída — queda, credencial vencida, cliente que fecha.
+    O comportamento é o mesmo de antes.
+    """
     while True:
         try:
             payload = await websocket.receive_json()
         except (WebSocketDisconnect, ValueError):
             return
+
+        # O relógio começa quando o payload já está em memória e para logo antes
+        # da resposta sair. Ficam dentro: a reconferência da credencial, a
+        # fórmula, a janela do classificador e — o que mais pesa — o `INSERT`
+        # com `commit`. Ficam fora: rede e o tempo que o payload esperou na fila
+        # do socket, que já estão no RTT que o cliente mede.
+        inicio = time.perf_counter()
+        t0 = _ler_t0(payload)
 
         agora = agora_utc()
         if agora >= proxima_conferencia:
@@ -308,5 +404,17 @@ async def telemetria_ws(
                 # calibração — e `None` continua sendo "não dá para afirmar",
                 # nunca zero.
                 "sonolencia": resultado.sonolencia,
+                # Para a medição de latência (parecer do TC2, F01): o cliente
+                # subtrai `processamento_ms` do RTT que ele mediu e obtém o
+                # tempo de rede, sem somar duas vezes o que já está dentro.
+                "processamento_ms": _registrar_tempo(inicio, tempos_ms),
+                "t0": t0,
             }
         )
+
+
+def _registrar_tempo(inicio: float, tempos_ms: List[float]) -> float:
+    """Fecha o cronômetro deste payload e guarda o valor para o resumo da conexão."""
+    decorrido = round((time.perf_counter() - inicio) * 1000, 3)
+    tempos_ms.append(decorrido)
+    return decorrido

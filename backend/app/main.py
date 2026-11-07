@@ -1,3 +1,4 @@
+import logging
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
@@ -7,6 +8,32 @@ from app.analista import registro
 from app.config import settings
 from app.database import criar_tabelas
 from app.routers import auth, sessoes, telemetria
+
+
+def _configurar_log_da_aplicacao() -> None:
+    """Faz os `logger.info` dos módulos `app.*` aparecerem de verdade.
+
+    **O defeito que isto corrige.** O uvicorn configura só os loggers dele; o
+    logger raiz fica no nível padrão do Python, `WARNING`. Todo `logger.info` da
+    aplicação era descartado em silêncio — inclusive a linha
+    "classificador de sonolência carregado", que o tutorial de deploy manda
+    procurar no log para confirmar que o modelo subiu. Ela nunca apareceu, em
+    nenhum ambiente, e ninguém tinha como saber se o modelo estava carregado.
+
+    O handler vai no logger `app`, e não no raiz, para não ligar de carona o
+    `INFO` de toda biblioteca instalada. `propagate` continua ligado: é por ele
+    que o `caplog` dos testes enxerga as mensagens.
+    """
+    raiz_da_aplicacao = logging.getLogger("app")
+    if raiz_da_aplicacao.handlers:
+        return
+    saida = logging.StreamHandler()
+    saida.setFormatter(logging.Formatter("%(levelname)s:     %(name)s: %(message)s"))
+    raiz_da_aplicacao.addHandler(saida)
+    raiz_da_aplicacao.setLevel(logging.INFO)
+
+
+_configurar_log_da_aplicacao()
 
 
 @asynccontextmanager
@@ -49,4 +76,12 @@ app.include_router(telemetria.router)
 
 @app.get("/health")
 def health() -> dict:
-    return {"status": "ok"}
+    """Saúde da aplicação e **qual build está respondendo**.
+
+    O build vai junto por causa do parecer do TC2 (F02): toda evidência do
+    ambiente publicado — sessão real, medição de latência, relatório — precisa
+    dizer de qual versão do código veio. Com a imagem marcada como `latest` isso
+    era impossível de afirmar depois do fato, porque `latest` é uma etiqueta que
+    anda. O commit é gravado na imagem no `docker build` e não muda mais.
+    """
+    return {"status": "ok", "build": settings.build_commit}
