@@ -7,11 +7,16 @@ seção.
 
 | Item do plano | O que é | Estado em 07/11 |
 | --- | --- | --- |
-| Etapa 1, item 1 | Publicar a imagem e anotar commit, hash e horário | **Bloqueado**: instrumentação pronta e testada, mas o Docker Desktop foi desinstalado desta máquina em 28/10 ([§1](#1-build-e-deploy-etapa-1-item-1)) |
-| Etapa 1, item 4 | Latência do canal: RTT p50/p95/máx e processamento separado | **Pronto para rodar**: backend instrumentado, script escrito e validado localmente; falta só o deploy ([§2](#2-latência-do-canal-etapa-1-item-4)) |
-| Etapa 1, item 8 | Custo real e o que sobra depois do `destroy` | **Feito** (custo até 07/11); repetir a consulta no dia do `destroy` ([§3](#3-custo-real-e-o-que-fica-retido-etapa-1-item-8)) |
+| Etapa 1, item 1 | Publicar a imagem e anotar commit, hash e horário | **Feito**: build `f04a533` no ar desde 07/11/2026 21:50 UTC ([§1](#1-build-e-deploy-etapa-1-item-1)) |
+| Etapa 1, item 4 | Latência do canal: RTT p50/p95/máx e processamento separado | **Feito**: 300 payloads no ambiente publicado, cliente e log do servidor conferem ([§2](#2-latência-do-canal-etapa-1-item-4)) |
+| Etapa 1, item 8 | Custo real e o que sobra depois do `destroy` | **Feito** (custo até 07/11); repetir a consulta na véspera do `destroy` ([§3](#3-custo-real-e-o-que-fica-retido-etapa-1-item-8)) |
 | Etapa 2 | Data da troca de meta (80% → acurácia balanceada > 0,65) | **Feito**: 18/08/2026, com redação sugerida ([§4](#4-a-data-da-troca-de-meta-etapa-2)) |
-| Etapa 6 | Gerar o PDF V9 | **Bloqueado**: não há fonte editável do TCC no repositório ([§5](#5-pdf-v9-etapa-6)) |
+| Etapa 6 | Gerar o PDF V9 | **Depende do grupo**: é o último passo, depois das Etapas 2–5, e não há fonte editável do TCC ([§5](#5-pdf-v9-etapa-6)) |
+
+**O que o resto do grupo já pode usar:** o build instrumentado está no ar, então
+as sessões reais do Rian (itens 2, 3, 5 e 6) já saem com o `build` e com o
+`processamento_ms` de cada segundo, e o item 7 do Matheus (carga) tem o script
+pronto (§2.3).
 
 O que o parecer mandou **preservar** não foi tocado por nada disto: o resultado
 negativo do DAiSEE, o classificador de sonolência paralelo ao índice, os valores
@@ -22,9 +27,10 @@ forte — ver §2.3).
 
 ## 1. Build e deploy (Etapa 1, item 1)
 
-### 1.1 O que está no ar hoje
+### 1.1 O que estava no ar antes
 
-Levantado direto na AWS em 07/11/2026 (ECS e ECR, conta 481503226251, us-east-1):
+Levantado direto na AWS em 07/11/2026, antes do deploy (ECS e ECR, conta
+481503226251, us-east-1):
 
 | Campo | Valor |
 | --- | --- |
@@ -36,8 +42,8 @@ Levantado direto na AWS em 07/11/2026 (ECS e ECR, conta 481503226251, us-east-1)
 | Task atual iniciada em | 24/10/2026 17:12 UTC (o ECS substituiu a task; mesma imagem) |
 | Commit | **Não identificável com certeza.** O push caiu entre `99ef8f9` (12:33) e `0f20337` (15:39) e foi feito a partir da árvore de trabalho, não de um commit. |
 
-A última linha é o achado F02 do parecer em pessoa: a imagem que está no ar não
-diz de qual código veio. É exatamente o que a instrumentação abaixo corrige.
+A última linha é o achado F02 do parecer em pessoa: a imagem que estava no ar não
+dizia de qual código veio. É exatamente o que a instrumentação abaixo corrige.
 
 ### 1.2 O que foi feito
 
@@ -50,13 +56,37 @@ Commit `09b5208` — *feat(medicao): latência do canal e identificação do bui
   `INFO` da aplicação — inclusive `classificador de sonolência carregado` —
   nunca apareciam, porque só o logger do uvicorn tinha handler.
 
-### 1.3 O que falta, e o comando exato
+### 1.3 Como a imagem foi gerada
 
-O Docker Desktop foi **desinstalado desta máquina em 28/10/2026** (log em
-`C:\ProgramData\DockerDesktop\install-log-admin.txt`), e não há WSL com
-distribuição instalada. Sem ele não há como gerar a imagem. Quando houver Docker
-(reinstalado aqui ou na máquina de outro integrante), a sequência é esta, no
-PowerShell, a partir de `D:\tcc`:
+O Docker Desktop foi reinstalado nesta máquina em 07/11, mas não sobe: a
+virtualização do processador (Intel VT-x) está desligada no firmware
+(`VirtualizationFirmwareEnabled: False`). Em vez de depender da BIOS, o build
+foi feito **na própria AWS, com CodeBuild**, a partir do commit exato:
+
+1. `git archive f04a533:backend` → zip com 64 arquivos, incluindo o
+   `app/modelos/sonolencia.joblib` versionado;
+2. bucket S3, papel IAM e projeto CodeBuild **temporários** (`mapface-build-tmp`),
+   com permissão só para ler o zip e fazer push no repositório do backend;
+3. `docker build --build-arg BUILD_COMMIT=f04a533`, com o `Dockerfile` do
+   repositório sem nenhuma alteração. A imagem base `python:3.11-slim` foi
+   puxada do espelho oficial no ECR Public (o Docker Hub limita pulls anônimos
+   vindos da AWS) e recebeu o nome que o `Dockerfile` pede;
+4. o próprio build rodou a imagem e conferiu `BUILD_COMMIT=f04a533` antes do push;
+5. push das tags `f04a533` e `latest`; build `SUCCEEDED` em 60 s;
+6. projeto, papel, bucket e log group do CodeBuild **apagados em seguida e
+   conferidos** — não entram na lista do que sobra (§3.2).
+
+Depois, no PowerShell, em `infra/`:
+
+```powershell
+terraform plan  -var "tag_da_imagem=f04a533" -out tc2.plan   # 1 add, 1 change, 1 destroy: só task definition e serviço
+terraform apply tc2.plan
+```
+
+Antes do deploy, o log da aplicação não tinha nenhuma requisição além do health
+check nas 6 horas anteriores: ninguém teve sessão derrubada.
+
+Para um próximo deploy com Docker funcionando, a sequência local equivalente é:
 
 ```powershell
 $COMMIT = git rev-parse --short HEAD
@@ -72,25 +102,20 @@ terraform plan  -var "tag_da_imagem=$COMMIT"   # deve mudar só a task definitio
 terraform apply -var "tag_da_imagem=$COMMIT"
 ```
 
-Depois do `apply`, anotar na tabela 1.4: o commit, o digest (`aws ecr
-describe-images --repository-name mapface-poc-backend --image-ids
-imageTag=$COMMIT`), a revisão nova da task definition e o horário. Conferir:
+**Antes de qualquer deploy, confirmar que ninguém está gravando sessão**: a troca
+de task derruba os WebSockets abertos.
 
-- `https://d2qm0t6ecgabb2.cloudfront.net/health` devolve o `build` igual ao commit;
-- o log da task tem a linha `classificador de sonolência carregado`.
-
-**Antes do deploy, confirmar que ninguém está gravando sessão**: a troca de task
-derruba os WebSockets abertos.
-
-### 1.4 Registro do deploy instrumentado (preencher)
+### 1.4 Registro do deploy instrumentado
 
 | Campo | Valor |
 | --- | --- |
-| Commit | |
-| Digest da imagem | |
-| Task definition | `mapface-poc-backend:` |
-| Horário do `apply` (UTC) | |
-| `/health` → `build` | |
+| Commit | `f04a533` (o código do backend é o de `09b5208`; os commits seguintes só mexem em `mapface-evidencias/`) |
+| Digest da imagem | `sha256:36e325e62244b474e106985ba7bbaa6e28f94e2dc68f4c7eb171be91c2987b0c` (191,9 MB), tags `f04a533` e `latest` |
+| Push no ECR | 07/11/2026 21:48:42 UTC |
+| Task definition | `mapface-poc-backend:2` (a `:1` apontava para `:latest`; a `:2` aponta para a tag do commit) |
+| `terraform apply` | 07/11/2026 21:50:24 → 21:50:29 UTC |
+| `/health` → `build` | `f04a533` às 21:52:26 UTC; rollout `COMPLETED` com 1 task |
+| Log de inicialização | `app.sonolencia: classificador de sonolência carregado de /app/app/modelos/sonolencia.joblib` |
 
 ---
 
@@ -112,8 +137,9 @@ vezes.
 O pareamento de cada resposta com o seu envio é pelo carimbo `t0`, que o backend
 devolve intacto. O canal é estritamente 1:1 (cada payload gera uma resposta),
 então o gravador do Rian, que pareia pela ordem de chegada, também é válido — e
-ele já captura o `processamento_ms` quando o build novo estiver no ar, porque
-copia a mensagem inteira.
+ele já captura o `processamento_ms`, porque copia a mensagem inteira. Por isso o
+frontend não precisou mudar: na sessão real, o RTT sai do gravador; na sessão
+sintética, do script.
 
 Percentil por **posto mais próximo, sem interpolação**: o p95 é sempre uma
 medição que aconteceu, e dá para apontar o segundo em que ela ocorreu.
@@ -152,20 +178,60 @@ número de payloads de cada conexão. Esses números (RTT p50 ≈ 10 ms) são **
 máquina local e não vão para o texto** — servem só para mostrar que o script e o
 servidor concordam.
 
-### 2.4 O que rodar, quando o build novo estiver no ar
+### 2.4 Resultado no ambiente publicado
 
-1. `medir_latencia.py --duracao 300` (1 cliente, 5 min) → `latencia-1cliente.json`;
-2. o mesmo com `--clientes 5` → `latencia-5clientes.json`;
-3. exportar as linhas `latencia do canal` do CloudWatch **no mesmo dia** — o log
-   group `/ecs/mapface-poc` guarda só **7 dias** (`retencao_de_log_dias`).
+| Campo | Valor |
+| --- | --- |
+| Ambiente | `https://d2qm0t6ecgabb2.cloudfront.net` → CloudFront → ALB → ECS Fargate (1 task, 0,25 vCPU, 512 MiB, `--workers 1`) → RDS, us-east-1 |
+| Build | `f04a533` (lido do `/health` pelo próprio script) |
+| Janela | 07/11/2026, 21:53:39 a 21:58:46 UTC |
+| Cliente | Computador do Chrystian, no Brasil, conexão doméstica |
+| Sessão | `id 8`, conta `medicao-sintetica-72f63364-0@example.com`, assunto `medicao-sintetica-latencia`, encerrada ao fim |
+| Payloads | 300 enviados, 300 respondidos, 0 erros do canal |
+| Arquivo | [`latencia-1cliente.json`](./latencia-1cliente.json) (resumo + as 300 medições cruas) |
 
-Para o texto, por cenário: RTT p50/p95/máx, processamento p50/p95/máx e
-rede + fila p50/p95/máx, com o commit do build e a janela de horário.
+| Medida | p50 (ms) | p95 (ms) | Máx. (ms) | Média (ms) |
+| --- | ---: | ---: | ---: | ---: |
+| **RTT** (cliente) | 125,31 | 256,71 | 344,35 | 139,02 |
+| **Processamento** (backend) | 10,59 | 141,89 | 229,81 | 24,09 |
+| **Rede + fila** (RTT − processamento) | 114,59 | 116,49 | 131,23 | 114,94 |
 
-| Cenário | RTT p50 / p95 / máx (ms) | Processamento p50 / p95 / máx (ms) | Rede + fila p50 / p95 / máx (ms) |
-| --- | --- | --- | --- |
-| 1 cliente, 300 s | | | |
-| 5 clientes, 300 s | | | |
+**O log do servidor confere com o cliente**, linha exportada do CloudWatch
+(`/ecs/mapface-poc`, stream `backend/backend/1ade55f300364ab58f37e650d9616091`):
+
+```text
+INFO:     app.routers.telemetria: latencia do canal: sessao=8 n=300 p50=10.59ms p95=141.89ms max=229.81ms
+```
+
+**Leitura dos números, para o texto:**
+
+- **A rede domina o RTT típico.** ≈ 115 ms de rede + fila, estável (p95 só
+  2 ms acima do p50), é o trajeto São Paulo → us-east-1 e volta. O backend
+  típico gasta ≈ 11 ms.
+- **O processamento tem uma cauda, e ela tem ritmo.** 276 dos 300 payloads
+  ficaram entre 9,6 e 41 ms. Os 24 acima de 50 ms (mediana 201 ms) caem, com
+  exceção de dois, **a cada 10–11 payloads**, e não aparecem nos primeiros 60 s
+  (a calibração de 6 janelas). O ritmo coincide com o fechamento da janela de
+  10 s do classificador de sonolência (`DURACAO_DA_JANELA`), quando o Extra Trees
+  (300 árvores) roda numa task de 0,25 vCPU. É a explicação mais provável, mas
+  é inferida do padrão — o tempo do classificador não foi medido isoladamente.
+- **Contra as metas da Tabela 9 e do RNF06:** o RNF06 (backend em até 100 ms) é
+  atendido por **278 de 300** payloads (92,7%) e **não** no p95 (141,89 ms); o
+  WebSocket até 200 ms é atendido por 278 de 300 e no p50 (125 ms), mas **não**
+  no p95 (257 ms). Os payloads que estouram são os mesmos da cauda acima.
+- **O que isso não é:** com o canal estritamente 1:1 e um envio por segundo,
+  um RTT de 344 ms ainda chega antes do próximo envio — a tela nunca fica uma
+  leitura atrás. A medição é de 1 cliente; carga é o item 7 do Matheus.
+- **Uma hipótese, não testada:** o modelo foi treinado com `n_jobs=-1`
+  (`ml/treino_fadiga.py`), e predizer uma linha com paralelismo numa task de
+  0,25 vCPU costuma custar mais do que predizer em série. Se o grupo quiser
+  atacar a cauda, o primeiro experimento é `n_jobs=1` no estimador carregado,
+  medido de novo com este mesmo script. Não foi feito: mudaria o build medido.
+
+**Para o item 7 (Matheus):** o mesmo script com `--clientes 5 --duracao 600`
+gera `latencia-5clientes.json`. Exportar a linha `latencia do canal` de cada
+sessão do CloudWatch **no mesmo dia**: o log group guarda só **7 dias**
+(`retencao_de_log_dias`).
 
 ---
 
@@ -205,7 +271,8 @@ Apaga junto, sem sobra (configurado assim de propósito):
 
 - RDS: `skip_final_snapshot = true` e `deletion_protection = false` por padrão
   — não fica snapshot final; os backups automáticos (1 dia) saem com a instância;
-- ECR: `force_delete = true` — as imagens saem com o repositório;
+- ECR: `force_delete = true` — as imagens saem com o repositório (hoje são
+  duas: a de 14/10, que perdeu a tag `latest`, e a `f04a533`);
 - S3 do site: `force_destroy = true` — inclusive as versões antigas do
   versionamento;
 - Secrets Manager: `recovery_window_in_days = 0` — sem a janela de 7–30 dias;
@@ -220,6 +287,10 @@ Apaga junto, sem sobra (configurado assim de propósito):
 | Service-linked roles (ECS, RDS, ELB) | IAM | Podem ficar; a AWS as recria quando precisa |
 | `infra/terraform.tfstate` | **Esta máquina** | Contém os segredos (inclusive a `SECRET_KEY`) em texto puro. Fora do Git (`.gitignore`), mas apagar depois do `destroy` |
 | `backend/.env` e `database/` locais | Esta máquina | Fora do Git; apagar ou manter conforme o uso local |
+
+Os recursos temporários do build de 07/11 (projeto CodeBuild, papel IAM, bucket
+S3 e log group `mapface-build-tmp`) **não** estão nesta lista porque já foram
+apagados no mesmo dia, com a remoção conferida um a um (§1.3).
 
 ### 3.3 Checklist do dia do `destroy` (Etapa 6)
 
@@ -241,6 +312,7 @@ O que o repositório registra, em ordem:
 | 13/08/2026 | Commit `c49213e` (spec da PoC) | A Definition of Done pede **precisão superior a 80%** |
 | 18/08/2026 23:14 | Commit `71e519a`, `resultado_18_08.md` §4 | **Proposta** de trocar por **acurácia balanceada > 0,65**, com recall da classe minoritária reportado. O melhor modelo no DAiSEE dava 0,6572 |
 | 19/09/2026 | `.wize/knowledge/document-project/open-questions.md` | A troca ainda aparece como **pergunta aberta para a orientação** |
+| 21/09/2026 | `.wize/specs/spec-poc-iee/SPEC.md` (commit `2500fa3`) | "Proposto em `resultado_18_08.md`, ainda não aceito formalmente pela orientação" |
 | 24/09/2026 | Treino do classificador no UTA-RLDD (0,6553) | Já sob a meta nova — o alvo foi fixado **antes** desse modelo existir |
 
 Duas observações para o texto, que o parecer vai procurar:
@@ -276,27 +348,26 @@ Sugestão de redação para o TCC:
 
 ## 5. PDF V9 (Etapa 6)
 
-O único arquivo do TCC disponível é o **PDF V8**. Não há `.docx`, LaTeX ou
+O V9 é o **último passo do plano**: ele junta o texto das Etapas 2 a 5, que são
+do Rian e do Matheus, e por isso não pode ser gerado antes delas. Além disso, o
+único arquivo do TCC disponível é o **PDF V8** — não há `.docx`, LaTeX ou
 documento compartilhado no repositório nem nesta máquina, e as figuras do V8 não
 são reproduzíveis a partir do texto. Gerar o V9 depende de alguém indicar onde
 está a fonte editável.
 
-Quando houver a fonte, entram no V9 os números deste arquivo:
+A parte do Chrystian que vai para o V9 já está pronta, neste arquivo:
 
 | Onde no texto | Hoje (V8) | Vai para (V9) |
 | --- | --- | --- |
 | Testes automatizados | 426 backend / 326 frontend / 244 ML | **451** / 326 / 244 (**1.021**) |
-| Custo do ambiente | Estimativa | Real: US$ 39,60 em 24 dias (tabela 3.1) |
-| Latência | Sem medição no ambiente publicado | Tabela 2.4 |
-| Identificação do build | Ausente | Commit e digest da tabela 1.4 |
-| Data da troca de meta | Ausente | Seção 4 |
+| §7.5 Custo do ambiente | Estimativa e "elegível ao nível gratuito" | Real: US$ 39,60 em 24 dias, e a lista do que o `destroy` não apaga (§3) |
+| §8.4 Tabela 9 — WebSocket | Meta: até 200 ms | RTT p50 125 / p95 257 / máx. 344 ms; 278 de 300 dentro da meta (§2.4) |
+| §8.4 / RNF06 — backend | Meta: até 100 ms | p50 10,6 / p95 142 / máx. 230 ms; 278 de 300 dentro da meta (§2.4) |
+| Identificação do build | Ausente | Commit `f04a533` e digest da tabela 1.4 |
+| Data da troca de meta | Ausente | 18/08/2026, com redação sugerida (§4) |
 
 ---
 
-## Perguntas em aberto
+## Pergunta em aberto
 
-1. **Docker**: reinstalo o Docker Desktop nesta máquina para o deploy, ou alguém
-   da equipe faz o build com os comandos do §1.3?
-2. **Data da meta**: "antes das férias" é a data em que a orientadora aprovou a
-   troca? Há registro (e-mail, ata) com o dia?
-3. **PDF V9**: onde está o arquivo editável do TCC (Word, Google Docs, Overleaf)?
+**PDF V9**: onde está o arquivo editável do TCC (Word, Google Docs, Overleaf)?
