@@ -127,6 +127,12 @@ class Settings(BaseSettings):
             f"@{self.database_host}:{self.database_port}/{self.database_name}"
         )
 
+    # Commit de onde a imagem em execução foi construída. Gravado pelo
+    # `docker build --build-arg BUILD_COMMIT=...` e exposto no `/health`, para
+    # que toda evidência do ambiente publicado diga de qual código veio
+    # (parecer do TC2, F02). Fora de uma imagem, vale "local".
+    build_commit: str = "local"
+
     model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8")
 
 

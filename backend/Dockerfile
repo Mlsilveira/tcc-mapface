@@ -38,6 +38,14 @@ COPY app ./app
 # estudantes para a mesa de alguém não é troca que valha a conveniência.
 COPY scripts ./scripts
 
+# O commit de onde a imagem veio, gravado de vez. `latest` é uma etiqueta que
+# anda: depois do fato, não diz qual código respondeu a uma medição. Este valor
+# não anda, e o `/health` o devolve (parecer do TC2, F02).
+#
+#     docker build --build-arg BUILD_COMMIT=$(git rev-parse --short HEAD) .
+ARG BUILD_COMMIT=desconhecido
+ENV BUILD_COMMIT=$BUILD_COMMIT
+
 # Usuário sem privilégio. Um processo que não precisa de root não deve rodar
 # como root — e este não precisa: ele abre uma porta alta e não escreve em
 # disco, já que o estado todo vive no RDS.
