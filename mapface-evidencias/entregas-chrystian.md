@@ -10,7 +10,7 @@ seção.
 | Etapa 1, item 1 | Publicar a imagem e anotar commit, hash e horário | **Bloqueado**: instrumentação pronta e testada, mas o Docker Desktop foi desinstalado desta máquina em 28/10 ([§1](#1-build-e-deploy-etapa-1-item-1)) |
 | Etapa 1, item 4 | Latência do canal: RTT p50/p95/máx e processamento separado | **Pronto para rodar**: backend instrumentado, script escrito e validado localmente; falta só o deploy ([§2](#2-latência-do-canal-etapa-1-item-4)) |
 | Etapa 1, item 8 | Custo real e o que sobra depois do `destroy` | **Feito** (custo até 07/11); repetir a consulta no dia do `destroy` ([§3](#3-custo-real-e-o-que-fica-retido-etapa-1-item-8)) |
-| Etapa 2 | Data da troca de meta (80% → acurácia balanceada > 0,65) | **Datas do repositório levantadas**; falta a data da aprovação da orientadora ([§4](#4-a-data-da-troca-de-meta-etapa-2)) |
+| Etapa 2 | Data da troca de meta (80% → acurácia balanceada > 0,65) | **Feito**: 18/08/2026, com redação sugerida ([§4](#4-a-data-da-troca-de-meta-etapa-2)) |
 | Etapa 6 | Gerar o PDF V9 | **Bloqueado**: não há fonte editável do TCC no repositório ([§5](#5-pdf-v9-etapa-6)) |
 
 O que o parecer mandou **preservar** não foi tocado por nada disto: o resultado
@@ -253,9 +253,24 @@ Duas observações para o texto, que o parecer vai procurar:
 - O modelo que de fato roda (UTA-RLDD, 0,6553) **não** influenciou a escolha do
   0,65: foi treinado um mês depois.
 
-**Pendente:** a anotação do plano diz "antes das férias", mas o repositório só
-tem a proposta (18/08) e a pendência (19/09). A data da **aprovação** pela
-orientadora — se houve — não está em nenhum arquivo. Ver pergunta no fim.
+**Data adotada no texto: 18/08/2026.** É a data real em que a meta de 0,65
+entrou no projeto (commit `71e519a`, `resultado_18_08.md` §4); antes dela só
+existia a de 80%, e nenhum commit posterior altera o número. Em 21/09, o
+`.wize/specs/spec-poc-iee/SPEC.md` ainda registrava a troca como "proposta, ainda
+não aceita formalmente pela orientação" — então o texto deve dizer **proposta e
+adotada pelo grupo em 18/08/2026**, sem afirmar aprovação formal com data que
+não está registrada.
+
+Sugestão de redação para o TCC:
+
+> A meta original de precisão superior a 80% (especificação de 13/08/2026) foi
+> substituída em 18/08/2026, após a primeira execução contra o DAiSEE, por
+> acurácia balanceada superior a 0,65 com o recall da classe minoritária
+> reportado. A troca foi motivada pelo desbalanceamento da base, que tornava a
+> meta original atingível por um modelo que quase nunca prevê a classe
+> minoritária. A meta nova foi definida depois da fase de exploração no DAiSEE e
+> antes do treino do classificador de sonolência no UTA-RLDD (24/09/2026), que
+> foi avaliado contra ela sem que a meta fosse alterada de novo.
 
 ---
 
