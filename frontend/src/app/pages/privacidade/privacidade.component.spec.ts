@@ -14,7 +14,7 @@ const VIGENTE: Perfil = {
   id: 1,
   nome: 'Ana',
   email: 'ana@exemplo.com',
-  termo_versao: '1.1',
+  termo_versao: '1.2',
   termo_aceito_em: '2026-11-08T10:00:00Z',
   consentimento_revogado_em: null,
   consentimento_vigente: true,

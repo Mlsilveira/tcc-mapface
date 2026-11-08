@@ -3,6 +3,7 @@ from typing import Annotated, Dict, List, Optional
 
 from pydantic import (
     AfterValidator,
+    AliasChoices,
     BaseModel,
     EmailStr,
     Field,
@@ -133,7 +134,10 @@ class AlunoPublico(BaseModel):
     termo_aceito_em: Optional[datetime] = None
     consentimento_revogado_em: Optional[datetime] = None
     consentimento_vigente: bool = False
-    objetivo: Optional[str] = None
+    #: Na tabela é `objetivo_estudo` (o nome do DER); na API, `objetivo`.
+    objetivo: Optional[str] = Field(
+        default=None, validation_alias=AliasChoices("objetivo_estudo", "objetivo")
+    )
 
     model_config = {"from_attributes": True}
 

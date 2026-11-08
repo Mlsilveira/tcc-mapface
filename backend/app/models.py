@@ -36,7 +36,8 @@ class Aluno(SQLModel, table=True):
 
     #: RF04. Opcional pelo mesmo motivo do termo: contas antigas não declararam.
     #: Os valores válidos estão em `app.objetivo`; a validação fica no schema.
-    objetivo: Optional[str] = Field(default=None)
+    #: O nome da coluna é o do DER do TCC (seção 6.2); na API o campo é `objetivo`.
+    objetivo_estudo: Optional[str] = Field(default=None)
 
     @property
     def consentimento_vigente(self) -> bool:
