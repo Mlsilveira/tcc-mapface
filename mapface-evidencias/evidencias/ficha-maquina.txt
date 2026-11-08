@@ -1,0 +1,9 @@
+﻿Data: 08/11/2026 00:13
+Sistema: Microsoft Windows 11 Pro 10.0.26200
+Fabricante e modelo: Acer Aspire A515-45
+Processador: AMD Ryzen 7 5700U with Radeon Graphics         
+Nucleos fisicos / logicos: 8 / 16
+Memoria RAM (GB): 23.4
+Placa de video: AMD Radeon(TM) Graphics
+Webcam: HD User Facing
+Navegador: Microsoft Edge 156.0.4314.58 (Compilação oficial) (64 bits)
