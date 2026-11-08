@@ -240,6 +240,7 @@ def montar(
     serie: Sequence[LogEngajamento],
     resumo: Optional[ResumoDaSessao] = None,
     avaliacao: Optional["Avaliacao"] = None,
+    objetivo: Optional[str] = None,
 ) -> RelatorioDaSessao:
     """Junta indicadores, curva, critérios do método e recomendações numa peça só.
 
@@ -261,7 +262,7 @@ def montar(
         sessao=sessao,
         resumo=resumo,
         serie=serie,
-        recomendacoes=recomendacoes.recomendar(resumo),
+        recomendacoes=recomendacoes.recomendar(resumo, objetivo),
         parcial=sessao.encerramento == ENCERRAMENTO_POR_INATIVIDADE,
         avaliacao=avaliacao,
     )

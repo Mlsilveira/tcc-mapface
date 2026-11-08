@@ -276,7 +276,9 @@ def relatorio_da_sessao(
         resolucao_da_serie_s=_resolucao_da_serie(db, sessao),
     )
     return RelatorioPublico.de(
-        relatorio.montar(sessao, serie, _resumo_de(db, sessao, serie), avaliacao)
+        relatorio.montar(
+            sessao, serie, _resumo_de(db, sessao, serie), avaliacao, aluno_atual.objetivo_estudo
+        )
     )
 
 

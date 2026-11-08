@@ -34,7 +34,12 @@ def registrar(dados: AlunoRegistro, session: Session = Depends(get_session)) -> 
             status_code=status.HTTP_409_CONFLICT, detail="E-mail já cadastrado"
         )
 
-    aluno = Aluno(nome=dados.nome, email=dados.email, senha_hash=hash_senha(dados.senha))
+    aluno = Aluno(
+        nome=dados.nome,
+        email=dados.email,
+        senha_hash=hash_senha(dados.senha),
+        objetivo_estudo=dados.objetivo,
+    )
     conta.registrar_aceite(aluno)
     session.add(aluno)
     session.commit()
@@ -115,6 +120,9 @@ def corrigir_perfil(
 
     if dados.nome is not None:
         aluno_atual.nome = dados.nome
+
+    if dados.objetivo is not None:
+        aluno_atual.objetivo_estudo = dados.objetivo
 
     session.add(aluno_atual)
     session.commit()

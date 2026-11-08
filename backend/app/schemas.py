@@ -3,6 +3,7 @@ from typing import Annotated, Dict, List, Optional
 
 from pydantic import (
     AfterValidator,
+    AliasChoices,
     BaseModel,
     EmailStr,
     Field,
@@ -11,6 +12,7 @@ from pydantic import (
 )
 
 from app import blocos, consentimento, criterios, metodos, recomendacoes
+from app.objetivo import Objetivo
 from app.models import LogEngajamento, SessaoEstudo
 from app.relatorio import RelatorioDaSessao, ResumoDaSessao
 from app.tempo import como_utc
@@ -114,6 +116,9 @@ class AlunoRegistro(AceiteDoTermo):
     nome: str = Field(min_length=1)
     email: EmailStr
     senha: Senha
+    #: RF04. Opcional na API para não quebrar clientes antigos; a tela de
+    #: cadastro exige a escolha.
+    objetivo: Optional[Objetivo] = None
 
 
 class AlunoLogin(BaseModel):
@@ -129,6 +134,10 @@ class AlunoPublico(BaseModel):
     termo_aceito_em: Optional[datetime] = None
     consentimento_revogado_em: Optional[datetime] = None
     consentimento_vigente: bool = False
+    #: Na tabela é `objetivo_estudo` (o nome do DER); na API, `objetivo`.
+    objetivo: Optional[str] = Field(
+        default=None, validation_alias=AliasChoices("objetivo_estudo", "objetivo")
+    )
 
     model_config = {"from_attributes": True}
 
@@ -143,6 +152,7 @@ class CorrecaoDePerfil(BaseModel):
 
     nome: Optional[str] = Field(default=None, min_length=1)
     email: Optional[EmailStr] = None
+    objetivo: Optional[Objetivo] = None
 
 
 class PerfilCorrigido(AlunoPublico):

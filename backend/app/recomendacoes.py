@@ -92,7 +92,9 @@ class Recomendacao:
     motivo: str
 
 
-def recomendar(resumo: "ResumoDaSessao") -> Tuple[Recomendacao, ...]:
+def recomendar(
+    resumo: "ResumoDaSessao", objetivo: Optional[str] = None
+) -> Tuple[Recomendacao, ...]:
     """As recomendações que o resumo da sessão justifica, em ordem de urgência.
 
     A ordem não é cosmética: microssono vem antes de pálpebra pesada, que vem
@@ -103,6 +105,12 @@ def recomendar(resumo: "ResumoDaSessao") -> Tuple[Recomendacao, ...]:
     Sessão sem nada a sinalizar recebe uma recomendação mesmo assim. O relatório
     que volta vazio ensina o aluno que só vale a pena abri-lo quando algo deu
     errado, e o objetivo declarado é autopercepção, não alarme.
+
+    `objetivo` é o objetivo de estudo do aluno (RF04). Ele acrescenta uma
+    recomendação de método no fim da lista (RF17, linhas 6 e 7 da Tabela 6 do
+    TCC), depois das que vêm da sessão: o que a sessão mostrou é mais urgente
+    do que o conselho de método. Sessão sem nenhum ponto não a recebe, porque
+    não houve estudo medido a que ela se aplique.
     """
     fadiga = resumo.alertas_de_fadiga
     sugestoes: List[Recomendacao] = []
@@ -208,7 +216,47 @@ def recomendar(resumo: "ResumoDaSessao") -> Tuple[Recomendacao, ...]:
             )
         )
 
+    por_objetivo = _por_objetivo(objetivo)
+    if por_objetivo is not None:
+        sugestoes.append(por_objetivo)
+
     return tuple(sugestoes)
+
+
+def _por_objetivo(objetivo: Optional[str]) -> Optional[Recomendacao]:
+    """A recomendação de método que o objetivo declarado justifica (RF17).
+
+    Prova e vestibular pedem retenção de muito conteúdo até uma data: prática
+    distribuída e intercalada (Dunlosky et al., 2013). Estudo pessoal não tem
+    prazo nem lista de matérias, e se beneficia de blocos longos e sem meta
+    (Csikszentmihalyi, 1990; Newport, 2016).
+    """
+    if objetivo in ("prova", "vestibular"):
+        return Recomendacao(
+            codigo="objetivo-prova",
+            titulo="Distribua e intercale as matérias",
+            texto=(
+                "Para quem se prepara para uma prova, várias sessões curtas espalhadas "
+                "pelos dias rendem mais do que uma longa na véspera, e alternar matérias "
+                "dentro da mesma sessão ajuda a lembrar na hora de usar."
+            ),
+            motivo=(
+                "Objetivo declarado: "
+                + ("vestibular." if objetivo == "vestibular" else "prova específica.")
+            ),
+        )
+    if objetivo == "pessoal":
+        return Recomendacao(
+            codigo="objetivo-pessoal",
+            titulo="Experimente blocos longos sem meta",
+            texto=(
+                "No estudo por interesse próprio não há prazo a cumprir. Blocos longos, "
+                "no método Flow, sem número de blocos definido, favorecem a concentração "
+                "profunda em um único assunto."
+            ),
+            motivo="Objetivo declarado: estudo pessoal.",
+        )
+    return None
 
 
 def _incerteza_relevante(resumo: "ResumoDaSessao") -> Optional[str]:

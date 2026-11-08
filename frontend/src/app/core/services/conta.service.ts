@@ -4,6 +4,7 @@ import { Observable, tap } from 'rxjs';
 
 import { API_URL } from '../api';
 import { ACEITE_DA_VERSAO_ATUAL } from '../consentimento/termo';
+import { Objetivo } from '../objetivo';
 import { AuthService } from './auth.service';
 
 export interface Perfil {
@@ -14,11 +15,14 @@ export interface Perfil {
   termo_aceito_em: string | null;
   consentimento_revogado_em: string | null;
   consentimento_vigente: boolean;
+  /** `null` em conta criada antes do campo existir. */
+  objetivo: Objetivo | null;
 }
 
 export interface CorrecaoDePerfil {
   nome?: string;
   email?: string;
+  objetivo?: Objetivo;
 }
 
 interface PerfilCorrigido extends Perfil {
