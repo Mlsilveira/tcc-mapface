@@ -9,3 +9,11 @@ Na pasta acima desta (mapface-evidencias), rode no PowerShell:
   py analisar_sessao.py evidencias\sessao-real-1.json --rotulo "Sessao real 1" -o evidencias\sessao-real-1.md
   py analisar_sessao.py evidencias\sessao-adversa.json --rotulo "Sessao adversa" -o evidencias\sessao-adversa.md
   py analisar_sessao.py evidencias\sessao-robustez-wifi.json --rotulo "Robustez Wi-Fi" -o evidencias\sessao-robustez-wifi.md
+
+Sensibilidade do IEE (ml/sensibilidade_iee.py):
+
+  blocos-sessao-N.json         -> cole baixar_blocos.js no console, logado na conta que fez a sessao
+
+Na pasta ml, rode:
+
+  py sensibilidade_iee.py --sessao ..\mapface-evidencias\evidencias\sessao-real-1.json --blocos ..\mapface-evidencias\evidencias\blocos-sessao-N.json --rotulo "Sessao real 1"
