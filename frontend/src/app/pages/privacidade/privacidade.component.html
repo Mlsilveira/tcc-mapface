@@ -121,6 +121,15 @@
               <p class="campo-erro">Informe um e-mail válido.</p>
             }
           </div>
+          <div class="campo">
+            <label for="objetivo">Objetivo de estudo</label>
+            <select id="objetivo" formControlName="objetivo" data-teste="objetivo">
+              <option value="" disabled>Não informado</option>
+              @for (objetivo of objetivos; track objetivo.codigo) {
+                <option [value]="objetivo.codigo">{{ objetivo.nome }}</option>
+              }
+            </select>
+          </div>
           <button
             type="submit"
             class="botao botao--primario"

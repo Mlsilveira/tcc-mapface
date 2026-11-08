@@ -3,6 +3,7 @@ import { FormBuilder, ReactiveFormsModule, Validators } from '@angular/forms';
 import { Router, RouterLink } from '@angular/router';
 
 import { ACEITE_DA_VERSAO_ATUAL } from '../../core/consentimento/termo';
+import { OBJETIVOS, Objetivo } from '../../core/objetivo';
 import { AuthService } from '../../core/services/auth.service';
 import { IconeComponent } from '../../shared/icone.component';
 import { LogoComponent } from '../../shared/logo.component';
@@ -29,9 +30,12 @@ export class RegistroComponent {
     nome: ['', [Validators.required]],
     email: ['', [Validators.required, Validators.email]],
     senha: ['', [Validators.required, Validators.minLength(8)]],
+    objetivo: ['' as Objetivo | '', [Validators.required]],
     aceitouTermo: [false, [Validators.requiredTrue]],
     declarouMaioridade: [false, [Validators.requiredTrue]],
   });
+
+  readonly objetivos = OBJETIVOS;
 
   erro: string | null = null;
   enviando = false;
@@ -44,9 +48,15 @@ export class RegistroComponent {
 
     this.erro = null;
     this.enviando = true;
-    const { nome, email, senha } = this.formulario.getRawValue();
+    const { nome, email, senha, objetivo } = this.formulario.getRawValue();
 
-    const dados = { nome: nome!, email: email!, senha: senha!, ...ACEITE_DA_VERSAO_ATUAL };
+    const dados = {
+      nome: nome!,
+      email: email!,
+      senha: senha!,
+      objetivo: objetivo as Objetivo,
+      ...ACEITE_DA_VERSAO_ATUAL,
+    };
     this.authService.registrar(dados).subscribe({
       next: () => {
         this.enviando = false;

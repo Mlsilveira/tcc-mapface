@@ -18,6 +18,7 @@ const VIGENTE: Perfil = {
   termo_aceito_em: '2026-11-08T10:00:00Z',
   consentimento_revogado_em: null,
   consentimento_vigente: true,
+  objetivo: 'prova',
 };
 
 const REVOGADO: Perfil = {
@@ -119,6 +120,22 @@ describe('PrivacidadeComponent', () => {
     fixture.componentInstance.salvarDados();
 
     expect(conta.corrigir).toHaveBeenCalledWith({ nome: 'Ana S.' });
+  });
+
+  it('envia o novo objetivo de estudo quando ele muda (RF04)', async () => {
+    await abrir(VIGENTE);
+    conta.corrigir.and.returnValue(of({ ...VIGENTE, objetivo: 'pessoal' }));
+
+    fixture.componentInstance.formularioDeDados.patchValue({ objetivo: 'pessoal' });
+    fixture.componentInstance.salvarDados();
+
+    expect(conta.corrigir).toHaveBeenCalledWith({ objetivo: 'pessoal' });
+  });
+
+  it('mostra o objetivo atual da conta no formulário', async () => {
+    await abrir(VIGENTE);
+
+    expect(fixture.componentInstance.formularioDeDados.getRawValue().objetivo).toBe('prova');
   });
 
   it('avisa quando o novo e-mail já está em uso', async () => {
