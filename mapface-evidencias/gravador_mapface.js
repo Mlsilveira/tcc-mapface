@@ -19,7 +19,10 @@
  *   F  fala — aperte ao começar e de novo ao parar
  *   S  sorriso / riso
  *   C  comer ou beber
- *   M  marca livre (abre uma caixa para digitar um texto)
+ *   M  marca livre (sem texto: anote no papel o que foi)
+ *   1 a 9  início de uma condição da sessão adversa (1 = primeira condição...)
+ * Nenhuma tecla abre caixa de diálogo: uma caixa aberta pausa a página e a
+ * captura junto.
  * Teclas digitadas dentro de um campo de texto são ignoradas. Sem Alt de
  * propósito: no Chrome para Windows, Alt+F abre o menu do navegador.
  *
@@ -121,6 +124,7 @@
   }, 1000);
 
   const teclas = { b: 'bocejo', f: 'fala', s: 'sorriso', c: 'comer-beber', m: 'livre' };
+  for (let n = 1; n <= 9; n++) teclas[String(n)] = 'condicao';
   addEventListener('keydown', (ev) => {
     if (ev.altKey || ev.ctrlKey || ev.metaKey || ev.repeat) return;
     const alvo = ev.target;
@@ -129,9 +133,9 @@
     if (!tipo) return;
     ev.preventDefault();
     const marca = { t: agora(), tipo };
-    if (tipo === 'livre') marca.texto = prompt('Marca livre:') ?? '';
+    if (tipo === 'condicao') marca.numero = Number(ev.key);
     R.marcas.push(marca);
-    console.log(`[gravador] marca "${tipo}" às ${new Date(marca.t).toLocaleTimeString()}`);
+    console.log(`[gravador] marca "${tipo}${marca.numero ? ' ' + marca.numero : ''}" às ${new Date(marca.t).toLocaleTimeString()}`);
   });
 
   R.resumo = () => {

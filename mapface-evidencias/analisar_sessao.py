@@ -34,6 +34,9 @@ CASAMENTO_DEPOIS_S = 10.0
 # Vão entre payloads acima disto conta como lacuna de dados (o normal é 1 s).
 LACUNA_S = 2.5
 
+# Pontos que cada bocejo soma ao fator de fadiga no backend.
+PONTOS_POR_BOCEJO = 8
+
 
 def hora(t_ms: float) -> str:
     return datetime.fromtimestamp(t_ms / 1000, tz=timezone.utc).astimezone().strftime("%H:%M:%S")
@@ -99,7 +102,7 @@ def casar(marcas, deteccoes):
     return pares, perdidas, livres
 
 
-def analisar(dados, rotulo, bocejos_video=None):
+def analisar(dados, rotulo, bocejos_video=None, nomes_condicoes=None):
     env = sorted(dados.get("enviados", []), key=lambda x: x["t"])
     rec = sorted(dados.get("recebidos", []), key=lambda x: x["t"])
     con = dados.get("conexoes", [])
@@ -142,22 +145,29 @@ def analisar(dados, rotulo, bocejos_video=None):
 
     # Cobertura
     w("## Cobertura da medição\n")
-    com_rosto = [e for e in env if e.get("rosto_detectado")]
-    sem_rosto = len(env) - len(com_rosto)
+    # Categorias exclusivas, na ordem em que o servidor decide o score: com
+    # incerteza o ponto fica sem valor, haja rosto ou não (no escuro, sair da
+    # frente da câmera vira baixa-luz); só sem incerteza a ausência de rosto
+    # vira zero.
     inc = Counter(e.get("incerteza") for e in env if e.get("incerteza"))
     n_inc = sum(inc.values())
+    inc_sem_rosto = sum(1 for e in env if e.get("incerteza") and not e.get("rosto_detectado"))
+    confiaveis = sum(1 for e in env if e.get("rosto_detectado") and not e.get("incerteza"))
+    sem_rosto = sum(1 for e in env if not e.get("rosto_detectado") and not e.get("incerteza"))
     lacunas = [(a["t"], (b["t"] - a["t"]) / 1000) for a, b in zip(env, env[1:]) if (b["t"] - a["t"]) / 1000 > LACUNA_S]
     perdidos = sum(round(g) - 1 for _, g in lacunas)
     esperados = len(env) + perdidos
     w("| Situação | Segundos | % do esperado |")
     w("| --- | ---: | ---: |")
     w(f"| Payloads esperados (1 por segundo de gravação) | {esperados} | 100% |")
-    w(f"| Enviados com rosto e captura confiável | {len(com_rosto) - sum(1 for e in com_rosto if e.get('incerteza'))} | {pct(len(com_rosto) - sum(1 for e in com_rosto if e.get('incerteza')), esperados)} |")
+    w(f"| Enviados com rosto e captura confiável | {confiaveis} | {pct(confiaveis, esperados)} |")
     w(f"| Enviados com incerteza (sem valor de índice) | {n_inc} | {pct(n_inc, esperados)} |")
-    w(f"| Enviados sem rosto | {sem_rosto} | {pct(sem_rosto, esperados)} |")
+    w(f"| Enviados sem rosto e sem incerteza (índice zero) | {sem_rosto} | {pct(sem_rosto, esperados)} |")
     w(f"| Não enviados (lacuna de conexão/aba) | {perdidos} | {pct(perdidos, esperados)} |")
     if inc:
         w("\nMotivos de incerteza: " + ", ".join(f"{k} = {v} s" for k, v in inc.most_common()))
+    if inc_sem_rosto:
+        w(f"\nDos {n_inc} s com incerteza, {inc_sem_rosto} também não tinham rosto: o servidor os grava como incertos, não como ausência.")
     w("")
 
     # Canal
@@ -240,7 +250,20 @@ def analisar(dados, rotulo, bocejos_video=None):
 
     # Bocejos
     w("## Bocejos: marcados × detectados\n")
-    dets = deteccoes_de_bocejo(env)
+    # A verdade é o servidor: cada bocejo contado soma 8 pontos ao fator de
+    # fadiga (Tabela da seção 5.6.4). A reaplicação local da regra fica só como
+    # reserva para gravações sem resposta do servidor, porque ela erra no caso
+    # limite de 2 s: a contagem depende do intervalo exato entre payloads.
+    dets, anterior = [], None
+    for r in scores:
+        f = r.get("fadiga")
+        if isinstance(f, (int, float)) and isinstance(anterior, (int, float)):
+            if round(f - anterior) == PONTOS_POR_BOCEJO and "bocejos" in (r.get("motivos_fadiga") or []):
+                dets.append(r["t"])
+        anterior = f
+    fonte_det = "servidor (fadiga +8 com motivo bocejos)"
+    if not scores:
+        dets, fonte_det = deteccoes_de_bocejo(env), "regra reaplicada no script"
     marc_b = [m["t"] for m in marcas if m["tipo"] == "bocejo"]
     origem = "tecla B"
     if bocejos_video:
@@ -249,7 +272,8 @@ def analisar(dados, rotulo, bocejos_video=None):
     mares = [e["mar"] for e in env if isinstance(e.get("mar"), (int, float)) and e.get("rosto_detectado")]
     if mares:
         w(f"- MAR com rosto: mediana {statistics.median(mares):.3f}, p99 {fmt(percentil(mares, 99), 3)}, máximo {max(mares):.3f}")
-    w(f"- Regra reaplicada: MAR médio do segundo > {LIMIAR_MAR_BOCEJO} por ≥ {DURACAO_MINIMA_BOCEJO_S:.0f} s (na prática, 2 payloads seguidos acima do limiar; a contagem acontece quando chega o payload seguinte)")
+    w(f"- Regra do backend: MAR médio do segundo > {LIMIAR_MAR_BOCEJO} por ≥ {DURACAO_MINIMA_BOCEJO_S:.0f} s. Com 1 leitura por segundo, um bocejo de exatamente 2 leituras fica no limite e pode não contar.")
+    w(f"- Detecções lidas de: {fonte_det}")
     w(f"- Bocejos marcados ({origem}): {len(marc_b)} · detecções do sistema: {len(dets)}\n")
     if marc_b or dets:
         pares, perdidas, sobras = casar(marc_b, dets)
@@ -266,13 +290,46 @@ def analisar(dados, rotulo, bocejos_video=None):
         for t, o, r in sorted(linhas):
             w(f"| {mmss(rel(t))} | {o} | {r} |")
         w("")
-    outras = Counter(m["tipo"] for m in marcas if m["tipo"] != "bocejo")
+    outras = Counter(m["tipo"] for m in marcas if m["tipo"] not in ("bocejo", "condicao"))
     if outras:
         w("Outras marcas: " + ", ".join(f"{k} × {v}" for k, v in outras.items()))
-        livres = [m for m in marcas if m["tipo"] == "livre"]
-        for m in livres:
-            w(f"- {mmss(rel(m['t']))}: {m.get('texto', '')}")
+        for m in [m for m in marcas if m["tipo"] == "livre"]:
+            w(f"- marca livre em {mmss(rel(m['t']))}" + (f": {m['texto']}" if m.get("texto") else ""))
+        w("")
+
+    por_condicao(w, env, scores, marcas, nomes_condicoes, rel, t1)
     return "\n".join(out) + "\n"
+
+
+def por_condicao(w, env, scores, marcas, nomes, rel, t_fim):
+    """Cobertura entre marcas de condição (teclas 1 a 9), para a sessão adversa.
+
+    Cada trecho vai de uma marca até a seguinte (ou até o último payload). Os
+    segundos sem payload dentro do trecho contam como "não enviado".
+    """
+    conds = sorted((m for m in marcas if m["tipo"] == "condicao"), key=lambda m: m["t"])
+    if not conds:
+        return
+    w("## Cobertura por condição (teclas 1 a 9)\n")
+    w("| Condição | Início | Duração (s) | Confiável (%) | Incerta (%) | Sem rosto (%) | Não enviado (%) | Motivo de incerteza dominante | Calibrando no trecho? |")
+    w("| --- | ---: | ---: | ---: | ---: | ---: | ---: | --- | --- |")
+    limites = [m["t"] for m in conds[1:]] + [t_fim + 1000]
+    for m, fim in zip(conds, limites):
+        n = m.get("numero")
+        nome = nomes[n - 1] if nomes and n and n <= len(nomes) else f"Condição {n}"
+        trecho = [e for e in env if m["t"] <= e["t"] < fim]
+        dur = max(1, round((fim - m["t"]) / 1000), len(trecho))
+        inc = [e for e in trecho if e.get("incerteza")]
+        sem = [e for e in trecho if not e.get("incerteza") and not e.get("rosto_detectado")]
+        conf = len(trecho) - len(inc) - len(sem)
+        nao = max(0, dur - len(trecho))
+        motivo = Counter(e["incerteza"] for e in inc).most_common(1)
+        recal = any(r.get("calibrando") for r in scores if m["t"] <= r["t"] < fim)
+        w(f"| {n} — {nome} | {mmss(rel(m['t']))} | {dur} | {pct(conf, dur)} | {pct(len(inc), dur)} | "
+          f"{pct(len(sem), dur)} | {pct(nao, dur)} | {motivo[0][0] + f' ({motivo[0][1]} s)' if motivo else '—'} | "
+          f"{'sim' if recal else 'não'} |")
+    w("")
+    w("Percentuais sobre a duração do trecho; uma tecla de condição apertada duas vezes abre dois trechos.")
 
 
 def ler_csv_video(caminho, offset):
@@ -291,10 +348,12 @@ def main():
     ap.add_argument("--bocejos-video")
     ap.add_argument("--offset-video", type=float, default=0.0)
     ap.add_argument("-o", "--saida")
+    ap.add_argument("--condicoes", help='nomes das condições na ordem das teclas, separados por vírgula')
     a = ap.parse_args()
     dados = json.loads(Path(a.json).read_text(encoding="utf-8"))
     video = ler_csv_video(a.bocejos_video, a.offset_video) if a.bocejos_video else None
-    md = analisar(dados, a.rotulo, video)
+    nomes = [c.strip() for c in a.condicoes.split(",")] if a.condicoes else None
+    md = analisar(dados, a.rotulo, video, nomes)
     if a.saida:
         Path(a.saida).write_text(md, encoding="utf-8")
         print(f"Relatório salvo em {a.saida}")
