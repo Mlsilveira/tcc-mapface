@@ -432,6 +432,19 @@ describe('HomeComponent', () => {
       expect(webcamLigada()).toBeTrue();
     });
 
+    it('aponta para a privacidade e desliga a webcam sem consentimento vigente', async () => {
+      abrirTela(null);
+
+      await clicarEAguardar('iniciar-sessao');
+      httpMock
+        .expectOne({ method: 'POST', url: `${API}/sessoes` })
+        .flush({ detail: 'Aceite o termo' }, { status: 403, statusText: 'Forbidden' });
+      fixture.detectChanges();
+
+      expect(texto()).toContain('aceite o termo de consentimento');
+      expect(webcamLigada()).toBeFalse();
+    });
+
     it('avisa quando o backend falha ao iniciar a sessão', async () => {
       abrirTela(null);
 

@@ -4,6 +4,7 @@ from typing import Dict, Optional
 from sqlalchemy import JSON, Column
 from sqlmodel import Field, SQLModel
 
+from app import consentimento
 from app.blocos import ORIGEM_METODO
 from app.tempo import agora_utc
 
@@ -24,6 +25,20 @@ class Aluno(SQLModel, table=True):
     nome: str
     email: str = Field(index=True, unique=True)
     senha_hash: str
+
+    #: O aceite do termo (LGPD, art. 11, I). Tudo opcional porque contas criadas
+    #: antes do termo existir não têm o que informar: a migração acrescenta a
+    #: coluna vazia, e `None` significa "ainda não aceitou", o que é a verdade
+    #: sobre elas. Precisam aceitar antes da próxima sessão.
+    termo_versao: Optional[str] = Field(default=None)
+    termo_aceito_em: Optional[datetime] = Field(default=None)
+    consentimento_revogado_em: Optional[datetime] = Field(default=None)
+
+    @property
+    def consentimento_vigente(self) -> bool:
+        return consentimento.vigente(
+            self.termo_versao, self.termo_aceito_em, self.consentimento_revogado_em
+        )
 
 
 class SessaoEstudo(SQLModel, table=True):

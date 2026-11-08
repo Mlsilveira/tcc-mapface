@@ -256,6 +256,8 @@ export class HomeComponent implements OnInit, OnDestroy {
   }
 
   erro: string | null = null;
+  /** O servidor recusou a sessão porque não há aceite vigente do termo. */
+  precisaDeConsentimento = false;
   aguardando = false;
 
   private relogio: ReturnType<typeof setInterval> | null = null;
@@ -374,6 +376,7 @@ export class HomeComponent implements OnInit, OnDestroy {
    */
   async iniciarSessao(): Promise<void> {
     this.erro = null;
+    this.precisaDeConsentimento = false;
     this.aguardando = true;
 
     try {
@@ -408,6 +411,10 @@ export class HomeComponent implements OnInit, OnDestroy {
 
         // Sem sessão para alimentar, não há motivo para a webcam seguir ligada.
         this.cameraService.encerrar();
+        if (falha?.status === 403) {
+          this.precisaDeConsentimento = true;
+          return;
+        }
         this.erro = 'Não foi possível iniciar a sessão de estudo. Tente novamente.';
       },
     });

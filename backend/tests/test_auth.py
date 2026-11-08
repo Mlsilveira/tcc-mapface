@@ -12,8 +12,9 @@ from sqlmodel import Session, select
 
 from app.config import settings
 from app.models import Aluno
+from tests.apoio import ACEITE_DO_TERMO
 
-PAYLOAD_PADRAO = {"nome": "Ana Souza", "email": "ana@exemplo.com", "senha": "senhaSegura123"}
+PAYLOAD_PADRAO = {"nome": "Ana Souza", "email": "ana@exemplo.com", "senha": "senhaSegura123", **ACEITE_DO_TERMO}
 
 
 def registrar(client, payload=None):

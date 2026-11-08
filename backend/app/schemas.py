@@ -10,7 +10,7 @@ from pydantic import (
     model_validator,
 )
 
-from app import blocos, criterios, metodos, recomendacoes
+from app import blocos, consentimento, criterios, metodos, recomendacoes
 from app.models import LogEngajamento, SessaoEstudo
 from app.relatorio import RelatorioDaSessao, ResumoDaSessao
 from app.tempo import como_utc
@@ -75,7 +75,42 @@ def _assunto_util(valor: Optional[str]) -> Optional[str]:
 Assunto = Annotated[str, Field(max_length=LIMITE_ASSUNTO_CARACTERES)]
 
 
-class AlunoRegistro(BaseModel):
+class AceiteDoTermo(BaseModel):
+    """O aceite como o cliente o declara.
+
+    As duas caixas são campos separados porque são duas declarações: concordar
+    com o tratamento e afirmar ter 18 anos. `versao_termo` é o que impede um
+    bundle antigo, aberto desde antes de o termo mudar, de registrar aceite de
+    um texto que o titular não leu.
+    """
+
+    aceitou_termo: bool
+    declarou_maioridade: bool
+    versao_termo: str
+
+    @field_validator("aceitou_termo")
+    @classmethod
+    def _termo_aceito(cls, valor: bool) -> bool:
+        if not valor:
+            raise ValueError("é preciso aceitar o termo de consentimento")
+        return valor
+
+    @field_validator("declarou_maioridade")
+    @classmethod
+    def _maior_de_idade(cls, valor: bool) -> bool:
+        if not valor:
+            raise ValueError("o uso é restrito a maiores de 18 anos")
+        return valor
+
+    @field_validator("versao_termo")
+    @classmethod
+    def _versao_atual(cls, valor: str) -> str:
+        if valor != consentimento.VERSAO_TERMO:
+            raise ValueError("a versão do termo mudou: recarregue a página")
+        return valor
+
+
+class AlunoRegistro(AceiteDoTermo):
     nome: str = Field(min_length=1)
     email: EmailStr
     senha: Senha
@@ -90,8 +125,34 @@ class AlunoPublico(BaseModel):
     id: int
     nome: str
     email: EmailStr
+    termo_versao: Optional[str] = None
+    termo_aceito_em: Optional[datetime] = None
+    consentimento_revogado_em: Optional[datetime] = None
+    consentimento_vigente: bool = False
 
     model_config = {"from_attributes": True}
+
+    @field_validator("termo_aceito_em", "consentimento_revogado_em")
+    @classmethod
+    def _explicitar_utc(cls, valor: Optional[datetime]) -> Optional[datetime]:
+        return como_utc(valor) if valor is not None else None
+
+
+class CorrecaoDePerfil(BaseModel):
+    """O direito de correção (LGPD, art. 18, III). Campo ausente fica como está."""
+
+    nome: Optional[str] = Field(default=None, min_length=1)
+    email: Optional[EmailStr] = None
+
+
+class PerfilCorrigido(AlunoPublico):
+    """`access_token` só vem quando o e-mail mudou: o token é emitido sobre ele."""
+
+    access_token: Optional[str] = None
+
+
+class ExclusaoDeConta(BaseModel):
+    senha: str
 
 
 class Token(BaseModel):

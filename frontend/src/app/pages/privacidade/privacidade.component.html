@@ -1,0 +1,169 @@
+<div class="aplicacao">
+  <header class="topo">
+    <div class="topo__interno">
+      <app-logo />
+      <nav class="topo__acoes">
+        <a class="botao botao--fantasma" routerLink="/home" data-teste="voltar-para-home">Início</a>
+      </nav>
+    </div>
+  </header>
+
+  <main class="conteudo privacidade">
+    <h1>Privacidade e dados</h1>
+
+    @if (aviso()) {
+      <p class="privacidade__aviso" role="status" data-teste="aviso">{{ aviso() }}</p>
+    }
+    @if (erro()) {
+      <p class="erro-geral" role="alert">{{ erro() }}</p>
+    }
+
+    @if (perfil(); as dados) {
+      <section class="painel">
+        <h2>Consentimento</h2>
+
+        @if (dados.consentimento_vigente) {
+          <p data-teste="estado-consentimento">
+            Ativo: você aceitou a versão {{ dados.termo_versao }} do termo em
+            {{ dados.termo_aceito_em | date: 'dd/MM/yyyy HH:mm' }}.
+          </p>
+
+          @if (confirmandoRevogacao()) {
+            <p>
+              Ao revogar, sua sessão em andamento é encerrada e novas sessões ficam bloqueadas. Seus
+              relatórios continuam disponíveis.
+            </p>
+            <div class="privacidade__acoes">
+              <button
+                type="button"
+                class="botao botao--encerrar"
+                data-teste="confirmar-revogacao"
+                [disabled]="enviando()"
+                (click)="revogar()"
+              >
+                Confirmar revogação
+              </button>
+              <button
+                type="button"
+                class="botao botao--fantasma"
+                (click)="confirmandoRevogacao.set(false)"
+              >
+                Cancelar
+              </button>
+            </div>
+          } @else {
+            <button
+              type="button"
+              class="botao botao--fantasma"
+              data-teste="revogar"
+              (click)="confirmandoRevogacao.set(true)"
+            >
+              Revogar consentimento
+            </button>
+          }
+        } @else {
+          <p data-teste="estado-consentimento">
+            @if (dados.consentimento_revogado_em) {
+              Revogado em {{ dados.consentimento_revogado_em | date: 'dd/MM/yyyy HH:mm' }}.
+            } @else {
+              Você ainda não aceitou a versão {{ versaoAtual }} do termo.
+            }
+            Para iniciar sessões, leia o termo abaixo e aceite.
+          </p>
+
+          <form [formGroup]="formularioDeAceite" (ngSubmit)="aceitar()" novalidate>
+            <label class="aceite">
+              <input type="checkbox" formControlName="aceitouTermo" data-teste="aceite-termo" />
+              <span>Li e concordo com o tratamento dos meus dados nos termos abaixo.</span>
+            </label>
+            <label class="aceite">
+              <input
+                type="checkbox"
+                formControlName="declarouMaioridade"
+                data-teste="aceite-maioridade"
+              />
+              <span>Declaro ter 18 anos ou mais.</span>
+            </label>
+            @if (formularioDeAceite.invalid && formularioDeAceite.touched) {
+              <p class="campo-erro">Marque as duas opções para continuar.</p>
+            }
+            <button
+              type="submit"
+              class="botao botao--primario"
+              data-teste="aceitar"
+              [disabled]="enviando()"
+            >
+              Aceitar o termo
+            </button>
+          </form>
+        }
+
+        <details class="termo-detalhes">
+          <summary>Ler o termo completo</summary>
+          <app-termo-de-consentimento />
+        </details>
+      </section>
+
+      <section class="painel">
+        <h2>Meus dados</h2>
+        <form [formGroup]="formularioDeDados" (ngSubmit)="salvarDados()" novalidate>
+          <div class="campo">
+            <label for="nome">Nome</label>
+            <input id="nome" type="text" formControlName="nome" autocomplete="name" />
+            @if (formularioDeDados.get('nome')?.invalid && formularioDeDados.get('nome')?.touched) {
+              <p class="campo-erro">Informe seu nome.</p>
+            }
+          </div>
+          <div class="campo">
+            <label for="email">E-mail</label>
+            <input id="email" type="email" formControlName="email" autocomplete="email" />
+            @if (formularioDeDados.get('email')?.invalid && formularioDeDados.get('email')?.touched) {
+              <p class="campo-erro">Informe um e-mail válido.</p>
+            }
+          </div>
+          <button
+            type="submit"
+            class="botao botao--primario"
+            data-teste="salvar-dados"
+            [disabled]="enviando()"
+          >
+            Salvar alterações
+          </button>
+        </form>
+      </section>
+
+      <section class="painel">
+        <h2>Excluir conta</h2>
+        <p>
+          Apaga sua conta e todas as suas sessões e relatórios. Não dá para desfazer. Cópias
+          automáticas de segurança do banco podem manter os dados por até 1 dia.
+        </p>
+        <form [formGroup]="formularioDeExclusao" (ngSubmit)="excluir()" novalidate>
+          <div class="campo">
+            <label for="senha">Confirme sua senha</label>
+            <input
+              id="senha"
+              type="password"
+              formControlName="senha"
+              autocomplete="current-password"
+              data-teste="senha-exclusao"
+            />
+            @if (
+              formularioDeExclusao.get('senha')?.invalid && formularioDeExclusao.get('senha')?.touched
+            ) {
+              <p class="campo-erro">Informe sua senha.</p>
+            }
+          </div>
+          <button
+            type="submit"
+            class="botao botao--encerrar"
+            data-teste="excluir-conta"
+            [disabled]="enviando()"
+          >
+            Excluir minha conta
+          </button>
+        </form>
+      </section>
+    }
+  </main>
+</div>

@@ -47,6 +47,8 @@ import websockets
 
 URL_PADRAO = "https://d2qm0t6ecgabb2.cloudfront.net"
 NOME_DA_CONTA = "Medição sintética de latência"
+# Espelha backend/app/consentimento.py. A conta sintética precisa aceitar o termo para abrir sessão.
+VERSAO_DO_TERMO = "1.1"
 ASSUNTO = "medicao-sintetica-latencia"
 
 PAYLOAD = {
@@ -91,7 +93,10 @@ def _url_ws(base: str) -> str:
 async def _abrir_conta_e_sessao(http: httpx.AsyncClient, indice: int) -> tuple:
     email = f"medicao-sintetica-{secrets.token_hex(4)}-{indice}@example.com"
     senha = secrets.token_urlsafe(18)
-    r = await http.post("/auth/registro", json={"nome": NOME_DA_CONTA, "email": email, "senha": senha})
+    r = await http.post("/auth/registro", json={
+        "nome": NOME_DA_CONTA, "email": email, "senha": senha,
+        "aceitou_termo": True, "declarou_maioridade": True, "versao_termo": VERSAO_DO_TERMO,
+    })
     r.raise_for_status()
     r = await http.post("/auth/login", json={"email": email, "senha": senha})
     r.raise_for_status()

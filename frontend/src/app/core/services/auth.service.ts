@@ -3,8 +3,9 @@ import { Injectable, signal } from '@angular/core';
 import { Observable, finalize, map, shareReplay, tap } from 'rxjs';
 
 import { API_URL } from '../api';
+import { AceiteDoTermo } from '../consentimento/termo';
 
-export interface AlunoRegistroPayload {
+export interface AlunoRegistroPayload extends AceiteDoTermo {
   nome: string;
   email: string;
   senha: string;
@@ -167,7 +168,7 @@ export class AuthService {
     return this.renovacaoEmVoo;
   }
 
-  private armazenarToken(token: string): void {
+  armazenarToken(token: string): void {
     localStorage.setItem(CHAVE_TOKEN, token);
     this.tokenSignal.set(token);
   }
