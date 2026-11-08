@@ -4,6 +4,7 @@ import { FormBuilder, ReactiveFormsModule, Validators } from '@angular/forms';
 import { Router, RouterLink } from '@angular/router';
 
 import { VERSAO_TERMO } from '../../core/consentimento/termo';
+import { OBJETIVOS, Objetivo } from '../../core/objetivo';
 import { AuthService } from '../../core/services/auth.service';
 import { ContaService, CorrecaoDePerfil, Perfil } from '../../core/services/conta.service';
 import { InactivityService } from '../../core/services/inactivity.service';
@@ -42,7 +43,10 @@ export class PrivacidadeComponent implements OnInit {
   readonly formularioDeDados = this.fb.group({
     nome: ['', [Validators.required]],
     email: ['', [Validators.required, Validators.email]],
+    objetivo: ['' as Objetivo | ''],
   });
+
+  readonly objetivos = OBJETIVOS;
 
   readonly formularioDeAceite = this.fb.group({
     aceitouTermo: [false, [Validators.requiredTrue]],
@@ -67,13 +71,16 @@ export class PrivacidadeComponent implements OnInit {
       return;
     }
 
-    const { nome, email } = this.formularioDeDados.getRawValue();
+    const { nome, email, objetivo } = this.formularioDeDados.getRawValue();
     const correcao: CorrecaoDePerfil = {};
     if (nome !== atual.nome) {
       correcao.nome = nome!;
     }
     if (email !== atual.email) {
       correcao.email = email!;
+    }
+    if (objetivo && objetivo !== atual.objetivo) {
+      correcao.objetivo = objetivo;
     }
 
     this.executar(this.contaService.corrigir(correcao), 'Dados atualizados.', (falha) =>
@@ -157,7 +164,11 @@ export class PrivacidadeComponent implements OnInit {
   private aplicar(perfil: Perfil): void {
     this.perfil.set(perfil);
     this.confirmandoRevogacao.set(false);
-    this.formularioDeDados.reset({ nome: perfil.nome, email: perfil.email });
+    this.formularioDeDados.reset({
+      nome: perfil.nome,
+      email: perfil.email,
+      objetivo: perfil.objetivo ?? '',
+    });
     this.formularioDeAceite.reset({ aceitouTermo: false, declarouMaioridade: false });
   }
 }

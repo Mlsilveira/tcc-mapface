@@ -27,7 +27,7 @@ describe('RegistroComponent', () => {
     fixture.detectChanges();
   });
 
-  function preencher(nome: string, email: string, senha: string): void {
+  function preencher(nome: string, email: string, senha: string, objetivo = 'prova'): void {
     const [campoNome, campoEmail, campoSenha] = fixture.debugElement
       .queryAll(By.css('input'))
       .map((c) => c.nativeElement as HTMLInputElement);
@@ -40,6 +40,10 @@ describe('RegistroComponent', () => {
       campo.value = valor;
       campo.dispatchEvent(new Event('input'));
     }
+    const campoObjetivo = fixture.debugElement.query(By.css('select#objetivo'))
+      .nativeElement as HTMLSelectElement;
+    campoObjetivo.value = objetivo;
+    campoObjetivo.dispatchEvent(new Event('change'));
     fixture.detectChanges();
     marcarAceites();
   }
@@ -72,6 +76,7 @@ describe('RegistroComponent', () => {
       nome: 'Ana Souza',
       email: 'ana@exemplo.com',
       senha: 'senhaSegura123',
+      objetivo: 'prova',
       aceitou_termo: true,
       declarou_maioridade: true,
       versao_termo: VERSAO_TERMO,
@@ -124,9 +129,28 @@ describe('RegistroComponent', () => {
       'Informe seu nome.',
       'Informe um e-mail válido.',
       'A senha precisa ter pelo menos 8 caracteres.',
+      'Escolha o seu objetivo de estudo.',
       'É preciso aceitar o termo para criar a conta.',
       'O uso do MapFace é restrito a maiores de 18 anos.',
     ]);
+  });
+
+  it('não cadastra sem escolher o objetivo de estudo (RF04)', () => {
+    preencher('Ana Souza', 'ana@exemplo.com', 'senhaSegura123', '');
+    submeter();
+
+    expect(authServiceSpy.registrar).not.toHaveBeenCalled();
+  });
+
+  it('envia o objetivo escolhido no cadastro', () => {
+    authServiceSpy.registrar.and.returnValue(of({}));
+
+    preencher('Ana Souza', 'ana@exemplo.com', 'senhaSegura123', 'pessoal');
+    submeter();
+
+    expect(authServiceSpy.registrar).toHaveBeenCalledWith(
+      jasmine.objectContaining({ objetivo: 'pessoal' }),
+    );
   });
 
   it('não cadastra sem aceitar o termo', () => {
