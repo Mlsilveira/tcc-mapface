@@ -1,11 +1,27 @@
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlmodel import Session, select
 
+from app import conta
 from app.database import get_session
 from app.deps import get_aluno_atual, oauth2_scheme
 from app.models import Aluno
-from app.schemas import AlunoLogin, AlunoPublico, AlunoRegistro, Token
-from app.security import criar_token_acesso, hash_senha, renovar_token, verificar_senha
+from app.schemas import (
+    AceiteDoTermo,
+    AlunoLogin,
+    AlunoPublico,
+    AlunoRegistro,
+    CorrecaoDePerfil,
+    ExclusaoDeConta,
+    PerfilCorrigido,
+    Token,
+)
+from app.security import (
+    criar_token_acesso,
+    hash_senha,
+    reemitir_para_email,
+    renovar_token,
+    verificar_senha,
+)
 
 router = APIRouter(prefix="/auth", tags=["autenticação"])
 
@@ -19,6 +35,7 @@ def registrar(dados: AlunoRegistro, session: Session = Depends(get_session)) -> 
         )
 
     aluno = Aluno(nome=dados.nome, email=dados.email, senha_hash=hash_senha(dados.senha))
+    conta.registrar_aceite(aluno)
     session.add(aluno)
     session.commit()
     session.refresh(aluno)
@@ -73,5 +90,73 @@ def renovar(
 
 @router.get("/me", response_model=AlunoPublico)
 def perfil(aluno_atual: Aluno = Depends(get_aluno_atual)) -> Aluno:
-    """Endpoint de exemplo protegido — usado para provar que a autenticação bloqueia acesso sem token."""
+    """Os dados da conta e o estado do consentimento."""
     return aluno_atual
+
+
+@router.patch("/me", response_model=PerfilCorrigido)
+def corrigir_perfil(
+    dados: CorrecaoDePerfil,
+    aluno_atual: Aluno = Depends(get_aluno_atual),
+    token: str = Depends(oauth2_scheme),
+    session: Session = Depends(get_session),
+) -> PerfilCorrigido:
+    novo_token = None
+    email_mudou = dados.email is not None and dados.email != aluno_atual.email
+
+    if email_mudou:
+        em_uso = session.exec(select(Aluno).where(Aluno.email == dados.email)).first()
+        if em_uso is not None:
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT, detail="E-mail já cadastrado"
+            )
+        aluno_atual.email = dados.email
+        novo_token = reemitir_para_email(token, dados.email)
+
+    if dados.nome is not None:
+        aluno_atual.nome = dados.nome
+
+    session.add(aluno_atual)
+    session.commit()
+    session.refresh(aluno_atual)
+    return PerfilCorrigido.model_validate(aluno_atual).model_copy(
+        update={"access_token": novo_token}
+    )
+
+
+@router.post("/consentimento", response_model=AlunoPublico)
+def aceitar_termo(
+    _: AceiteDoTermo,
+    aluno_atual: Aluno = Depends(get_aluno_atual),
+    session: Session = Depends(get_session),
+) -> Aluno:
+    """Aceite de conta anterior ao termo, ou novo aceite depois de revogar."""
+    return conta.aceitar(session, aluno_atual)
+
+
+@router.delete("/consentimento", response_model=AlunoPublico)
+def revogar_consentimento(
+    aluno_atual: Aluno = Depends(get_aluno_atual),
+    session: Session = Depends(get_session),
+) -> Aluno:
+    """Revogação (LGPD, art. 8º, § 5º): impede novas sessões e não apaga nada."""
+    return conta.revogar(session, aluno_atual)
+
+
+@router.delete("/conta", status_code=status.HTTP_204_NO_CONTENT)
+def excluir_conta(
+    dados: ExclusaoDeConta,
+    aluno_atual: Aluno = Depends(get_aluno_atual),
+    session: Session = Depends(get_session),
+) -> None:
+    """Apaga a conta e todos os dados dela (LGPD, art. 18, VI).
+
+    Pede a senha porque é irreversível e o token fica no navegador: quem achar
+    a aba aberta não pode apagar a conta de ninguém. Senha errada é **403**, e
+    não 401, porque o interceptor do frontend lê 401 como credencial vencida e
+    derrubaria a sessão de quem só digitou errado.
+    """
+    if not verificar_senha(dados.senha, aluno_atual.senha_hash):
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Senha incorreta")
+
+    conta.excluir(session, aluno_atual)

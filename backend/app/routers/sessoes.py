@@ -87,6 +87,12 @@ def iniciar(
     API. A mensagem aponta para `GET /metodos` em vez de listar os códigos,
     porque a lista muda e uma mensagem de erro não é lugar de manter catálogo.
     """
+    if not aluno_atual.consentimento_vigente:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Aceite o termo de consentimento para iniciar uma sessão",
+        )
+
     corpo = corpo or NovaSessao()
 
     try:

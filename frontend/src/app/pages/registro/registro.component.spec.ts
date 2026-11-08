@@ -4,6 +4,7 @@ import { By } from '@angular/platform-browser';
 import { provideRouter, Router } from '@angular/router';
 import { of, throwError } from 'rxjs';
 
+import { VERSAO_TERMO } from '../../core/consentimento/termo';
 import { AuthService } from '../../core/services/auth.service';
 import { RegistroComponent } from './registro.component';
 
@@ -40,6 +41,15 @@ describe('RegistroComponent', () => {
       campo.dispatchEvent(new Event('input'));
     }
     fixture.detectChanges();
+    marcarAceites();
+  }
+
+  function marcarAceites(termo = true, maioridade = true): void {
+    fixture.componentInstance.formulario.patchValue({
+      aceitouTermo: termo,
+      declarouMaioridade: maioridade,
+    });
+    fixture.detectChanges();
   }
 
   function submeter(): void {
@@ -62,6 +72,9 @@ describe('RegistroComponent', () => {
       nome: 'Ana Souza',
       email: 'ana@exemplo.com',
       senha: 'senhaSegura123',
+      aceitou_termo: true,
+      declarou_maioridade: true,
+      versao_termo: VERSAO_TERMO,
     });
     expect(navegar).toHaveBeenCalledWith(['/login']);
   });
@@ -111,7 +124,25 @@ describe('RegistroComponent', () => {
       'Informe seu nome.',
       'Informe um e-mail válido.',
       'A senha precisa ter pelo menos 8 caracteres.',
+      'É preciso aceitar o termo para criar a conta.',
+      'O uso do MapFace é restrito a maiores de 18 anos.',
     ]);
+  });
+
+  it('não cadastra sem aceitar o termo', () => {
+    preencher('Ana Souza', 'ana@exemplo.com', 'senhaSegura123');
+    marcarAceites(false, true);
+    submeter();
+
+    expect(authServiceSpy.registrar).not.toHaveBeenCalled();
+  });
+
+  it('não cadastra sem a declaração de maioridade', () => {
+    preencher('Ana Souza', 'ana@exemplo.com', 'senhaSegura123');
+    marcarAceites(true, false);
+    submeter();
+
+    expect(authServiceSpy.registrar).not.toHaveBeenCalled();
   });
 
   it('reabilita o botão após uma falha, permitindo tentar de novo', () => {

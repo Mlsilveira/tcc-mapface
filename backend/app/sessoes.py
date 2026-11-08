@@ -197,6 +197,24 @@ def iniciar(
     return sessao
 
 
+def em_andamento(db: Session, id_sessao: int) -> bool:
+    """Se a sessão ainda existe e não terminou, lido direto do banco.
+
+    Seleciona a coluna, e não a entidade, de propósito: o canal de telemetria
+    guarda a mesma `SessaoEstudo` por toda a conexão, e pedir a entidade
+    devolveria o objeto em memória, sem enxergar o encerramento feito por outra
+    requisição. É o que faz o canal parar depois de uma revogação ou exclusão.
+    """
+    return (
+        db.exec(
+            select(SessaoEstudo.id).where(
+                SessaoEstudo.id == id_sessao, SessaoEstudo.fim.is_(None)
+            )
+        ).first()
+        is not None
+    )
+
+
 def registrar_presenca(
     db: Session, sessao: SessaoEstudo, agora: Optional[datetime] = None
 ) -> SessaoEstudo:

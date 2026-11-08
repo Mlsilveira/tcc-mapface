@@ -25,6 +25,12 @@ export const routes: Routes = [
     canActivate: [authGuard],
   },
   {
+    path: 'privacidade',
+    loadComponent: () =>
+      import('./pages/privacidade/privacidade.component').then((m) => m.PrivacidadeComponent),
+    canActivate: [authGuard],
+  },
+  {
     // Declarada depois de 'historico' porque a ordem importa aqui como importa
     // no FastAPI: 'relatorio/:id' não conflita, mas manter as rotas estáticas
     // antes das dinâmicas é a convenção que evita o próximo conflito.
