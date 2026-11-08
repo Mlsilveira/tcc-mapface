@@ -13,13 +13,14 @@ import logging
 import pytest
 
 from app.routers.telemetria import percentil
+from tests.apoio import ACEITE_DO_TERMO
 
 PAYLOAD = {"ear": 0.30, "yaw": 0.0, "rosto_detectado": True}
 
 
 @pytest.fixture(name="token")
 def token_fixture(client):
-    dados = {"nome": "Medida", "email": "medida@exemplo.com", "senha": "senha-forte-123"}
+    dados = {"nome": "Medida", "email": "medida@exemplo.com", "senha": "senha-forte-123", **ACEITE_DO_TERMO}
     client.post("/auth/registro", json=dados)
     resposta = client.post("/auth/login", json={"email": dados["email"], "senha": dados["senha"]})
     return resposta.json()["access_token"]

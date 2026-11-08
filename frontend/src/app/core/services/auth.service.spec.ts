@@ -3,6 +3,7 @@ import { provideHttpClient } from '@angular/common/http';
 import { TestBed } from '@angular/core/testing';
 
 import { API_URL } from '../api';
+import { ACEITE_DA_VERSAO_ATUAL } from '../consentimento/termo';
 import { AuthService, MARGEM_DE_RENOVACAO_MS } from './auth.service';
 
 /**
@@ -68,7 +69,12 @@ describe('AuthService', () => {
   });
 
   it('envia os dados corretos para o endpoint de registro', () => {
-    const payload = { nome: 'Ana', email: 'ana@exemplo.com', senha: 'senhaSegura123' };
+    const payload = {
+      nome: 'Ana',
+      email: 'ana@exemplo.com',
+      senha: 'senhaSegura123',
+      ...ACEITE_DA_VERSAO_ATUAL,
+    };
     service.registrar(payload).subscribe();
 
     const requisicao = httpMock.expectOne(`${API_URL}/auth/registro`);

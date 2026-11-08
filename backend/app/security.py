@@ -170,6 +170,19 @@ def _inicio_da_sessao_de(payload: dict) -> datetime:
     return agora_utc()
 
 
+def reemitir_para_email(token: str, novo_email: str) -> Optional[str]:
+    """Troca o titular do token ao corrigir o e-mail, sem estender a credencial.
+
+    O `sub` é o e-mail, então o token antigo deixa de apontar para alguém assim
+    que a correção é gravada. O `iat` é preservado pelo mesmo motivo de
+    `renovar_token`: corrigir o e-mail não pode ser um jeito de zerar o teto.
+    """
+    payload = _decodificar(token)
+    if payload is None:
+        return None
+    return criar_token_acesso(novo_email, _inicio_da_sessao_de(payload))
+
+
 def renovar_token(token: str) -> Optional[str]:
     """Troca um token **ainda válido** por outro, preservando `iat`.
 

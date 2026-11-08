@@ -709,3 +709,28 @@ def test_coluna_orfa_opcional_nao_incomoda_ninguem(tmp_path):
         colunas = {linha[1] for linha in conexao.execute("PRAGMA table_info(aluno)")}
         assert "apelido" in colunas
         assert conexao.execute("SELECT apelido FROM aluno").fetchone()[0] == "ninguem"
+
+
+def test_conta_antiga_ganha_as_colunas_do_termo_sem_aceite_inventado(tmp_path):
+    """A conta anterior ao termo não pode aparecer como quem aceitou."""
+    caminho = tmp_path / "sem_termo.db"
+    with sqlite3.connect(caminho) as conexao:
+        conexao.executescript(
+            """
+            CREATE TABLE aluno (
+                id INTEGER PRIMARY KEY, nome VARCHAR, email VARCHAR, senha_hash VARCHAR
+            );
+            INSERT INTO aluno (nome, email, senha_hash) VALUES ('Ana', 'a@b.com', 'x');
+            """
+        )
+
+    criar_tabelas(create_engine(f"sqlite:///{caminho}"))
+
+    assert {"termo_versao", "termo_aceito_em", "consentimento_revogado_em"} <= _colunas(
+        caminho, "aluno"
+    )
+    with sqlite3.connect(caminho) as conexao:
+        linha = conexao.execute(
+            "SELECT termo_versao, termo_aceito_em, consentimento_revogado_em FROM aluno"
+        ).fetchone()
+    assert linha == (None, None, None)

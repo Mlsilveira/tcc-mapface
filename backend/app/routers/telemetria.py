@@ -254,7 +254,7 @@ async def telemetria_ws(
         return
 
     sessao = sessoes.buscar_ativa(db, credencial.aluno.id)
-    if sessao is None:
+    if sessao is None or not credencial.aluno.consentimento_vigente:
         # Telemetria sem sessão em andamento não teria onde ser gravada, e
         # aceitar o payload em silêncio faria o aluno crer que está sendo medido.
         await websocket.send_json({"tipo": "erro", "motivo": "sem-sessao-ativa"})
@@ -263,10 +263,15 @@ async def telemetria_ws(
 
     await websocket.send_json({"tipo": "autenticado"})
 
+    # Guardado como número enquanto a linha existe. Depois de um commit o ORM
+    # relê os atributos da entidade, e numa sessão recém-excluída pelo titular
+    # até ler `sessao.id` levanta `ObjectDeletedError`.
+    id_sessao = sessao.id
+
     # Vem do registro, e não é criado aqui, porque a reconexão automática da
     # ticket 6 abre uma conexão nova para a mesma sessão: um analista por
     # conexão faria o aluno recalibrar a cada oscilação de rede.
-    engajamento = analista.registro.obter(sessao.id)
+    engajamento = analista.registro.obter(id_sessao)
 
     # A primeira conferência fica para daqui a um minuto: o token acabou de ser
     # validado por `decodificar_token`, que já recusa expirado.
@@ -278,10 +283,10 @@ async def telemetria_ws(
     tempos_ms: List[float] = []
     try:
         await _laco_do_canal(
-            websocket, db, credencial, sessao, engajamento, proxima_conferencia, tempos_ms
+            websocket, db, credencial, sessao, id_sessao, engajamento, proxima_conferencia, tempos_ms
         )
     finally:
-        _registrar_latencia(sessao.id, tempos_ms)
+        _registrar_latencia(id_sessao, tempos_ms)
 
 
 async def _laco_do_canal(
@@ -289,6 +294,7 @@ async def _laco_do_canal(
     db: Session,
     credencial: "Credencial",
     sessao,
+    id_sessao: int,
     engajamento,
     proxima_conferencia: datetime,
     tempos_ms: List[float],
@@ -334,6 +340,14 @@ async def _laco_do_canal(
             await websocket.send_json({"tipo": "erro", "motivo": "payload-invalido"})
             continue
 
+        # A revogação e a exclusão chegam por outra requisição, com este canal
+        # aberto. Sem conferir aqui, o segundo seguinte gravaria um ponto numa
+        # sessão que o titular acabou de mandar parar.
+        if not sessoes.em_andamento(db, id_sessao):
+            await websocket.send_json({"tipo": "erro", "motivo": "sem-sessao-ativa"})
+            await websocket.close()
+            return
+
         resultado = engajamento.observar(
             ear=metricas.ear,
             yaw=metricas.yaw,
@@ -349,7 +363,7 @@ async def _laco_do_canal(
 
         telemetria.registrar_log(
             db,
-            id_sessao=sessao.id,
+            id_sessao=id_sessao,
             score=resultado.score,
             fadiga=resultado.fadiga.fator,
             alerta=_alerta_do(resultado),
