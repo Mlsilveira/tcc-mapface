@@ -48,7 +48,7 @@ import websockets
 URL_PADRAO = "https://d2qm0t6ecgabb2.cloudfront.net"
 NOME_DA_CONTA = "Medição sintética de latência"
 # Espelha backend/app/consentimento.py. A conta sintética precisa aceitar o termo para abrir sessão.
-VERSAO_DO_TERMO = "1.1"
+VERSAO_DO_TERMO = "1.2"
 ASSUNTO = "medicao-sintetica-latencia"
 
 PAYLOAD = {

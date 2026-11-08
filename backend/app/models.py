@@ -34,6 +34,11 @@ class Aluno(SQLModel, table=True):
     termo_aceito_em: Optional[datetime] = Field(default=None)
     consentimento_revogado_em: Optional[datetime] = Field(default=None)
 
+    #: RF04. Opcional pelo mesmo motivo do termo: contas antigas não declararam.
+    #: Os valores válidos estão em `app.objetivo`; a validação fica no schema.
+    #: O nome da coluna é o do DER do TCC (seção 6.2); na API o campo é `objetivo`.
+    objetivo_estudo: Optional[str] = Field(default=None)
+
     @property
     def consentimento_vigente(self) -> bool:
         return consentimento.vigente(

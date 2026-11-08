@@ -9,7 +9,7 @@
  * Mudar qualquer cláusula exige subir a versão nos dois lados. É o que faz valer
  * a promessa da última cláusula, de pedir um novo aceite.
  */
-export const VERSAO_TERMO = '1.1';
+export const VERSAO_TERMO = '1.2';
 
 export interface ClausulaDoTermo {
   readonly titulo: string;
@@ -35,7 +35,8 @@ export const CLAUSULAS_DO_TERMO: readonly ClausulaDoTermo[] = [
   {
     titulo: 'Dados coletados',
     texto:
-      'Nome, e-mail e senha (armazenada de forma irreversível); método, assunto, meta de blocos ' +
+      'Nome, e-mail e senha (armazenada de forma irreversível); objetivo de estudo; método, ' +
+      'assunto, meta de blocos ' +
       'e horários de cada sessão; e, uma vez por segundo, métricas numéricas calculadas no seu ' +
       'navegador: abertura dos olhos, abertura da boca, ângulos da cabeça, presença do rosto e ' +
       'qualidade da captura.',

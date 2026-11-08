@@ -4,11 +4,13 @@ import { Observable, finalize, map, shareReplay, tap } from 'rxjs';
 
 import { API_URL } from '../api';
 import { AceiteDoTermo } from '../consentimento/termo';
+import { Objetivo } from '../objetivo';
 
 export interface AlunoRegistroPayload extends AceiteDoTermo {
   nome: string;
   email: string;
   senha: string;
+  objetivo: Objetivo;
 }
 
 export interface AlunoLoginPayload {

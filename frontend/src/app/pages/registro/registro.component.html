@@ -14,7 +14,7 @@
           <span class="acesso__bolha"><app-icone nome="relogio" /></span>
           <div>
             <strong>Comece em um minuto</strong>
-            <span>Nome, e-mail e senha. Nenhum dado além disso é pedido.</span>
+            <span>Nome, e-mail, senha e o seu objetivo de estudo. Nada além disso.</span>
           </div>
         </li>
         <li>
@@ -84,6 +84,21 @@
             <p class="campo-erro">A senha precisa ter pelo menos 8 caracteres.</p>
           } @else {
             <p class="campo-dica">Use pelo menos 8 caracteres.</p>
+          }
+        </div>
+
+        <div class="campo">
+          <label for="objetivo">Objetivo de estudo</label>
+          <select id="objetivo" formControlName="objetivo" data-teste="objetivo">
+            <option value="" disabled>Escolha uma opção</option>
+            @for (objetivo of objetivos; track objetivo.codigo) {
+              <option [value]="objetivo.codigo">{{ objetivo.nome }}</option>
+            }
+          </select>
+          @if (formulario.get('objetivo')?.invalid && formulario.get('objetivo')?.touched) {
+            <p class="campo-erro">Escolha o seu objetivo de estudo.</p>
+          } @else {
+            <p class="campo-dica">Usado nas recomendações do relatório; dá para trocar depois.</p>
           }
         </div>
 

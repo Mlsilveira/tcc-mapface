@@ -73,6 +73,7 @@ describe('AuthService', () => {
       nome: 'Ana',
       email: 'ana@exemplo.com',
       senha: 'senhaSegura123',
+      objetivo: 'vestibular' as const,
       ...ACEITE_DA_VERSAO_ATUAL,
     };
     service.registrar(payload).subscribe();
