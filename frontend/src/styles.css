@@ -1553,3 +1553,93 @@ a:hover {
     font-size: 1.45rem;
   }
 }
+
+/* --- consentimento e privacidade ----------------------------------------- */
+
+.aceite {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.6rem;
+  color: var(--tinta-700);
+  font-size: 0.9rem;
+  line-height: 1.4;
+  cursor: pointer;
+}
+
+.aceite input {
+  flex: none;
+  width: 18px;
+  height: 18px;
+  margin-top: 1px;
+  accent-color: var(--tinta-800);
+}
+
+.termo-detalhes {
+  color: var(--tinta-700);
+  font-size: 0.9rem;
+}
+
+.termo-detalhes summary {
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.termo {
+  max-height: 260px;
+  margin: 0.75rem 0 0;
+  padding: 0.75rem 0.75rem 0.75rem 2rem;
+  overflow-y: auto;
+  border: 1px solid var(--linha);
+  border-radius: var(--raio-p);
+  line-height: 1.5;
+}
+
+.termo li + li {
+  margin-top: 0.6rem;
+}
+
+.privacidade {
+  display: flex;
+  flex-direction: column;
+  max-width: 720px;
+  gap: 1.25rem;
+}
+
+.privacidade form {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 0.9rem;
+}
+
+.privacidade .campo {
+  width: 100%;
+}
+
+.privacidade .painel p {
+  margin: 0.75rem 0;
+}
+
+.privacidade .painel h2 {
+  margin: 0 0 1rem;
+}
+
+.privacidade__acoes {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.6rem;
+}
+
+.privacidade__aviso {
+  margin: 0;
+  padding: 0.7rem 0.9rem;
+  border: 1px solid var(--linha);
+  border-radius: var(--raio-p);
+  background: var(--papel);
+  color: var(--tinta-800);
+}
+
+.termo-detalhes + .aceite,
+.privacidade .termo-detalhes {
+  margin-top: 0.75rem;
+}

@@ -6,6 +6,9 @@
         <a class="botao botao--fantasma" routerLink="/historico" data-teste="ir-para-historico">
           Minhas sessões
         </a>
+        <a class="botao botao--fantasma" routerLink="/privacidade" data-teste="ir-para-privacidade">
+          Privacidade
+        </a>
         <button type="button" class="botao botao--fantasma" data-teste="sair" (click)="sair()">
           Sair
         </button>
@@ -250,6 +253,13 @@
           Nenhuma imagem ou vídeo sai do seu computador.
         </p>
       </section>
+    }
+
+    @if (precisaDeConsentimento) {
+      <p class="erro-geral" role="alert" data-teste="sem-consentimento">
+        Para iniciar uma sessão, aceite o termo de consentimento em
+        <a routerLink="/privacidade">Privacidade</a>.
+      </p>
     }
 
     @if (erro) {

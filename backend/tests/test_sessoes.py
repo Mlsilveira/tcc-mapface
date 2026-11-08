@@ -18,6 +18,7 @@ from sqlmodel import Session, select
 from app import analista, blocos, sessoes
 from app.models import Aluno, BlocoEstudo, SessaoEstudo
 from app.tempo import agora_utc, como_utc
+from tests.apoio import ACEITE_DO_TERMO
 
 def _limite_sem_metodo() -> timedelta:
     """O limite de ausência de uma sessão sem método declarado.
@@ -29,8 +30,8 @@ def _limite_sem_metodo() -> timedelta:
     return sessoes.limite_de_ausencia_da(SessaoEstudo())
 
 
-PAYLOAD_ALUNO = {"nome": "Ana Souza", "email": "ana@exemplo.com", "senha": "senhaSegura123"}
-PAYLOAD_OUTRO_ALUNO = {"nome": "Rui Lima", "email": "rui@exemplo.com", "senha": "senhaSegura456"}
+PAYLOAD_ALUNO = {"nome": "Ana Souza", "email": "ana@exemplo.com", "senha": "senhaSegura123", **ACEITE_DO_TERMO}
+PAYLOAD_OUTRO_ALUNO = {"nome": "Rui Lima", "email": "rui@exemplo.com", "senha": "senhaSegura456", **ACEITE_DO_TERMO}
 
 
 def _registrar_e_logar(client, payload):

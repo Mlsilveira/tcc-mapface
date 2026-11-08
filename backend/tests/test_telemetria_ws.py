@@ -9,8 +9,9 @@ mensagem é o único lugar limpo que sobra.
 import pytest
 
 from app import sessoes
+from tests.apoio import ACEITE_DO_TERMO
 
-PAYLOAD_ALUNO = {"nome": "Ana Souza", "email": "ana@exemplo.com", "senha": "senhaSegura123"}
+PAYLOAD_ALUNO = {"nome": "Ana Souza", "email": "ana@exemplo.com", "senha": "senhaSegura123", **ACEITE_DO_TERMO}
 
 
 def _registrar_e_logar(client, payload=PAYLOAD_ALUNO):

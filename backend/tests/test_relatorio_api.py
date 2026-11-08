@@ -18,9 +18,10 @@ from app.models import (
     SessaoEstudo,
 )
 from app.tempo import agora_utc
+from tests.apoio import ACEITE_DO_TERMO
 
-PAYLOAD_ALUNO = {"nome": "Ana Souza", "email": "ana@exemplo.com", "senha": "senhaSegura123"}
-PAYLOAD_OUTRO_ALUNO = {"nome": "Rui Lima", "email": "rui@exemplo.com", "senha": "senhaSegura456"}
+PAYLOAD_ALUNO = {"nome": "Ana Souza", "email": "ana@exemplo.com", "senha": "senhaSegura123", **ACEITE_DO_TERMO}
+PAYLOAD_OUTRO_ALUNO = {"nome": "Rui Lima", "email": "rui@exemplo.com", "senha": "senhaSegura456", **ACEITE_DO_TERMO}
 
 
 def _registrar_e_logar(client, payload):

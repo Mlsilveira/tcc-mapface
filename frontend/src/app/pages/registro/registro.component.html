@@ -87,6 +87,34 @@
           }
         </div>
 
+        <details class="termo-detalhes">
+          <summary>Ler o termo de consentimento</summary>
+          <app-termo-de-consentimento />
+        </details>
+
+        <label class="aceite">
+          <input type="checkbox" formControlName="aceitouTermo" data-teste="aceite-termo" />
+          <span>Li e concordo com o tratamento dos meus dados nos termos acima.</span>
+        </label>
+        @if (formulario.get('aceitouTermo')?.invalid && formulario.get('aceitouTermo')?.touched) {
+          <p class="campo-erro">É preciso aceitar o termo para criar a conta.</p>
+        }
+
+        <label class="aceite">
+          <input
+            type="checkbox"
+            formControlName="declarouMaioridade"
+            data-teste="aceite-maioridade"
+          />
+          <span>Declaro ter 18 anos ou mais.</span>
+        </label>
+        @if (
+          formulario.get('declarouMaioridade')?.invalid &&
+          formulario.get('declarouMaioridade')?.touched
+        ) {
+          <p class="campo-erro">O uso do MapFace é restrito a maiores de 18 anos.</p>
+        }
+
         @if (erro) {
           <p class="erro-geral" role="alert">{{ erro }}</p>
         }
