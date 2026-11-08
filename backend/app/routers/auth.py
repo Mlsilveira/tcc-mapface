@@ -38,7 +38,7 @@ def registrar(dados: AlunoRegistro, session: Session = Depends(get_session)) -> 
         nome=dados.nome,
         email=dados.email,
         senha_hash=hash_senha(dados.senha),
-        objetivo=dados.objetivo,
+        objetivo_estudo=dados.objetivo,
     )
     conta.registrar_aceite(aluno)
     session.add(aluno)
@@ -122,7 +122,7 @@ def corrigir_perfil(
         aluno_atual.nome = dados.nome
 
     if dados.objetivo is not None:
-        aluno_atual.objetivo = dados.objetivo
+        aluno_atual.objetivo_estudo = dados.objetivo
 
     session.add(aluno_atual)
     session.commit()

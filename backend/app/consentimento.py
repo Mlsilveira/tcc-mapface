@@ -22,7 +22,7 @@ from typing import Optional
 
 #: Versão do termo em vigor. O texto mora em `frontend/src/app/core/consentimento/termo.ts`,
 #: que precisa declarar este mesmo número.
-VERSAO_TERMO = "1.1"
+VERSAO_TERMO = "1.2"
 
 
 def vigente(
