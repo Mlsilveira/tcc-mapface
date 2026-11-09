@@ -1,0 +1,5 @@
+08/11/2026 12:32:41  INFO:     app.routers.telemetria: latencia do canal: sessao=10 n=891 p50=10.60ms p95=140.35ms max=595.60ms
+08/11/2026 13:46:51  INFO:     app.routers.telemetria: latencia do canal: sessao=12 n=725 p50=10.48ms p95=184.74ms max=490.62ms
+08/11/2026 14:05:48  INFO:     app.routers.telemetria: latencia do canal: sessao=13 n=94 p50=10.97ms p95=45.24ms max=222.27ms
+08/11/2026 14:07:39  INFO:     app.routers.telemetria: latencia do canal: sessao=13 n=49 p50=10.54ms p95=168.29ms max=216.42ms
+08/11/2026 14:08:25  INFO:     app.routers.telemetria: latencia do canal: sessao=13 n=42 p50=10.84ms p95=172.41ms max=219.32ms
