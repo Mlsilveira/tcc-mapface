@@ -425,3 +425,31 @@ def test_diferenca_maior_que_um_desvio_nao_e_empate() -> None:
     ]
 
     assert cli.melhor(grade).normalizacao == tf.SEM_NORMALIZACAO
+
+
+def test_relatorio_explica_por_que_so_derivadas_nao_vai_para_producao(janelas: pd.DataFrame) -> None:
+    """F01: o relatório justifica por que os 4 atributos (0,6768) ficam só na ablação."""
+    import treinar_fadiga as cli
+
+    escolhido = _resultado("arvores_extremamente_aleatorias", tf.NORMALIZACAO_SESSAO, 0.6553, 0.0180)
+    ablacao = pd.DataFrame(
+        [
+            {"conjunto": "so_derivadas", "n_features": 4, "acuracia_balanceada": 0.6768, "desvio_entre_folds": 0.0290},
+            {"conjunto": "todas", "n_features": 39, "acuracia_balanceada": 0.6553, "desvio_entre_folds": 0.0180},
+        ]
+    )
+    texto = cli.monta_relatorio(
+        janelas=janelas,
+        grade=[escolhido],
+        escolhido=escolhido,
+        outros_alvos=[escolhido],
+        ablacao=ablacao,
+        ranking={"prop_olhos_fechados": 0.13},
+        combinacao=None,
+    )
+
+    assert "so_derivadas" in texto
+    assert "0.6768" in texto
+    assert "n_frames" in texto
+    assert "otimismo de seleção" in texto
+

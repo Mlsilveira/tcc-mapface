@@ -269,6 +269,62 @@ describe('RelatorioComponent', () => {
       expect(texto('relatorio-pico')).toBe('—');
       expect(texto('relatorio-media')).not.toContain('0');
     });
+
+    it('mostra tempo total, tempo válido, lacunas e motivos (F03)', () => {
+      // RELATORIO: 2400s total (40min), 1800s presente (30min), 1750s válidos
+      // (29min), 600s sem captura (10min) + 50s incertos = 650s (10min) de lacunas.
+      montar();
+
+      expect(texto('relatorio-tempo-total')).toBe('40min');
+      expect(texto('relatorio-tempo-valido')).toBe('29min');
+      expect(texto('relatorio-lacunas-total')).toBe('10min');
+      expect(texto('relatorio-lacuna-conexao')).toContain('10min');
+      expect(texto('relatorio-lacuna-conexao')).toContain('queda de rede');
+      expect(texto('relatorio-lacuna-incerteza')).toContain('50s');
+      expect(texto('relatorio-lacuna-incerteza')).toContain('Pouca luz no ambiente');
+    });
+
+    it('não exibe aviso de cobertura baixa quando a cobertura válida é adequada (F03)', () => {
+      // 1750 / 2400 = 72,9% (>= 70%) e incerteza 50 / 1800 = 2,8% (< 15%).
+      montar();
+
+      expect(elemento('relatorio-cobertura-baixa')).toBeNull();
+    });
+
+    it('avisa quando a cobertura válida fica abaixo de 70% do tempo total (F03)', () => {
+      relatorioService.buscar.and.returnValue(
+        of({
+          ...RELATORIO,
+          duracao_total_s: 2400,
+          duracao_presente_s: 900,
+          pontos_medidos: 900,
+          pontos_incertos: 0,
+        }),
+      );
+      montar();
+
+      expect(elemento('relatorio-cobertura-baixa')).toBeTruthy();
+      expect(texto('relatorio-cobertura-baixa')).toContain('Cobertura reduzida');
+      expect(texto('relatorio-cobertura-baixa')).toContain('38%');
+      expect(texto('relatorio-cobertura-baixa')).toContain('não deve ser comparada');
+    });
+
+    it('avisa quando a incerteza toma parte relevante da captura, como na Sessão 12 (F03)', () => {
+      // Sessão 12 da banca: 725s totais, 607 medidos e 118 incertos (16,3%).
+      relatorioService.buscar.and.returnValue(
+        of({
+          ...RELATORIO,
+          duracao_total_s: 725,
+          duracao_presente_s: 725,
+          pontos_medidos: 607,
+          pontos_incertos: 118,
+        }),
+      );
+      montar();
+
+      expect(elemento('relatorio-cobertura-baixa')).toBeTruthy();
+      expect(texto('relatorio-cobertura-baixa')).toContain('Cobertura reduzida');
+    });
   });
 
   describe('alertas', () => {

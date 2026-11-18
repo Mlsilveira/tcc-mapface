@@ -72,6 +72,20 @@
               indicadores — o que aparece abaixo é só o que dá para fazer na próxima.
             </p>
           } @else {
+            @if (coberturaBaixa()) {
+              <p class="aviso aviso--incerteza" role="status" data-teste="relatorio-cobertura-baixa">
+                <strong>
+                  Cobertura reduzida ({{ (coberturaValida() ?? 0) * 100 | number: '1.0-0' }}% de
+                  tempo válido).
+                </strong>
+                Parte relevante desta sessão ficou sem medição válida ({{
+                  duracao(segundosDeLacuna())
+                }}
+                em lacunas ou captura incerta). A média do índice descreve apenas o trecho válido e
+                não deve ser comparada diretamente com sessões completas.
+              </p>
+            }
+
             <dl class="indicadores" data-teste="relatorio-indicadores">
               <div class="indicador indicador--destaque">
                 <dt>
@@ -86,6 +100,25 @@
                 <p class="indicador__nota" data-teste="relatorio-duracao-total">
                   de {{ duracao(dados.duracao_total_s) }} com a sessão aberta
                 </p>
+              </div>
+
+              <div class="indicador">
+                <dt>Tempo válido</dt>
+                <dd data-teste="relatorio-tempo-valido">
+                  {{ duracao(segundosValidos()) }}
+                </dd>
+                <p class="indicador__nota" data-teste="relatorio-cobertura-percentual">
+                  {{ (coberturaValida() ?? 0) * 100 | number: '1.0-0' }}% de
+                  <span data-teste="relatorio-tempo-total">{{ duracao(dados.duracao_total_s) }}</span>
+                </p>
+              </div>
+
+              <div class="indicador">
+                <dt>Lacunas</dt>
+                <dd data-teste="relatorio-lacunas-total">
+                  {{ duracao(segundosDeLacuna()) }}
+                </dd>
+                <p class="indicador__nota">sem medição válida</p>
               </div>
 
               <div class="indicador">
@@ -151,6 +184,35 @@
                 </p>
               }
             </section>
+
+            @if (segundosDeLacuna() > 0) {
+              <section class="relatorio__cobertura" data-teste="relatorio-lacunas">
+                <h2>Lacunas e motivos</h2>
+                <ul class="lista-alertas lista-alertas--captura">
+                  @if (segundosSemCaptura() > 0) {
+                    <li data-teste="relatorio-lacuna-conexao">
+                      <span class="lista-alertas__nome">
+                        Sem envio ao servidor (queda de rede, aba em segundo plano ou captura
+                        parada)
+                      </span>
+                      <span class="lista-alertas__contagem">
+                        {{ duracao(segundosSemCaptura()) }}
+                      </span>
+                    </li>
+                  }
+                  @if (segundosIncertos() > 0) {
+                    <li data-teste="relatorio-lacuna-incerteza">
+                      <span class="lista-alertas__nome">
+                        Captura incerta ({{ resumoMotivosIncerteza() }})
+                      </span>
+                      <span class="lista-alertas__contagem">
+                        {{ duracao(segundosIncertos()) }}
+                      </span>
+                    </li>
+                  }
+                </ul>
+              </section>
+            }
 
             @if (dados.alertas_de_fadiga.length > 0 || dados.motivos_de_incerteza.length > 0) {
               <section class="relatorio__alertas" data-teste="relatorio-alertas">

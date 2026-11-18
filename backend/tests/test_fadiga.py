@@ -312,3 +312,55 @@ def test_sem_rosto_o_score_zera_independente_da_fadiga():
 
     resultado = a.observar(ear=EAR_FECHADO, yaw=0.0, rosto_detectado=False, agora=em(61))
     assert resultado.score == 0.0
+
+
+# --- Lacunas de rede (F06) -------------------------------------------------
+
+
+def test_queda_de_rede_nao_conta_como_olhos_fechados():
+    """Piscar no último pacote antes da queda não pode virar cochilo de 15 s (F06).
+
+    O pacote em t=10 informa apenas aquele segundo nominal; os 14 segundos de
+    silêncio até t=25 são ausência de observação e saem tanto do numerador
+    quanto do denominador.
+    """
+    detector = DetectorDeFadiga()
+    for i in range(10):
+        detector.observar(agora=em(i), ear=EAR_ABERTO, baseline=BASELINE_PROVISORIA)
+
+    # Último pacote antes da queda: olhos fechados (1 s nominal).
+    detector.observar(agora=em(10), ear=EAR_FECHADO, baseline=BASELINE_PROVISORIA)
+    # Conexão volta 15 segundos depois, de olhos abertos.
+    fadiga = detector.observar(agora=em(25), ear=EAR_ABERTO, baseline=BASELINE_PROVISORIA)
+
+    assert fadiga.maior_fechamento_s == pytest.approx(1.0)
+    assert "olhos-fechados-prolongados" not in fadiga.motivos
+    assert fadiga.perclos == pytest.approx(1.0 / 11.0)
+    assert fadiga.fator == 0.0
+
+
+def test_queda_de_rede_interrompe_corrida_de_fechamento():
+    """Duas piscadas separadas por uma queda de rede não formam um microssono."""
+    detector = DetectorDeFadiga()
+    detector.observar(agora=em(0), ear=EAR_ABERTO, baseline=BASELINE_PROVISORIA)
+    detector.observar(agora=em(1), ear=EAR_FECHADO, baseline=BASELINE_PROVISORIA)
+    # 10 s sem pacotes; volta em t=11 piscando de novo e abre em t=12.
+    detector.observar(agora=em(11), ear=EAR_FECHADO, baseline=BASELINE_PROVISORIA)
+    fadiga = detector.observar(agora=em(12), ear=EAR_ABERTO, baseline=BASELINE_PROVISORIA)
+
+    assert fadiga.maior_fechamento_s == pytest.approx(1.0)
+    assert "olhos-fechados-prolongados" not in fadiga.motivos
+
+
+def test_queda_de_rede_nao_estica_bocejo():
+    """Boca aberta por um instante antes da queda não vira bocejo de 10 s."""
+    detector = DetectorDeFadiga()
+    detector.observar(agora=em(0), ear=EAR_ABERTO, mar=MAR_FECHADA, baseline=BASELINE_PROVISORIA)
+    detector.observar(agora=em(1), ear=EAR_ABERTO, mar=MAR_BOCEJO, baseline=BASELINE_PROVISORIA)
+    fadiga = detector.observar(
+        agora=em(11), ear=EAR_ABERTO, mar=MAR_FECHADA, baseline=BASELINE_PROVISORIA
+    )
+
+    assert fadiga.bocejos == 0
+    assert "bocejos" not in fadiga.motivos
+

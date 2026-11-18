@@ -349,9 +349,10 @@ Variações avaliadas neste relatório:
 .venv/bin/python treinar.py --corte 3
 .venv/bin/python treinar.py --modo multiclasse
 .venv/bin/python treinar.py --alvo boredom
+.venv/bin/python curva_aprendizado.py --clipes dados/clipes.parquet --sementes 42 7 13 21 99
 ```
 
-Os experimentos de normalização por sujeito, curva de aprendizado, varredura de limiar e teto por rótulos humanos foram feitos em scripts de rascunho, fora do repositório. Se forem citados na defesa, vale reproduzi-los como scripts versionados.
+A curva de aprendizado está versionada em `ml/curva_aprendizado.py` (com suíte de protocolo em `ml/tests/test_curva_aprendizado.py`), avaliando subconjuntos aninhados de participantes do `Train` (10%, 25%, 40%, 55%, 70%, 85% e 100%, correspondendo a 7, 17, 28, 38, 48, 59 e 69 sujeitos) sempre contra o mesmo split `Test` disjunto por participante. Os demais experimentos exploratórios (varredura de limiar e teto por rótulos humanos) foram executados sobre o mesmo `clipes.parquet`.
 
 ---
 

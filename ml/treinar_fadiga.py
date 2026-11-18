@@ -360,6 +360,8 @@ def monta_relatorio(
         "",
         rf.tabela(ablacao),
         "",
+        _nota_da_ablacao(),
+        "",
         "### Importância das features",
         "",
         rf.tabela(rf.importancias_para_tabela(ranking)),
@@ -406,6 +408,41 @@ def _nota_do_teto(grade: List[tf.ResultadoDaValidacao]) -> str:
         f"e o melhor reproduzível em {melhor_reproduzivel.acuracia_balanceada_media:.4f} — "
         f"uma diferença de {diferenca:.4f}. É o preço de calibrar com o passado, e ele "
         "é o mesmo que o produto paga: um aluno que senta já cansado calibra cansado."
+    )
+
+
+def _nota_da_ablacao() -> str:
+    """Por que a ablação diagnostica o sinal, mas `so_derivadas` não vira o artefato."""
+    return "\n".join(
+        [
+            "### Por que `so_derivadas` (4 atributos, 0.6768) não foi para produção",
+            "",
+            "O conjunto `so_derivadas` (`prop_frames_com_rosto`, `prop_olhos_fechados`, "
+            "`prop_boca_aberta` e `n_frames`) lidera a tabela de ablação em média (0.6768 "
+            "contra 0.6553 de `todas`), mas permanece apenas como diagnóstico e não gera "
+            "o artefato de produção (`sonolencia.joblib`) por quatro motivos técnicos:",
+            "",
+            "1. **Artefato de amostragem e deslocamento de domínio em `n_frames`:** na "
+            "comparação entre domínios abaixo, `n_frames` é a feature mais deslocada de "
+            "todo o vetor (`d_de_cohen = 2.0492` bruto e `0.5415` mesmo após normalização). "
+            "Com apenas 4 variáveis, o classificador apoia um quarto do seu espaço de "
+            "decisão na contagem de pacotes da janela — que em produção varia com jitter "
+            "de rede e carga da aba, não com o estado do aluno.",
+            "2. **Corte fixo cego à calibração individual:** `prop_olhos_fechados` binariza "
+            "cada leitura pelo limiar rígido `EAR < 0.20` antes da centralização pela "
+            "baseline. Um aluno de abertura neutra naturalmente menor (ex.: `EAR = 0.18` "
+            "ou usuário de óculos) já entra na janela com a proporção saturada; as 39 "
+            "features preservam `ear_media`, `ear_mediana` e `ear_min` contínuos, nos "
+            "quais a subtração da baseline individual corrige a fisionomia.",
+            "3. **Maior variância entre folds e diferença dentro de 1 desvio-padrão:** "
+            "o desvio entre folds de `so_derivadas` é `0.0290` (61% maior que os `0.0180` "
+            "de `todas`), e a vantagem aparente de `0.0215` (0.6768 − 0.6553) cabe inteira "
+            "dentro de um único desvio-padrão do próprio `so_derivadas`.",
+            "4. **Controle do otimismo de seleção (F01):** a ablação reutiliza os mesmos "
+            "cinco folds da grade principal para explicar de onde vem o sinal. Promover "
+            "um subconjunto pós-hoc a partir das mesmas dobras acumularia viés de seleção "
+            "sem conjunto externo de confirmação.",
+        ]
     )
 
 

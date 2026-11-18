@@ -9,6 +9,21 @@ import { IconeComponent } from '../../shared/icone.component';
 import { LogoComponent } from '../../shared/logo.component';
 
 /**
+ * Abaixo desta fração de tempo válido sobre a duração total da sessão, o
+ * relatório exibe aviso explícito de cobertura baixa (F03): uma média tirada de
+ * um trecho curto não é comparável à de uma sessão inteira.
+ */
+export const LIMIAR_COBERTURA_VALIDA = 0.7;
+
+/**
+ * Fração de pontos incertos entre os recebidos a partir da qual o relatório
+ * também avisa sobre cobertura reduzida (F03). Na sessão adversa avaliada pela
+ * banca (Sessão 12), 16,3% de incerteza concentrada num trecho no escuro ficava
+ * sem aviso porque o corte anterior olhava apenas para 30%.
+ */
+export const LIMIAR_INCERTEZA_COBERTURA = 0.15;
+
+/**
  * O relatório de autopercepção de uma sessão encerrada (ticket 11).
  *
  * É a contrapartida da tela de sessão, que deliberadamente não mostra nada:
@@ -110,6 +125,80 @@ export class RelatorioComponent implements OnInit {
    */
   segundosIncertos(): number {
     return this.relatorio()?.pontos_incertos ?? 0;
+  }
+
+  /**
+   * Tempo efetivamente válido (com score do IEE calculado), em segundos.
+   *
+   * Diferente de `duracao_presente_s`, que soma todo o tempo em que a captura
+   * esteve ativa (incluindo pontos incertos), `pontos_medidos` conta apenas os
+   * segundos que entraram na média do índice (F03).
+   */
+  segundosValidos(): number {
+    return this.relatorio()?.pontos_medidos ?? 0;
+  }
+
+  /**
+   * Tempo em que a sessão esteve aberta mas nenhum pacote de captura chegou ao
+   * servidor (queda de conexão, aba em segundo plano ou captura interrompida).
+   */
+  segundosSemCaptura(): number {
+    const relatorio = this.relatorio();
+    if (!relatorio) {
+      return 0;
+    }
+    return Math.max(0, Math.round(relatorio.duracao_total_s - relatorio.duracao_presente_s));
+  }
+
+  /** Soma de todo o tempo sem medição válida: lacuna de captura + incerteza. */
+  segundosDeLacuna(): number {
+    return this.segundosSemCaptura() + this.segundosIncertos();
+  }
+
+  /**
+   * Fração (entre 0 e 1) da sessão coberta por medição válida.
+   *
+   * O denominador usa o maior entre `duracao_total_s` e o total de pontos
+   * registrados para nunca passar de 100% em sessões curtas arredondadas.
+   */
+  coberturaValida(): number | null {
+    const relatorio = this.relatorio();
+    if (!relatorio) {
+      return null;
+    }
+    const total = Math.max(
+      relatorio.duracao_total_s,
+      relatorio.pontos_medidos + relatorio.pontos_incertos,
+    );
+    if (total <= 0) {
+      return null;
+    }
+    return Math.min(1, relatorio.pontos_medidos / total);
+  }
+
+  /**
+   * Avisa quando a cobertura válida fica abaixo de 70% do tempo total ou quando
+   * a incerteza toma ao menos 15% dos pontos capturados (F03).
+   */
+  coberturaBaixa(): boolean {
+    const relatorio = this.relatorio();
+    if (!relatorio || this.semDados()) {
+      return false;
+    }
+    const cobertura = this.coberturaValida();
+    const totalPontos = relatorio.pontos_medidos + relatorio.pontos_incertos;
+    const incertezaAlta =
+      totalPontos > 0 && relatorio.pontos_incertos / totalPontos >= LIMIAR_INCERTEZA_COBERTURA;
+    return (cobertura !== null && cobertura < LIMIAR_COBERTURA_VALIDA) || incertezaAlta;
+  }
+
+  /** Nomes legíveis dos motivos de incerteza concatenados para a síntese de lacunas. */
+  resumoMotivosIncerteza(): string {
+    const motivos = this.relatorio()?.motivos_de_incerteza ?? [];
+    if (motivos.length === 0) {
+      return 'Captura não confiável';
+    }
+    return motivos.map((m) => m.nome).join(', ');
   }
 
   /**

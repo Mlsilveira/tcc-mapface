@@ -248,6 +248,15 @@ def calcular_iee(
 #: transformaria "saiu para pegar água" em "cochilou".
 ABERTO, FECHADO, AUSENTE = "aberto", "fechado", "ausente"
 
+#: Duração nominal de um pacote de telemetria (1 Hz) e maior intervalo entre
+#: dois pacotes consecutivos que ainda pode ser atribuído ao estado do primeiro.
+#: Acima de `INTERVALO_MAXIMO_AMOSTRA_S`, o vão deixou de ser jitter do timer e
+#: passou a ser lacuna de captura ou queda de rede (F06): a leitura anterior
+#: vale pelo seu segundo nominal e o silêncio excedente entra como `AUSENTE`,
+#: para que uma piscada antes da queda não vire trinta segundos de olhos fechados.
+DURACAO_AMOSTRA_NOMINAL_S = 1.0
+INTERVALO_MAXIMO_AMOSTRA_S = 2.0
+
 
 class DetectorDeFadiga:
     """Deriva o fator `F` de regras diretas sobre a série de EAR e MAR.
@@ -312,11 +321,20 @@ class DetectorDeFadiga:
     def _intervalos(self):
         """(duração em segundos, estado, boca aberta) entre amostras vizinhas.
 
-        A duração entre duas amostras é atribuída ao estado da **primeira**: é o
-        que sabíamos durante aquele intervalo.
+        Em cadência normal (até `INTERVALO_MAXIMO_AMOSTRA_S`), a duração entre
+        duas amostras é atribuída ao estado da **primeira**. Quando o vão passa
+        desse limite — queda de rede, aba suspensa —, a primeira amostra responde
+        apenas pelo seu segundo nominal (`DURACAO_AMOSTRA_NOMINAL_S`) e o
+        restante da lacuna entra como `AUSENTE`, impedindo que o último estado
+        observado (inclusive olhos fechados) se propague pelo silêncio.
         """
         for (t0, estado, boca), (t1, _, _) in zip(self._amostras, list(self._amostras)[1:]):
-            yield (t1 - t0).total_seconds(), estado, boca
+            duracao = (t1 - t0).total_seconds()
+            if duracao <= INTERVALO_MAXIMO_AMOSTRA_S:
+                yield duracao, estado, boca
+            else:
+                yield DURACAO_AMOSTRA_NOMINAL_S, estado, boca
+                yield duracao - DURACAO_AMOSTRA_NOMINAL_S, AUSENTE, False
 
     def _avaliar(self) -> Fadiga:
         observado = 0.0   # tempo com rosto — o denominador do PERCLOS
