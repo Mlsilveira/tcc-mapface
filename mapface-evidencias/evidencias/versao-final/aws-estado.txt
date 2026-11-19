@@ -1,0 +1,7 @@
+﻿# Estado do ambiente publicado, 2026-11-19T21:58Z
+site: https://d2qm0t6ecgabb2.cloudfront.net  (conta 481503226251, us-east-1)
+health: {"status":"ok","build":"f2b675e"}
+imagem (digest, push): sha256:5fb7612f3f0f6b95459492779686e410db3e8c3c7a051763122e3a1c455dc585	2026-11-19T18:35:18.835000-03:00
+serviço (task definition, deploy, rollout, tasks): arn:aws:ecs:us-east-1:481503226251:task-definition/mapface-poc-backend:4	2026-11-19T18:53:05.142000-03:00	COMPLETED	1
+task (cpu, memória MiB, imagem): 256	512	481503226251.dkr.ecr.us-east-1.amazonaws.com/mapface-poc-backend:f2b675e
+senha do RDS (rotação automática, dias, última, próxima): True	7	2026-11-19T18:41:39.717000-03:00	2026-11-26T20:59:59-03:00

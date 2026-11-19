@@ -1,0 +1,4 @@
+﻿# Suíte do frontend no commit f2b675e, 2026-11-19T21:54Z
+# comando: cd frontend && npx ng test --watch=false --browsers=ChromeHeadless
+Chrome Headless 151.0.0.0 (Windows 10): Executed 350 of 350 SUCCESS (1.51 secs / 1.271 secs)
+TOTAL: 350 SUCCESS

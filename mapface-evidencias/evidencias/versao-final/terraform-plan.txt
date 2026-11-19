@@ -1,0 +1,5 @@
+﻿# terraform plan contra o ambiente publicado, 2026-11-19T21:58Z
+# comando: cd infra && terraform plan -detailed-exitcode -var tag_da_imagem=f2b675e
+# código de saída: 0 (0 = nenhuma diferença entre o código e a AWS)
+No changes. Your infrastructure matches the configuration.
+and found no differences, so no changes are needed.

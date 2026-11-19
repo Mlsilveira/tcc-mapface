@@ -1,0 +1,2027 @@
+{
+  "url": "https://d2qm0t6ecgabb2.cloudfront.net",
+  "build_antes": "f2b675e",
+  "build_depois": "f2b675e",
+  "id_sessao": 26,
+  "conta": "teste-sintetico-reinicio-c9c2ab51@example.com",
+  "assunto": "teste-sintetico-reinicio",
+  "conexoes": 2,
+  "scores": 376,
+  "maior_lacuna_sem_score_s": 3.3,
+  "eventos": [
+    {
+      "t_s": 3.2,
+      "utc": "2026-11-19T21:51:25.453+00:00",
+      "evento": "sessao-aberta",
+      "id_sessao": 26,
+      "conta": "teste-sintetico-reinicio-c9c2ab51@example.com",
+      "build": "f2b675e"
+    },
+    {
+      "t_s": 3.64,
+      "utc": "2026-11-19T21:51:25.893+00:00",
+      "evento": "canal-autenticado",
+      "conexao": 1
+    },
+    {
+      "t_s": 3.78,
+      "utc": "2026-11-19T21:51:26.027+00:00",
+      "evento": "calibrando",
+      "valor": true,
+      "score": 98.22222222222223
+    },
+    {
+      "t_s": 64.33,
+      "utc": "2026-11-19T21:52:26.573+00:00",
+      "evento": "calibrando",
+      "valor": false,
+      "score": 100.0
+    },
+    {
+      "t_s": 92.67,
+      "utc": "2026-11-19T21:52:54.927+00:00",
+      "evento": "deploy-forcado",
+      "deployment": "ecs-svc/6893605117935168947"
+    },
+    {
+      "t_s": 92.8,
+      "utc": "2026-11-19T21:52:55.052+00:00",
+      "evento": "lacuna-sem-score",
+      "segundos": 3.3
+    },
+    {
+      "t_s": 233.94,
+      "utc": "2026-11-19T21:55:16.187+00:00",
+      "evento": "canal-caiu",
+      "codigo": 1006,
+      "motivo": ""
+    },
+    {
+      "t_s": 233.94,
+      "utc": "2026-11-19T21:55:16.187+00:00",
+      "evento": "reconectar-em",
+      "segundos": 1.0
+    },
+    {
+      "t_s": 235.5,
+      "utc": "2026-11-19T21:55:17.758+00:00",
+      "evento": "canal-autenticado",
+      "conexao": 2
+    },
+    {
+      "t_s": 235.64,
+      "utc": "2026-11-19T21:55:17.893+00:00",
+      "evento": "lacuna-sem-score",
+      "segundos": 2.6
+    },
+    {
+      "t_s": 235.64,
+      "utc": "2026-11-19T21:55:17.893+00:00",
+      "evento": "calibrando",
+      "valor": true,
+      "score": 98.22222222222223
+    },
+    {
+      "t_s": 296.12,
+      "utc": "2026-11-19T21:56:18.377+00:00",
+      "evento": "calibrando",
+      "valor": false,
+      "score": 100.0
+    },
+    {
+      "t_s": 387.12,
+      "utc": "2026-11-19T21:57:49.373+00:00",
+      "evento": "sessao-ativa-depois",
+      "id": 26
+    },
+    {
+      "t_s": 387.3,
+      "utc": "2026-11-19T21:57:49.547+00:00",
+      "evento": "sessao-encerrada",
+      "http": 200
+    }
+  ],
+  "relatorio": {
+    "id_sessao": 26,
+    "inicio": "2026-11-19T21:51:35.863573Z",
+    "fim": "2026-11-19T21:57:59.914925Z",
+    "parcial": false,
+    "duracao_total_s": 384.051352,
+    "duracao_presente_s": 384.051352,
+    "media": 99.43262411347519,
+    "pico": 100.0,
+    "vale": 98.22222222222223,
+    "sonolencia_media": 0.3849515397572162,
+    "pontos_medidos": 376,
+    "pontos_incertos": 0,
+    "pontos_zerados": 0,
+    "alertas_de_fadiga": [],
+    "motivos_de_incerteza": [],
+    "recomendacoes": [
+      {
+        "codigo": "manter",
+        "titulo": "Nada a sinalizar nesta sessão",
+        "texto": "Não apareceram sinais de fadiga nem problemas de captura. Se a sessão rendeu, vale anotar o que estava diferente — horário, ambiente, tipo de material — para repetir.",
+        "motivo": "Nenhum alerta registrado."
+      }
+    ],
+    "serie": [
+      {
+        "instante": "2026-11-19T21:51:36.434782Z",
+        "score": 98.22222222222223,
+        "alerta": null
+      },
+      {
+        "instante": "2026-11-19T21:51:37.433613Z",
+        "score": 98.22222222222223,
+        "alerta": null
+      },
+      {
+        "instante": "2026-11-19T21:51:38.445010Z",
+        "score": 98.22222222222223,
+        "alerta": null
+      },
+      {
+        "instante": "2026-11-19T21:51:39.454496Z",
+        "score": 98.22222222222223,
+        "alerta": null
+      },
+      {
+        "instante": "2026-11-19T21:51:40.450326Z",
+        "score": 98.22222222222223,
+        "alerta": null
+      },
+      {
+        "instante": "2026-11-19T21:51:41.457939Z",
+        "score": 98.22222222222223,
+        "alerta": null
+      },
+      {
+        "instante": "2026-11-19T21:51:42.469903Z",
+        "score": 98.22222222222223,
+        "alerta": null
+      },
+      {
+        "instante": "2026-11-19T21:51:43.477836Z",
+        "score": 98.22222222222223,
+        "alerta": null
+      },
+      {
+        "instante": "2026-11-19T21:51:44.483085Z",
+        "score": 98.22222222222223,
+        "alerta": null
+      },
+      {
+        "instante": "2026-11-19T21:51:45.490604Z",
+        "score": 98.22222222222223,
+        "alerta": null
+      },
+      {
+        "instante": "2026-11-19T21:51:46.500651Z",
+        "score": 98.22222222222223,
+        "alerta": null
+      },
+      {
+        "instante": "2026-11-19T21:51:47.512465Z",
+        "score": 98.22222222222223,
+        "alerta": null
+      },
+      {
+        "instante": "2026-11-19T21:51:48.527397Z",
+        "score": 98.22222222222223,
+        "alerta": null
+      },
+      {
+        "instante": "2026-11-19T21:51:49.531584Z",
+        "score": 98.22222222222223,
+        "alerta": null
+      },
+      {
+        "instante": "2026-11-19T21:51:50.540458Z",
+        "score": 98.22222222222223,
+        "alerta": null
+      },
+      {
+        "instante": "2026-11-19T21:51:51.549193Z",
+        "score": 98.22222222222223,
+        "alerta": null
+      },
+      {
+        "instante": "2026-11-19T21:51:52.558138Z",
+        "score": 98.22222222222223,
+        "alerta": null
+      },
+      {
+        "instante": "2026-11-19T21:51:53.570649Z",
+        "score": 98.22222222222223,
+        "alerta": null
+      },
+      {
+        "instante": "2026-11-19T21:51:54.585910Z",
+        "score": 98.22222222222223,
+        "alerta": null
+      },
+      {
+        "instante": "2026-11-19T21:51:55.601513Z",
+        "score": 98.22222222222223,
+        "alerta": null
+      },
+      {
+        "instante": "2026-11-19T21:51:56.627309Z",
+        "score": 98.22222222222223,
+        "alerta": null
+      },
+      {
+        "instante": "2026-11-19T21:51:57.620529Z",
+        "score": 98.22222222222223,
+        "alerta": null
+      },
+      {
+        "instante": "2026-11-19T21:51:58.631094Z",
+        "score": 98.22222222222223,
+        "alerta": null
+      },
+      {
+        "instante": "2026-11-19T21:51:59.643057Z",
+        "score": 98.22222222222223,
+        "alerta": null
+      },
+      {
+        "instante": "2026-11-19T21:52:00.655745Z",
+        "score": 98.22222222222223,
+        "alerta": null
+      },
+      {
+        "instante": "2026-11-19T21:52:01.667703Z",
+        "score": 98.22222222222223,
+        "alerta": null
+      },
+      {
+        "instante": "2026-11-19T21:52:02.684447Z",
+        "score": 98.22222222222223,
+        "alerta": null
+      },
+      {
+        "instante": "2026-11-19T21:52:03.701220Z",
+        "score": 98.22222222222223,
+        "alerta": null
+      },
+      {
+        "instante": "2026-11-19T21:52:04.710246Z",
+        "score": 98.22222222222223,
+        "alerta": null
+      },
+      {
+        "instante": "2026-11-19T21:52:05.724825Z",
+        "score": 98.22222222222223,
+        "alerta": null
+      },
+      {
+        "instante": "2026-11-19T21:52:06.730450Z",
+        "score": 98.22222222222223,
+        "alerta": null
+      },
+      {
+        "instante": "2026-11-19T21:52:07.740576Z",
+        "score": 98.22222222222223,
+        "alerta": null
+      },
+      {
+        "instante": "2026-11-19T21:52:08.752602Z",
+        "score": 98.22222222222223,
+        "alerta": null
+      },
+      {
+        "instante": "2026-11-19T21:52:09.759398Z",
+        "score": 98.22222222222223,
+        "alerta": null
+      },
+      {
+        "instante": "2026-11-19T21:52:10.772804Z",
+        "score": 98.22222222222223,
+        "alerta": null
+      },
+      {
+        "instante": "2026-11-19T21:52:11.783188Z",
+        "score": 98.22222222222223,
+        "alerta": null
+      },
+      {
+        "instante": "2026-11-19T21:52:12.776968Z",
+        "score": 98.22222222222223,
+        "alerta": null
+      },
+      {
+        "instante": "2026-11-19T21:52:13.789662Z",
+        "score": 98.22222222222223,
+        "alerta": null
+      },
+      {
+        "instante": "2026-11-19T21:52:14.798118Z",
+        "score": 98.22222222222223,
+        "alerta": null
+      },
+      {
+        "instante": "2026-11-19T21:52:15.812268Z",
+        "score": 98.22222222222223,
+        "alerta": null
+      },
+      {
+        "instante": "2026-11-19T21:52:16.820695Z",
+        "score": 98.22222222222223,
+        "alerta": null
+      },
+      {
+        "instante": "2026-11-19T21:52:17.826183Z",
+        "score": 98.22222222222223,
+        "alerta": null
+      },
+      {
+        "instante": "2026-11-19T21:52:18.838093Z",
+        "score": 98.22222222222223,
+        "alerta": null
+      },
+      {
+        "instante": "2026-11-19T21:52:19.850702Z",
+        "score": 98.22222222222223,
+        "alerta": null
+      },
+      {
+        "instante": "2026-11-19T21:52:20.866230Z",
+        "score": 98.22222222222223,
+        "alerta": null
+      },
+      {
+        "instante": "2026-11-19T21:52:21.877973Z",
+        "score": 98.22222222222223,
+        "alerta": null
+      },
+      {
+        "instante": "2026-11-19T21:52:22.870618Z",
+        "score": 98.22222222222223,
+        "alerta": null
+      },
+      {
+        "instante": "2026-11-19T21:52:23.880745Z",
+        "score": 98.22222222222223,
+        "alerta": null
+      },
+      {
+        "instante": "2026-11-19T21:52:24.891794Z",
+        "score": 98.22222222222223,
+        "alerta": null
+      },
+      {
+        "instante": "2026-11-19T21:52:25.904573Z",
+        "score": 98.22222222222223,
+        "alerta": null
+      },
+      {
+        "instante": "2026-11-19T21:52:26.909492Z",
+        "score": 98.22222222222223,
+        "alerta": null
+      },
+      {
+        "instante": "2026-11-19T21:52:27.916611Z",
+        "score": 98.22222222222223,
+        "alerta": null
+      },
+      {
+        "instante": "2026-11-19T21:52:28.927400Z",
+        "score": 98.22222222222223,
+        "alerta": null
+      },
+      {
+        "instante": "2026-11-19T21:52:29.934846Z",
+        "score": 98.22222222222223,
+        "alerta": null
+      },
+      {
+        "instante": "2026-11-19T21:52:30.942298Z",
+        "score": 98.22222222222223,
+        "alerta": null
+      },
+      {
+        "instante": "2026-11-19T21:52:31.954359Z",
+        "score": 98.22222222222223,
+        "alerta": null
+      },
+      {
+        "instante": "2026-11-19T21:52:32.959290Z",
+        "score": 98.22222222222223,
+        "alerta": null
+      },
+      {
+        "instante": "2026-11-19T21:52:33.969376Z",
+        "score": 98.22222222222223,
+        "alerta": null
+      },
+      {
+        "instante": "2026-11-19T21:52:34.978278Z",
+        "score": 98.22222222222223,
+        "alerta": null
+      },
+      {
+        "instante": "2026-11-19T21:52:35.987109Z",
+        "score": 98.22222222222223,
+        "alerta": null
+      },
+      {
+        "instante": "2026-11-19T21:52:36.983564Z",
+        "score": 100.0,
+        "alerta": null
+      },
+      {
+        "instante": "2026-11-19T21:52:37.980249Z",
+        "score": 100.0,
+        "alerta": null
+      },
+      {
+        "instante": "2026-11-19T21:52:38.986254Z",
+        "score": 100.0,
+        "alerta": null
+      },
+      {
+        "instante": "2026-11-19T21:52:39.999152Z",
+        "score": 100.0,
+        "alerta": null
+      },
+      {
+        "instante": "2026-11-19T21:52:40.993817Z",
+        "score": 100.0,
+        "alerta": null
+      },
+      {
+        "instante": "2026-11-19T21:52:42.005852Z",
+        "score": 100.0,
+        "alerta": null
+      },
+      {
+        "instante": "2026-11-19T21:52:43.012128Z",
+        "score": 100.0,
+        "alerta": null
+      },
+      {
+        "instante": "2026-11-19T21:52:44.018839Z",
+        "score": 100.0,
+        "alerta": null
+      },
+      {
+        "instante": "2026-11-19T21:52:45.036537Z",
+        "score": 100.0,
+        "alerta": null
+      },
+      {
+        "instante": "2026-11-19T21:52:46.040203Z",
+        "score": 100.0,
+        "alerta": null
+      },
+      {
+        "instante": "2026-11-19T21:52:47.120416Z",
+        "score": 100.0,
+        "alerta": null
+      },
+      {
+        "instante": "2026-11-19T21:52:48.059726Z",
+        "score": 100.0,
+        "alerta": null
+      },
+      {
+        "instante": "2026-11-19T21:52:49.075108Z",
+        "score": 100.0,
+        "alerta": null
+      },
+      {
+        "instante": "2026-11-19T21:52:50.079763Z",
+        "score": 100.0,
+        "alerta": null
+      },
+      {
+        "instante": "2026-11-19T21:52:51.087723Z",
+        "score": 100.0,
+        "alerta": null
+      },
+      {
+        "instante": "2026-11-19T21:52:52.097439Z",
+        "score": 100.0,
+        "alerta": null
+      },
+      {
+        "instante": "2026-11-19T21:52:53.104653Z",
+        "score": 100.0,
+        "alerta": null
+      },
+      {
+        "instante": "2026-11-19T21:52:54.113177Z",
+        "score": 100.0,
+        "alerta": null
+      },
+      {
+        "instante": "2026-11-19T21:52:55.127562Z",
+        "score": 100.0,
+        "alerta": null
+      },
+      {
+        "instante": "2026-11-19T21:52:56.134687Z",
+        "score": 100.0,
+        "alerta": null
+      },
+      {
+        "instante": "2026-11-19T21:52:57.172450Z",
+        "score": 100.0,
+        "alerta": null
+      },
+      {
+        "instante": "2026-11-19T21:52:58.152335Z",
+        "score": 100.0,
+        "alerta": null
+      },
+      {
+        "instante": "2026-11-19T21:52:59.167733Z",
+        "score": 100.0,
+        "alerta": null
+      },
+      {
+        "instante": "2026-11-19T21:53:00.173239Z",
+        "score": 100.0,
+        "alerta": null
+      },
+      {
+        "instante": "2026-11-19T21:53:01.184993Z",
+        "score": 100.0,
+        "alerta": null
+      },
+      {
+        "instante": "2026-11-19T21:53:02.198678Z",
+        "score": 100.0,
+        "alerta": null
+      },
+      {
+        "instante": "2026-11-19T21:53:05.467477Z",
+        "score": 100.0,
+        "alerta": null
+      },
+      {
+        "instante": "2026-11-19T21:53:06.469196Z",
+        "score": 100.0,
+        "alerta": null
+      },
+      {
+        "instante": "2026-11-19T21:53:07.506503Z",
+        "score": 100.0,
+        "alerta": null
+      },
+      {
+        "instante": "2026-11-19T21:53:08.493201Z",
+        "score": 100.0,
+        "alerta": null
+      },
+      {
+        "instante": "2026-11-19T21:53:09.504021Z",
+        "score": 100.0,
+        "alerta": null
+      },
+      {
+        "instante": "2026-11-19T21:53:10.510745Z",
+        "score": 100.0,
+        "alerta": null
+      },
+      {
+        "instante": "2026-11-19T21:53:11.524105Z",
+        "score": 100.0,
+        "alerta": null
+      },
+      {
+        "instante": "2026-11-19T21:53:12.538463Z",
+        "score": 100.0,
+        "alerta": null
+      },
+      {
+        "instante": "2026-11-19T21:53:13.552984Z",
+        "score": 100.0,
+        "alerta": null
+      },
+      {
+        "instante": "2026-11-19T21:53:14.560104Z",
+        "score": 100.0,
+        "alerta": null
+      },
+      {
+        "instante": "2026-11-19T21:53:15.569819Z",
+        "score": 100.0,
+        "alerta": null
+      },
+      {
+        "instante": "2026-11-19T21:53:16.578395Z",
+        "score": 100.0,
+        "alerta": null
+      },
+      {
+        "instante": "2026-11-19T21:53:17.612342Z",
+        "score": 100.0,
+        "alerta": null
+      },
+      {
+        "instante": "2026-11-19T21:53:18.583475Z",
+        "score": 100.0,
+        "alerta": null
+      },
+      {
+        "instante": "2026-11-19T21:53:19.591824Z",
+        "score": 100.0,
+        "alerta": null
+      },
+      {
+        "instante": "2026-11-19T21:53:20.608315Z",
+        "score": 100.0,
+        "alerta": null
+      },
+      {
+        "instante": "2026-11-19T21:53:21.609843Z",
+        "score": 100.0,
+        "alerta": null
+      },
+      {
+        "instante": "2026-11-19T21:53:22.621690Z",
+        "score": 100.0,
+        "alerta": null
+      },
+      {
+        "instante": "2026-11-19T21:53:23.636075Z",
+        "score": 100.0,
+        "alerta": null
+      },
+      {
+        "instante": "2026-11-19T21:53:24.646697Z",
+        "score": 100.0,
+        "alerta": null
+      },
+      {
+        "instante": "2026-11-19T21:53:25.660789Z",
+        "score": 100.0,
+        "alerta": null
+      },
+      {
+        "instante": "2026-11-19T21:53:26.663306Z",
+        "score": 100.0,
+        "alerta": null
+      },
+      {
+        "instante": "2026-11-19T21:53:27.691240Z",
+        "score": 100.0,
+        "alerta": null
+      },
+      {
+        "instante": "2026-11-19T21:53:28.668087Z",
+        "score": 100.0,
+        "alerta": null
+      },
+      {
+        "instante": "2026-11-19T21:53:29.676616Z",
+        "score": 100.0,
+        "alerta": null
+      },
+      {
+        "instante": "2026-11-19T21:53:30.688573Z",
+        "score": 100.0,
+        "alerta": null
+      },
+      {
+        "instante": "2026-11-19T21:53:31.698414Z",
+        "score": 100.0,
+        "alerta": null
+      },
+      {
+        "instante": "2026-11-19T21:53:32.707555Z",
+        "score": 100.0,
+        "alerta": null
+      },
+      {
+        "instante": "2026-11-19T21:53:33.709421Z",
+        "score": 100.0,
+        "alerta": null
+      },
+      {
+        "instante": "2026-11-19T21:53:34.719018Z",
+        "score": 100.0,
+        "alerta": null
+      },
+      {
+        "instante": "2026-11-19T21:53:35.731465Z",
+        "score": 100.0,
+        "alerta": null
+      },
+      {
+        "instante": "2026-11-19T21:53:36.743794Z",
+        "score": 100.0,
+        "alerta": null
+      },
+      {
+        "instante": "2026-11-19T21:53:37.820364Z",
+        "score": 100.0,
+        "alerta": null
+      },
+      {
+        "instante": "2026-11-19T21:53:38.746557Z",
+        "score": 100.0,
+        "alerta": null
+      },
+      {
+        "instante": "2026-11-19T21:53:39.756223Z",
+        "score": 100.0,
+        "alerta": null
+      },
+      {
+        "instante": "2026-11-19T21:53:40.766169Z",
+        "score": 100.0,
+        "alerta": null
+      },
+      {
+        "instante": "2026-11-19T21:53:41.779123Z",
+        "score": 100.0,
+        "alerta": null
+      },
+      {
+        "instante": "2026-11-19T21:53:42.785313Z",
+        "score": 100.0,
+        "alerta": null
+      },
+      {
+        "instante": "2026-11-19T21:53:43.796062Z",
+        "score": 100.0,
+        "alerta": null
+      },
+      {
+        "instante": "2026-11-19T21:53:44.793855Z",
+        "score": 100.0,
+        "alerta": null
+      },
+      {
+        "instante": "2026-11-19T21:53:45.814548Z",
+        "score": 100.0,
+        "alerta": null
+      },
+      {
+        "instante": "2026-11-19T21:53:46.822902Z",
+        "score": 100.0,
+        "alerta": null
+      },
+      {
+        "instante": "2026-11-19T21:53:47.855814Z",
+        "score": 100.0,
+        "alerta": null
+      },
+      {
+        "instante": "2026-11-19T21:53:48.853123Z",
+        "score": 100.0,
+        "alerta": null
+      },
+      {
+        "instante": "2026-11-19T21:53:49.862321Z",
+        "score": 100.0,
+        "alerta": null
+      },
+      {
+        "instante": "2026-11-19T21:53:50.857078Z",
+        "score": 100.0,
+        "alerta": null
+      },
+      {
+        "instante": "2026-11-19T21:53:51.864085Z",
+        "score": 100.0,
+        "alerta": null
+      },
+      {
+        "instante": "2026-11-19T21:53:52.872226Z",
+        "score": 100.0,
+        "alerta": null
+      },
+      {
+        "instante": "2026-11-19T21:53:53.884056Z",
+        "score": 100.0,
+        "alerta": null
+      },
+      {
+        "instante": "2026-11-19T21:53:54.891694Z",
+        "score": 100.0,
+        "alerta": null
+      },
+      {
+        "instante": "2026-11-19T21:53:55.903237Z",
+        "score": 100.0,
+        "alerta": null
+      },
+      {
+        "instante": "2026-11-19T21:53:56.910642Z",
+        "score": 100.0,
+        "alerta": null
+      },
+      {
+        "instante": "2026-11-19T21:53:58.010248Z",
+        "score": 100.0,
+        "alerta": null
+      },
+      {
+        "instante": "2026-11-19T21:53:58.932916Z",
+        "score": 100.0,
+        "alerta": null
+      },
+      {
+        "instante": "2026-11-19T21:53:59.938124Z",
+        "score": 100.0,
+        "alerta": null
+      },
+      {
+        "instante": "2026-11-19T21:54:00.945890Z",
+        "score": 100.0,
+        "alerta": null
+      },
+      {
+        "instante": "2026-11-19T21:54:01.964557Z",
+        "score": 100.0,
+        "alerta": null
+      },
+      {
+        "instante": "2026-11-19T21:54:02.962336Z",
+        "score": 100.0,
+        "alerta": null
+      },
+      {
+        "instante": "2026-11-19T21:54:03.961891Z",
+        "score": 100.0,
+        "alerta": null
+      },
+      {
+        "instante": "2026-11-19T21:54:04.970304Z",
+        "score": 100.0,
+        "alerta": null
+      },
+      {
+        "instante": "2026-11-19T21:54:05.979973Z",
+        "score": 100.0,
+        "alerta": null
+      },
+      {
+        "instante": "2026-11-19T21:54:06.992532Z",
+        "score": 100.0,
+        "alerta": null
+      },
+      {
+        "instante": "2026-11-19T21:54:08.031245Z",
+        "score": 100.0,
+        "alerta": null
+      },
+      {
+        "instante": "2026-11-19T21:54:09.021676Z",
+        "score": 100.0,
+        "alerta": null
+      },
+      {
+        "instante": "2026-11-19T21:54:10.025366Z",
+        "score": 100.0,
+        "alerta": null
+      },
+      {
+        "instante": "2026-11-19T21:54:11.027145Z",
+        "score": 100.0,
+        "alerta": null
+      },
+      {
+        "instante": "2026-11-19T21:54:12.038511Z",
+        "score": 100.0,
+        "alerta": null
+      },
+      {
+        "instante": "2026-11-19T21:54:13.046763Z",
+        "score": 100.0,
+        "alerta": null
+      },
+      {
+        "instante": "2026-11-19T21:54:14.059835Z",
+        "score": 100.0,
+        "alerta": null
+      },
+      {
+        "instante": "2026-11-19T21:54:15.071584Z",
+        "score": 100.0,
+        "alerta": null
+      },
+      {
+        "instante": "2026-11-19T21:54:16.080836Z",
+        "score": 100.0,
+        "alerta": null
+      },
+      {
+        "instante": "2026-11-19T21:54:17.093559Z",
+        "score": 100.0,
+        "alerta": null
+      },
+      {
+        "instante": "2026-11-19T21:54:18.129505Z",
+        "score": 100.0,
+        "alerta": null
+      },
+      {
+        "instante": "2026-11-19T21:54:19.100710Z",
+        "score": 100.0,
+        "alerta": null
+      },
+      {
+        "instante": "2026-11-19T21:54:20.110649Z",
+        "score": 100.0,
+        "alerta": null
+      },
+      {
+        "instante": "2026-11-19T21:54:21.122991Z",
+        "score": 100.0,
+        "alerta": null
+      },
+      {
+        "instante": "2026-11-19T21:54:22.133849Z",
+        "score": 100.0,
+        "alerta": null
+      },
+      {
+        "instante": "2026-11-19T21:54:23.145134Z",
+        "score": 100.0,
+        "alerta": null
+      },
+      {
+        "instante": "2026-11-19T21:54:24.157071Z",
+        "score": 100.0,
+        "alerta": null
+      },
+      {
+        "instante": "2026-11-19T21:54:25.159843Z",
+        "score": 100.0,
+        "alerta": null
+      },
+      {
+        "instante": "2026-11-19T21:54:26.169389Z",
+        "score": 100.0,
+        "alerta": null
+      },
+      {
+        "instante": "2026-11-19T21:54:27.181944Z",
+        "score": 100.0,
+        "alerta": null
+      },
+      {
+        "instante": "2026-11-19T21:54:28.219069Z",
+        "score": 100.0,
+        "alerta": null
+      },
+      {
+        "instante": "2026-11-19T21:54:29.205957Z",
+        "score": 100.0,
+        "alerta": null
+      },
+      {
+        "instante": "2026-11-19T21:54:30.208574Z",
+        "score": 100.0,
+        "alerta": null
+      },
+      {
+        "instante": "2026-11-19T21:54:31.213644Z",
+        "score": 100.0,
+        "alerta": null
+      },
+      {
+        "instante": "2026-11-19T21:54:32.223361Z",
+        "score": 100.0,
+        "alerta": null
+      },
+      {
+        "instante": "2026-11-19T21:54:33.229820Z",
+        "score": 100.0,
+        "alerta": null
+      },
+      {
+        "instante": "2026-11-19T21:54:34.235676Z",
+        "score": 100.0,
+        "alerta": null
+      },
+      {
+        "instante": "2026-11-19T21:54:35.236163Z",
+        "score": 100.0,
+        "alerta": null
+      },
+      {
+        "instante": "2026-11-19T21:54:36.243966Z",
+        "score": 100.0,
+        "alerta": null
+      },
+      {
+        "instante": "2026-11-19T21:54:37.257584Z",
+        "score": 100.0,
+        "alerta": null
+      },
+      {
+        "instante": "2026-11-19T21:54:38.294843Z",
+        "score": 100.0,
+        "alerta": null
+      },
+      {
+        "instante": "2026-11-19T21:54:39.278363Z",
+        "score": 100.0,
+        "alerta": null
+      },
+      {
+        "instante": "2026-11-19T21:54:40.286778Z",
+        "score": 100.0,
+        "alerta": null
+      },
+      {
+        "instante": "2026-11-19T21:54:41.289810Z",
+        "score": 100.0,
+        "alerta": null
+      },
+      {
+        "instante": "2026-11-19T21:54:42.299719Z",
+        "score": 100.0,
+        "alerta": null
+      },
+      {
+        "instante": "2026-11-19T21:54:43.311429Z",
+        "score": 100.0,
+        "alerta": null
+      },
+      {
+        "instante": "2026-11-19T21:54:44.320026Z",
+        "score": 100.0,
+        "alerta": null
+      },
+      {
+        "instante": "2026-11-19T21:54:45.326956Z",
+        "score": 100.0,
+        "alerta": null
+      },
+      {
+        "instante": "2026-11-19T21:54:46.327542Z",
+        "score": 100.0,
+        "alerta": null
+      },
+      {
+        "instante": "2026-11-19T21:54:47.338885Z",
+        "score": 100.0,
+        "alerta": null
+      },
+      {
+        "instante": "2026-11-19T21:54:48.373929Z",
+        "score": 100.0,
+        "alerta": null
+      },
+      {
+        "instante": "2026-11-19T21:54:49.362073Z",
+        "score": 100.0,
+        "alerta": null
+      },
+      {
+        "instante": "2026-11-19T21:54:50.372181Z",
+        "score": 100.0,
+        "alerta": null
+      },
+      {
+        "instante": "2026-11-19T21:54:51.381317Z",
+        "score": 100.0,
+        "alerta": null
+      },
+      {
+        "instante": "2026-11-19T21:54:52.390906Z",
+        "score": 100.0,
+        "alerta": null
+      },
+      {
+        "instante": "2026-11-19T21:54:53.396766Z",
+        "score": 100.0,
+        "alerta": null
+      },
+      {
+        "instante": "2026-11-19T21:54:54.411296Z",
+        "score": 100.0,
+        "alerta": null
+      },
+      {
+        "instante": "2026-11-19T21:54:55.422866Z",
+        "score": 100.0,
+        "alerta": null
+      },
+      {
+        "instante": "2026-11-19T21:54:56.432850Z",
+        "score": 100.0,
+        "alerta": null
+      },
+      {
+        "instante": "2026-11-19T21:54:57.441527Z",
+        "score": 100.0,
+        "alerta": null
+      },
+      {
+        "instante": "2026-11-19T21:54:58.475701Z",
+        "score": 100.0,
+        "alerta": null
+      },
+      {
+        "instante": "2026-11-19T21:54:59.459954Z",
+        "score": 100.0,
+        "alerta": null
+      },
+      {
+        "instante": "2026-11-19T21:55:00.472009Z",
+        "score": 100.0,
+        "alerta": null
+      },
+      {
+        "instante": "2026-11-19T21:55:01.494212Z",
+        "score": 100.0,
+        "alerta": null
+      },
+      {
+        "instante": "2026-11-19T21:55:02.502346Z",
+        "score": 100.0,
+        "alerta": null
+      },
+      {
+        "instante": "2026-11-19T21:55:03.511951Z",
+        "score": 100.0,
+        "alerta": null
+      },
+      {
+        "instante": "2026-11-19T21:55:04.513576Z",
+        "score": 100.0,
+        "alerta": null
+      },
+      {
+        "instante": "2026-11-19T21:55:05.526185Z",
+        "score": 100.0,
+        "alerta": null
+      },
+      {
+        "instante": "2026-11-19T21:55:06.534672Z",
+        "score": 100.0,
+        "alerta": null
+      },
+      {
+        "instante": "2026-11-19T21:55:07.542737Z",
+        "score": 100.0,
+        "alerta": null
+      },
+      {
+        "instante": "2026-11-19T21:55:08.575049Z",
+        "score": 100.0,
+        "alerta": null
+      },
+      {
+        "instante": "2026-11-19T21:55:09.568769Z",
+        "score": 100.0,
+        "alerta": null
+      },
+      {
+        "instante": "2026-11-19T21:55:10.578222Z",
+        "score": 100.0,
+        "alerta": null
+      },
+      {
+        "instante": "2026-11-19T21:55:11.584415Z",
+        "score": 100.0,
+        "alerta": null
+      },
+      {
+        "instante": "2026-11-19T21:55:12.592344Z",
+        "score": 100.0,
+        "alerta": null
+      },
+      {
+        "instante": "2026-11-19T21:55:13.602779Z",
+        "score": 100.0,
+        "alerta": null
+      },
+      {
+        "instante": "2026-11-19T21:55:14.614158Z",
+        "score": 100.0,
+        "alerta": null
+      },
+      {
+        "instante": "2026-11-19T21:55:15.626892Z",
+        "score": 100.0,
+        "alerta": null
+      },
+      {
+        "instante": "2026-11-19T21:55:16.650383Z",
+        "score": 100.0,
+        "alerta": null
+      },
+      {
+        "instante": "2026-11-19T21:55:17.663213Z",
+        "score": 100.0,
+        "alerta": null
+      },
+      {
+        "instante": "2026-11-19T21:55:18.710125Z",
+        "score": 100.0,
+        "alerta": null
+      },
+      {
+        "instante": "2026-11-19T21:55:19.689065Z",
+        "score": 100.0,
+        "alerta": null
+      },
+      {
+        "instante": "2026-11-19T21:55:20.678448Z",
+        "score": 100.0,
+        "alerta": null
+      },
+      {
+        "instante": "2026-11-19T21:55:21.690537Z",
+        "score": 100.0,
+        "alerta": null
+      },
+      {
+        "instante": "2026-11-19T21:55:22.699402Z",
+        "score": 100.0,
+        "alerta": null
+      },
+      {
+        "instante": "2026-11-19T21:55:23.698955Z",
+        "score": 100.0,
+        "alerta": null
+      },
+      {
+        "instante": "2026-11-19T21:55:24.701134Z",
+        "score": 100.0,
+        "alerta": null
+      },
+      {
+        "instante": "2026-11-19T21:55:25.713766Z",
+        "score": 100.0,
+        "alerta": null
+      },
+      {
+        "instante": "2026-11-19T21:55:28.297186Z",
+        "score": 98.22222222222223,
+        "alerta": null
+      },
+      {
+        "instante": "2026-11-19T21:55:29.304912Z",
+        "score": 98.22222222222223,
+        "alerta": null
+      },
+      {
+        "instante": "2026-11-19T21:55:30.314297Z",
+        "score": 98.22222222222223,
+        "alerta": null
+      },
+      {
+        "instante": "2026-11-19T21:55:31.324759Z",
+        "score": 98.22222222222223,
+        "alerta": null
+      },
+      {
+        "instante": "2026-11-19T21:55:32.336319Z",
+        "score": 98.22222222222223,
+        "alerta": null
+      },
+      {
+        "instante": "2026-11-19T21:55:33.348899Z",
+        "score": 98.22222222222223,
+        "alerta": null
+      },
+      {
+        "instante": "2026-11-19T21:55:34.358915Z",
+        "score": 98.22222222222223,
+        "alerta": null
+      },
+      {
+        "instante": "2026-11-19T21:55:35.371732Z",
+        "score": 98.22222222222223,
+        "alerta": null
+      },
+      {
+        "instante": "2026-11-19T21:55:36.375717Z",
+        "score": 98.22222222222223,
+        "alerta": null
+      },
+      {
+        "instante": "2026-11-19T21:55:37.391299Z",
+        "score": 98.22222222222223,
+        "alerta": null
+      },
+      {
+        "instante": "2026-11-19T21:55:38.402166Z",
+        "score": 98.22222222222223,
+        "alerta": null
+      },
+      {
+        "instante": "2026-11-19T21:55:39.413729Z",
+        "score": 98.22222222222223,
+        "alerta": null
+      },
+      {
+        "instante": "2026-11-19T21:55:40.419871Z",
+        "score": 98.22222222222223,
+        "alerta": null
+      },
+      {
+        "instante": "2026-11-19T21:55:41.431670Z",
+        "score": 98.22222222222223,
+        "alerta": null
+      },
+      {
+        "instante": "2026-11-19T21:55:42.432247Z",
+        "score": 98.22222222222223,
+        "alerta": null
+      },
+      {
+        "instante": "2026-11-19T21:55:43.443421Z",
+        "score": 98.22222222222223,
+        "alerta": null
+      },
+      {
+        "instante": "2026-11-19T21:55:44.451310Z",
+        "score": 98.22222222222223,
+        "alerta": null
+      },
+      {
+        "instante": "2026-11-19T21:55:45.454076Z",
+        "score": 98.22222222222223,
+        "alerta": null
+      },
+      {
+        "instante": "2026-11-19T21:55:46.450372Z",
+        "score": 98.22222222222223,
+        "alerta": null
+      },
+      {
+        "instante": "2026-11-19T21:55:47.457376Z",
+        "score": 98.22222222222223,
+        "alerta": null
+      },
+      {
+        "instante": "2026-11-19T21:55:48.468209Z",
+        "score": 98.22222222222223,
+        "alerta": null
+      },
+      {
+        "instante": "2026-11-19T21:55:49.465999Z",
+        "score": 98.22222222222223,
+        "alerta": null
+      },
+      {
+        "instante": "2026-11-19T21:55:50.473787Z",
+        "score": 98.22222222222223,
+        "alerta": null
+      },
+      {
+        "instante": "2026-11-19T21:55:51.482419Z",
+        "score": 98.22222222222223,
+        "alerta": null
+      },
+      {
+        "instante": "2026-11-19T21:55:52.491859Z",
+        "score": 98.22222222222223,
+        "alerta": null
+      },
+      {
+        "instante": "2026-11-19T21:55:53.489444Z",
+        "score": 98.22222222222223,
+        "alerta": null
+      },
+      {
+        "instante": "2026-11-19T21:55:54.500157Z",
+        "score": 98.22222222222223,
+        "alerta": null
+      },
+      {
+        "instante": "2026-11-19T21:55:55.506453Z",
+        "score": 98.22222222222223,
+        "alerta": null
+      },
+      {
+        "instante": "2026-11-19T21:55:56.510881Z",
+        "score": 98.22222222222223,
+        "alerta": null
+      },
+      {
+        "instante": "2026-11-19T21:55:57.515106Z",
+        "score": 98.22222222222223,
+        "alerta": null
+      },
+      {
+        "instante": "2026-11-19T21:55:58.518938Z",
+        "score": 98.22222222222223,
+        "alerta": null
+      },
+      {
+        "instante": "2026-11-19T21:55:59.532615Z",
+        "score": 98.22222222222223,
+        "alerta": null
+      },
+      {
+        "instante": "2026-11-19T21:56:00.554844Z",
+        "score": 98.22222222222223,
+        "alerta": null
+      },
+      {
+        "instante": "2026-11-19T21:56:01.565096Z",
+        "score": 98.22222222222223,
+        "alerta": null
+      },
+      {
+        "instante": "2026-11-19T21:56:02.559519Z",
+        "score": 98.22222222222223,
+        "alerta": null
+      },
+      {
+        "instante": "2026-11-19T21:56:03.553424Z",
+        "score": 98.22222222222223,
+        "alerta": null
+      },
+      {
+        "instante": "2026-11-19T21:56:04.563518Z",
+        "score": 98.22222222222223,
+        "alerta": null
+      },
+      {
+        "instante": "2026-11-19T21:56:05.577024Z",
+        "score": 98.22222222222223,
+        "alerta": null
+      },
+      {
+        "instante": "2026-11-19T21:56:06.583096Z",
+        "score": 98.22222222222223,
+        "alerta": null
+      },
+      {
+        "instante": "2026-11-19T21:56:07.590148Z",
+        "score": 98.22222222222223,
+        "alerta": null
+      },
+      {
+        "instante": "2026-11-19T21:56:08.600475Z",
+        "score": 98.22222222222223,
+        "alerta": null
+      },
+      {
+        "instante": "2026-11-19T21:56:09.606165Z",
+        "score": 98.22222222222223,
+        "alerta": null
+      },
+      {
+        "instante": "2026-11-19T21:56:10.614494Z",
+        "score": 98.22222222222223,
+        "alerta": null
+      },
+      {
+        "instante": "2026-11-19T21:56:11.620279Z",
+        "score": 98.22222222222223,
+        "alerta": null
+      },
+      {
+        "instante": "2026-11-19T21:56:12.630128Z",
+        "score": 98.22222222222223,
+        "alerta": null
+      },
+      {
+        "instante": "2026-11-19T21:56:13.634314Z",
+        "score": 98.22222222222223,
+        "alerta": null
+      },
+      {
+        "instante": "2026-11-19T21:56:14.644597Z",
+        "score": 98.22222222222223,
+        "alerta": null
+      },
+      {
+        "instante": "2026-11-19T21:56:15.654541Z",
+        "score": 98.22222222222223,
+        "alerta": null
+      },
+      {
+        "instante": "2026-11-19T21:56:16.658711Z",
+        "score": 98.22222222222223,
+        "alerta": null
+      },
+      {
+        "instante": "2026-11-19T21:56:17.683173Z",
+        "score": 98.22222222222223,
+        "alerta": null
+      },
+      {
+        "instante": "2026-11-19T21:56:18.694941Z",
+        "score": 98.22222222222223,
+        "alerta": null
+      },
+      {
+        "instante": "2026-11-19T21:56:19.702304Z",
+        "score": 98.22222222222223,
+        "alerta": null
+      },
+      {
+        "instante": "2026-11-19T21:56:20.704675Z",
+        "score": 98.22222222222223,
+        "alerta": null
+      },
+      {
+        "instante": "2026-11-19T21:56:21.720603Z",
+        "score": 98.22222222222223,
+        "alerta": null
+      },
+      {
+        "instante": "2026-11-19T21:56:22.747969Z",
+        "score": 98.22222222222223,
+        "alerta": null
+      },
+      {
+        "instante": "2026-11-19T21:56:23.757723Z",
+        "score": 98.22222222222223,
+        "alerta": null
+      },
+      {
+        "instante": "2026-11-19T21:56:24.762268Z",
+        "score": 98.22222222222223,
+        "alerta": null
+      },
+      {
+        "instante": "2026-11-19T21:56:25.770678Z",
+        "score": 98.22222222222223,
+        "alerta": null
+      },
+      {
+        "instante": "2026-11-19T21:56:26.777480Z",
+        "score": 98.22222222222223,
+        "alerta": null
+      },
+      {
+        "instante": "2026-11-19T21:56:27.785232Z",
+        "score": 98.22222222222223,
+        "alerta": null
+      },
+      {
+        "instante": "2026-11-19T21:56:28.791343Z",
+        "score": 100.0,
+        "alerta": null
+      },
+      {
+        "instante": "2026-11-19T21:56:29.795845Z",
+        "score": 100.0,
+        "alerta": null
+      },
+      {
+        "instante": "2026-11-19T21:56:30.802292Z",
+        "score": 100.0,
+        "alerta": null
+      },
+      {
+        "instante": "2026-11-19T21:56:31.810917Z",
+        "score": 100.0,
+        "alerta": null
+      },
+      {
+        "instante": "2026-11-19T21:56:32.814379Z",
+        "score": 100.0,
+        "alerta": null
+      },
+      {
+        "instante": "2026-11-19T21:56:33.839900Z",
+        "score": 100.0,
+        "alerta": null
+      },
+      {
+        "instante": "2026-11-19T21:56:34.841028Z",
+        "score": 100.0,
+        "alerta": null
+      },
+      {
+        "instante": "2026-11-19T21:56:35.844286Z",
+        "score": 100.0,
+        "alerta": null
+      },
+      {
+        "instante": "2026-11-19T21:56:36.859635Z",
+        "score": 100.0,
+        "alerta": null
+      },
+      {
+        "instante": "2026-11-19T21:56:37.863425Z",
+        "score": 100.0,
+        "alerta": null
+      },
+      {
+        "instante": "2026-11-19T21:56:39.069761Z",
+        "score": 100.0,
+        "alerta": null
+      },
+      {
+        "instante": "2026-11-19T21:56:39.870488Z",
+        "score": 100.0,
+        "alerta": null
+      },
+      {
+        "instante": "2026-11-19T21:56:40.875591Z",
+        "score": 100.0,
+        "alerta": null
+      },
+      {
+        "instante": "2026-11-19T21:56:41.888633Z",
+        "score": 100.0,
+        "alerta": null
+      },
+      {
+        "instante": "2026-11-19T21:56:42.890074Z",
+        "score": 100.0,
+        "alerta": null
+      },
+      {
+        "instante": "2026-11-19T21:56:43.895931Z",
+        "score": 100.0,
+        "alerta": null
+      },
+      {
+        "instante": "2026-11-19T21:56:44.904635Z",
+        "score": 100.0,
+        "alerta": null
+      },
+      {
+        "instante": "2026-11-19T21:56:45.906035Z",
+        "score": 100.0,
+        "alerta": null
+      },
+      {
+        "instante": "2026-11-19T21:56:46.915532Z",
+        "score": 100.0,
+        "alerta": null
+      },
+      {
+        "instante": "2026-11-19T21:56:47.926078Z",
+        "score": 100.0,
+        "alerta": null
+      },
+      {
+        "instante": "2026-11-19T21:56:49.080099Z",
+        "score": 100.0,
+        "alerta": null
+      },
+      {
+        "instante": "2026-11-19T21:56:49.954586Z",
+        "score": 100.0,
+        "alerta": null
+      },
+      {
+        "instante": "2026-11-19T21:56:50.976640Z",
+        "score": 100.0,
+        "alerta": null
+      },
+      {
+        "instante": "2026-11-19T21:56:51.983229Z",
+        "score": 100.0,
+        "alerta": null
+      },
+      {
+        "instante": "2026-11-19T21:56:52.987633Z",
+        "score": 100.0,
+        "alerta": null
+      },
+      {
+        "instante": "2026-11-19T21:56:53.998049Z",
+        "score": 100.0,
+        "alerta": null
+      },
+      {
+        "instante": "2026-11-19T21:56:54.993598Z",
+        "score": 100.0,
+        "alerta": null
+      },
+      {
+        "instante": "2026-11-19T21:56:55.997033Z",
+        "score": 100.0,
+        "alerta": null
+      },
+      {
+        "instante": "2026-11-19T21:56:56.992127Z",
+        "score": 100.0,
+        "alerta": null
+      },
+      {
+        "instante": "2026-11-19T21:56:57.999733Z",
+        "score": 100.0,
+        "alerta": null
+      },
+      {
+        "instante": "2026-11-19T21:56:59.169815Z",
+        "score": 100.0,
+        "alerta": null
+      },
+      {
+        "instante": "2026-11-19T21:57:00.038948Z",
+        "score": 100.0,
+        "alerta": null
+      },
+      {
+        "instante": "2026-11-19T21:57:01.008423Z",
+        "score": 100.0,
+        "alerta": null
+      },
+      {
+        "instante": "2026-11-19T21:57:02.019274Z",
+        "score": 100.0,
+        "alerta": null
+      },
+      {
+        "instante": "2026-11-19T21:57:03.028309Z",
+        "score": 100.0,
+        "alerta": null
+      },
+      {
+        "instante": "2026-11-19T21:57:04.034213Z",
+        "score": 100.0,
+        "alerta": null
+      },
+      {
+        "instante": "2026-11-19T21:57:05.044368Z",
+        "score": 100.0,
+        "alerta": null
+      },
+      {
+        "instante": "2026-11-19T21:57:06.055838Z",
+        "score": 100.0,
+        "alerta": null
+      },
+      {
+        "instante": "2026-11-19T21:57:07.058929Z",
+        "score": 100.0,
+        "alerta": null
+      },
+      {
+        "instante": "2026-11-19T21:57:08.071393Z",
+        "score": 100.0,
+        "alerta": null
+      },
+      {
+        "instante": "2026-11-19T21:57:09.269608Z",
+        "score": 100.0,
+        "alerta": null
+      },
+      {
+        "instante": "2026-11-19T21:57:10.085575Z",
+        "score": 100.0,
+        "alerta": null
+      },
+      {
+        "instante": "2026-11-19T21:57:11.092435Z",
+        "score": 100.0,
+        "alerta": null
+      },
+      {
+        "instante": "2026-11-19T21:57:12.104473Z",
+        "score": 100.0,
+        "alerta": null
+      },
+      {
+        "instante": "2026-11-19T21:57:13.115201Z",
+        "score": 100.0,
+        "alerta": null
+      },
+      {
+        "instante": "2026-11-19T21:57:14.116032Z",
+        "score": 100.0,
+        "alerta": null
+      },
+      {
+        "instante": "2026-11-19T21:57:15.124959Z",
+        "score": 100.0,
+        "alerta": null
+      },
+      {
+        "instante": "2026-11-19T21:57:16.134928Z",
+        "score": 100.0,
+        "alerta": null
+      },
+      {
+        "instante": "2026-11-19T21:57:17.147455Z",
+        "score": 100.0,
+        "alerta": null
+      },
+      {
+        "instante": "2026-11-19T21:57:18.152118Z",
+        "score": 100.0,
+        "alerta": null
+      },
+      {
+        "instante": "2026-11-19T21:57:19.279851Z",
+        "score": 100.0,
+        "alerta": null
+      },
+      {
+        "instante": "2026-11-19T21:57:20.183504Z",
+        "score": 100.0,
+        "alerta": null
+      },
+      {
+        "instante": "2026-11-19T21:57:21.194430Z",
+        "score": 100.0,
+        "alerta": null
+      },
+      {
+        "instante": "2026-11-19T21:57:22.200574Z",
+        "score": 100.0,
+        "alerta": null
+      },
+      {
+        "instante": "2026-11-19T21:57:23.209574Z",
+        "score": 100.0,
+        "alerta": null
+      },
+      {
+        "instante": "2026-11-19T21:57:24.213730Z",
+        "score": 100.0,
+        "alerta": null
+      },
+      {
+        "instante": "2026-11-19T21:57:25.223277Z",
+        "score": 100.0,
+        "alerta": null
+      },
+      {
+        "instante": "2026-11-19T21:57:26.233117Z",
+        "score": 100.0,
+        "alerta": null
+      },
+      {
+        "instante": "2026-11-19T21:57:27.241568Z",
+        "score": 100.0,
+        "alerta": null
+      },
+      {
+        "instante": "2026-11-19T21:57:28.251164Z",
+        "score": 100.0,
+        "alerta": null
+      },
+      {
+        "instante": "2026-11-19T21:57:29.380137Z",
+        "score": 100.0,
+        "alerta": null
+      },
+      {
+        "instante": "2026-11-19T21:57:30.265691Z",
+        "score": 100.0,
+        "alerta": null
+      },
+      {
+        "instante": "2026-11-19T21:57:31.294103Z",
+        "score": 100.0,
+        "alerta": null
+      },
+      {
+        "instante": "2026-11-19T21:57:32.302634Z",
+        "score": 100.0,
+        "alerta": null
+      },
+      {
+        "instante": "2026-11-19T21:57:33.311700Z",
+        "score": 100.0,
+        "alerta": null
+      },
+      {
+        "instante": "2026-11-19T21:57:34.322685Z",
+        "score": 100.0,
+        "alerta": null
+      },
+      {
+        "instante": "2026-11-19T21:57:35.332341Z",
+        "score": 100.0,
+        "alerta": null
+      },
+      {
+        "instante": "2026-11-19T21:57:36.343222Z",
+        "score": 100.0,
+        "alerta": null
+      },
+      {
+        "instante": "2026-11-19T21:57:37.343372Z",
+        "score": 100.0,
+        "alerta": null
+      },
+      {
+        "instante": "2026-11-19T21:57:38.351503Z",
+        "score": 100.0,
+        "alerta": null
+      },
+      {
+        "instante": "2026-11-19T21:57:39.569743Z",
+        "score": 100.0,
+        "alerta": null
+      },
+      {
+        "instante": "2026-11-19T21:57:40.362814Z",
+        "score": 100.0,
+        "alerta": null
+      },
+      {
+        "instante": "2026-11-19T21:57:41.367733Z",
+        "score": 100.0,
+        "alerta": null
+      },
+      {
+        "instante": "2026-11-19T21:57:42.375204Z",
+        "score": 100.0,
+        "alerta": null
+      },
+      {
+        "instante": "2026-11-19T21:57:43.385341Z",
+        "score": 100.0,
+        "alerta": null
+      },
+      {
+        "instante": "2026-11-19T21:57:44.391103Z",
+        "score": 100.0,
+        "alerta": null
+      },
+      {
+        "instante": "2026-11-19T21:57:45.410956Z",
+        "score": 100.0,
+        "alerta": null
+      },
+      {
+        "instante": "2026-11-19T21:57:46.410670Z",
+        "score": 100.0,
+        "alerta": null
+      },
+      {
+        "instante": "2026-11-19T21:57:47.419989Z",
+        "score": 100.0,
+        "alerta": null
+      },
+      {
+        "instante": "2026-11-19T21:57:48.427290Z",
+        "score": 100.0,
+        "alerta": null
+      },
+      {
+        "instante": "2026-11-19T21:57:49.569817Z",
+        "score": 100.0,
+        "alerta": null
+      },
+      {
+        "instante": "2026-11-19T21:57:50.448515Z",
+        "score": 100.0,
+        "alerta": null
+      },
+      {
+        "instante": "2026-11-19T21:57:51.454565Z",
+        "score": 100.0,
+        "alerta": null
+      },
+      {
+        "instante": "2026-11-19T21:57:52.465399Z",
+        "score": 100.0,
+        "alerta": null
+      },
+      {
+        "instante": "2026-11-19T21:57:53.474385Z",
+        "score": 100.0,
+        "alerta": null
+      },
+      {
+        "instante": "2026-11-19T21:57:54.482530Z",
+        "score": 100.0,
+        "alerta": null
+      },
+      {
+        "instante": "2026-11-19T21:57:55.487907Z",
+        "score": 100.0,
+        "alerta": null
+      },
+      {
+        "instante": "2026-11-19T21:57:56.493476Z",
+        "score": 100.0,
+        "alerta": null
+      },
+      {
+        "instante": "2026-11-19T21:57:57.500710Z",
+        "score": 100.0,
+        "alerta": null
+      },
+      {
+        "instante": "2026-11-19T21:57:58.514567Z",
+        "score": 100.0,
+        "alerta": null
+      }
+    ],
+    "metodo": "livre",
+    "metodo_nome": "Sem método",
+    "assunto": "teste-sintetico-reinicio",
+    "media_de_foco": null,
+    "duracao_de_foco_s": 0.0,
+    "duracao_de_pausa_s": 0.0,
+    "blocos": [],
+    "criterios": [
+      {
+        "codigo": "sem-blocos",
+        "titulo": "Nenhum bloco foi registrado",
+        "texto": "Esta sessão declarou um método e nenhuma transição entre foco e pausa chegou até aqui. Sem as transições não há estrutura para descrever — o índice e as durações acima continuam valendo para a sessão inteira.",
+        "detalhe": "Método declarado: Sem método."
+      }
+    ],
+    "cadencia": null
+  }
+}

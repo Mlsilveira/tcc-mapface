@@ -1,0 +1,5 @@
+# Suíte de ML no commit f2b675e, 2026-11-19T21:53Z
+# comando: cd ml && .venv/Scripts/python.exe -m pytest -q -p no:cacheprovider
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+272 passed, 1 warning in 58.41s

@@ -23,6 +23,13 @@ negativo do DAiSEE, o classificador de sonolência paralelo ao índice, os valor
 nulos de incerteza e a identificação da sessão sintética (que, aliás, ficou mais
 forte — ver §2.3).
 
+> **Sobre os hashes citados nas §§1–5.** O histórico do repositório foi reescrito
+> duas vezes depois de 07/11 (autoria dos commits), então os hashes daquela data
+> mudaram. O build `f04a533`, em que rodaram a medição de 07/11 e as sessões 9 a
+> 13, é hoje o commit **`9e60f4d`**: os dois têm a mesma árvore
+> (`c9448741c93a…`), ou seja, o mesmo código byte a byte. A versão final, de
+> 19/11, está na §6.
+
 ---
 
 ## 1. Build e deploy (Etapa 1, item 1)
@@ -359,12 +366,165 @@ A parte do Chrystian que vai para o V9 já está pronta, neste arquivo:
 
 | Onde no texto | Hoje (V8) | Vai para (V9) |
 | --- | --- | --- |
-| Testes automatizados | 426 backend / 326 frontend / 244 ML | **451** / 326 / 244 (**1.021**) |
+| Testes automatizados | 426 backend / 326 frontend / 244 ML | **506 / 350 / 272 (1.128)**, no commit `f2b675e` da versão final (§6.5) |
 | §7.5 Custo do ambiente | Estimativa e "elegível ao nível gratuito" | Real: US$ 39,60 em 24 dias, e a lista do que o `destroy` não apaga (§3) |
 | §8.4 Tabela 9 — WebSocket | Meta: até 200 ms | RTT p50 125 / p95 257 / máx. 344 ms; 278 de 300 dentro da meta (§2.4) |
 | §8.4 / RNF06 — backend | Meta: até 100 ms | p50 10,6 / p95 142 / máx. 230 ms; 278 de 300 dentro da meta (§2.4) |
-| Identificação do build | Ausente | Commit `f04a533` e digest da tabela 1.4 |
+| Identificação do build | Ausente | Versão final: commit `f2b675e`, digest e task definition da §6.1 |
 | Data da troca de meta | Ausente | 18/08/2026, com redação sugerida (§4) |
+| Carga | Ausente | 10 sessões simultâneas sem perda (§6.3) |
+| Reinício no ambiente publicado | Só local | Deploy forçado no meio da sessão (§6.4) |
+
+---
+
+## 6. Versão final na AWS (19/11/2026)
+
+Os cinco itens do Chrystian na lista final, na ordem dela.
+
+| # | Item | Estado em 19/11 |
+| --- | --- | --- |
+| 1 | Versão final no ar, com consentimento e objetivo de estudo, até a defesa | **Feito**: `f2b675e` no ar (§6.1). Crédito dá até ≈ 25/12 (§6.6) |
+| 2 | Sessão curta no build novo, com o roteiro da sessão 10 | **Depende de uma pessoa com webcam** (roteiro na §6.7) |
+| 3 | Reinício no ambiente publicado: deploy forçado durante uma sessão | **Feito** com sessão sintética (§6.4); repetir numa sessão real é opcional |
+| 4 | CPU do processo de GPU do navegador numa sessão | **Depende de uma pessoa com webcam**: medir na mesma sessão do item 2 (§6.7) |
+| 5 | Pacote de evidência: commit, Terraform sem segredos, comandos, saída dos testes | **Parte da AWS pronta** em [`evidencias/versao-final/`](./evidencias/versao-final/) (§6.5) |
+
+### 6.1 O que está no ar
+
+| Campo | Valor |
+| --- | --- |
+| Commit | `f2b675e` — inclui consentimento e revogação (RF02/RF19), objetivo de estudo (RF04/RF17), cobertura e lacunas no relatório (F03) e a correção da §6.2 |
+| Imagem | `sha256:5fb7612f3f0f6b95459492779686e410db3e8c3c7a051763122e3a1c455dc585`, push 19/11/2026 21:35 UTC, gerada no CodeBuild a partir do commit exato (o Docker local não sobe sem VT-x; ver §1.3) |
+| Task definition | `mapface-poc-backend:4` (0,25 vCPU, 512 MiB, 1 task, `--workers 1`) |
+| `/health` | `{"status":"ok","build":"f2b675e"}` |
+| Frontend | Compilado do mesmo commit, publicado no S3 com invalidação do CloudFront; o site serve o mesmo `main-*.js` gerado localmente |
+| Terraform | `terraform plan -detailed-exitcode` sai com 0: nenhuma diferença entre o código e a AWS (55 recursos) |
+
+### 6.2 Defeito encontrado e corrigido: a senha do banco envelhecia
+
+Em 19/11, num teste de carga, **7 de 10 cadastros simultâneos voltaram 500**. O
+log mostrou `password authentication failed for user "mapface"`.
+
+- **Causa.** A AWS troca a senha do RDS **a cada 7 dias** (senha gerenciada no
+  Secrets Manager). O ECS injetava a senha numa variável de ambiente uma única
+  vez, quando a task nascia. A task estava de pé desde 10/11, e a senha tinha
+  mudado em 18/11 às 05:18 UTC. As conexões abertas antes da troca seguiam
+  funcionando — o PostgreSQL não derruba sessão já autenticada —, e por isso só
+  falhava quem precisava de uma conexão **nova**. Passaram exatamente os
+  cadastros que pegaram uma das conexões antigas.
+- **Correção** (commit `f2b675e`). A task recebe só o ARN do segredo, e um gancho
+  do SQLAlchemy lê a senha atual em **cada conexão nova**
+  (`backend/app/senha_do_banco.py`). A permissão de leitura saiu da role de
+  execução do ECS e foi para a role da aplicação. 8 testes novos.
+- **Prova no ambiente publicado.** Com a versão corrigida no ar, forcei uma
+  rotação da senha (`aws secretsmanager rotate-secret`, concluída 21:41:39 UTC)
+  **sem reiniciar a task**, e repeti os 10 cadastros simultâneos: 10 de 10 com
+  201, e nenhum `password authentication failed` nem 500 no log desde o deploy.
+- **Para o texto.** É um defeito de continuidade (achado F07 do parecer) que só
+  aparece com o ambiente de pé por mais de 7 dias — nenhum teste local o
+  pegaria. Vale descrever como encontrado, diagnosticado e corrigido.
+
+### 6.3 Dez sessões simultâneas
+
+Medido em 19/11/2026, 21:17–21:21 UTC, com `medir_latencia.py --clientes 10
+--duracao 180`, contas e sessões sintéticas identificadas. Rodou no build
+`abd7098`, o anterior à correção da §6.2 — a mudança da §6.2 não toca o caminho
+da telemetria. Arquivo: [`latencia-10clientes.json`](./latencia-10clientes.json).
+
+| Medida | p50 (ms) | p95 (ms) | Máx. (ms) |
+| --- | ---: | ---: | ---: |
+| RTT | 124,53 | 240,94 | 428,27 |
+| Processamento (backend) | 9,34 | 83,89 | 194,55 |
+| Rede + fila | 114,66 | 160,70 | 389,44 |
+
+- 1.804 de 1.804 respostas, 0 erros do canal.
+- WebSocket até 200 ms: 1.654 de 1.804 (91,7%). Backend até 100 ms: 1.731 de
+  1.804 (96,0%).
+- CPU da task (CloudWatch, média por minuto): 23% com as 10 sessões abertas; o
+  pico de 100% foi a rajada dos 10 cadastros no início (o hash da senha é caro
+  numa task de 0,25 vCPU: cada cadastro levou 8–11 s com os 10 juntos). Memória:
+  32%.
+- Rede + fila subiu de 116 ms (p95, 1 cliente) para 161 ms (p95, 10 clientes):
+  é a fila do processo único.
+- **Escala.** É uma réplica com um processo, por desenho: a calibração vive na
+  memória do processo. Cresce verticalmente (CPU da task no Terraform); para
+  várias réplicas, a calibração teria de ir para o banco. Não foi medido o
+  limite.
+
+### 6.4 Reinício no ambiente publicado (F06)
+
+`mapface-evidencias/teste_reinicio.py`: sessão sintética identificada (conta
+`teste-sintetico-reinicio-…`, assunto `teste-sintetico-reinicio`), telemetria a
+1 Hz e reconexão com o **mesmo backoff do frontend** (1 s, dobrando até 30 s). Depois
+da calibração, o próprio script força `update-service --force-new-deployment`.
+Rodou em 19/11/2026 21:51–21:58 UTC, build `f2b675e`, sessão `26`. Arquivo:
+[`evidencias/teste-reinicio-publicado.json`](./evidencias/teste-reinicio-publicado.json).
+
+| Instante | O que aconteceu |
+| --- | --- |
+| 0 s | Sessão aberta, canal autenticado, calibrando |
+| 64 s | Calibração concluída |
+| 93 s | Deploy forçado no ECS |
+| 93–234 s | O canal **continua na task antiga** enquanto a nova sobe e o balanceador a registra (inclui os 30 s de drenagem) |
+| 234 s | Canal cai com código **1006** |
+| 235,5 s | Reconectado na primeira tentativa (1 s de espera), **mesma sessão** |
+| 235,6 s | **Calibração recomeça do zero** |
+| 296 s | Calibração concluída de novo |
+| 387 s | Sessão ainda ativa (`/sessoes/ativa` = 26); encerrada com 200 |
+
+- **Maior vão sem score: 3,3 s.** Nenhum dado perdido além desse vão.
+- O relatório final saiu **completo**, não parcial: 376 pontos, 0 incertos.
+- **Limitação a declarar:** a linha de base vive na memória do processo, então a
+  troca de task obriga a recalibrar, e o relatório **não marca** que houve
+  recalibração — os 60 s de score provisório entram na média como qualquer outro
+  ponto. Um teste local com o processo derrubado deu o mesmo comportamento.
+
+### 6.5 Pacote de evidência — a parte da AWS
+
+Em [`evidencias/versao-final/`](./evidencias/versao-final/), gerados em
+19/11/2026 contra o commit `f2b675e`:
+
+| Arquivo | O que tem |
+| --- | --- |
+| `testes-backend.txt` | 506 passando — `cd backend && .venv/Scripts/python.exe -m pytest -q` |
+| `testes-frontend.txt` | 350 passando — `cd frontend && npx ng test --watch=false --browsers=ChromeHeadless` |
+| `testes-ml.txt` | 272 passando — `cd ml && .venv/Scripts/python.exe -m pytest -q` |
+| `terraform-plan.txt` | `No changes`: a AWS está igual ao código |
+| `terraform-recursos.txt` | Os 55 recursos, só por endereço |
+| `aws-estado.txt` | `/health`, digest da imagem, task definition, CPU/memória e a rotação da senha |
+
+**Terraform sem segredos, conferido:** nenhum `*.tfstate` nem `terraform.tfvars`
+versionado (só o `terraform.tfvars.example`); nenhuma chave de acesso, chave
+privada ou senha no repositório — as únicas ocorrências de "senha" são valores
+falsos dos testes de `test_config.py`. A senha do banco nunca passou pelo
+Terraform (`manage_master_user_password`), e agora nem pela task definition.
+
+Os comandos de build e deploy estão nas §§1.3 e 6.1, e no relatório
+`relatorios&mermaid/06-deploy-na-aws.md`.
+
+### 6.6 Até quando o ambiente fica no ar
+
+Consumo até 19/11: **US$ 59,17** (US$ 29,02 em outubro e US$ 30,15 em novembro),
+a **US$ 1,69 por dia**. Dos US$ 120 de crédito, restam ≈ US$ 60,80: dá até
+**≈ 25/12/2026**. No plano gratuito, a conta fecha quando o crédito acaba. Se a
+defesa for depois disso, é preciso converter a conta em paga ou desligar antes.
+
+### 6.7 O que falta, e precisa de uma pessoa com webcam (itens 2 e 4)
+
+Uma sessão só cobre os dois, no Edge ou no Chrome, em `https://d2qm0t6ecgabb2.cloudfront.net`:
+
+1. Entrar (conta antiga pede o aceite do termo uma vez) e conferir em
+   `/health` que o build é `f2b675e`.
+2. Abrir o console (F12) e colar `mapface-evidencias/gravador_mapface.js`.
+3. Abrir o **Gerenciador de tarefas do navegador** (Shift+Esc), deixar visível
+   a linha **Processo da GPU** e a da aba do MapFace.
+4. Fazer o roteiro da sessão 10: Pomodoro curto (~15 min) com uma pausa
+   declarada, bocejos marcados com **B**.
+5. Anotar a cada minuto a coluna **CPU** do Processo da GPU e da aba (item 4).
+6. Na tela do relatório, sem recarregar: `__mapface.baixar()` e salvar como
+   `mapface-evidencias/evidencias/sessao-versao-final.json`.
+7. `py analisar_sessao.py evidencias\sessao-versao-final.json --rotulo "Sessão na versão final" -o evidencias\sessao-versao-final.md`
+   (na pasta `mapface-evidencias`).
 
 ---
 
