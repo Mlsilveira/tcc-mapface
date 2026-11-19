@@ -224,10 +224,11 @@ resource "aws_iam_role_policy_attachment" "execucao_padrao" {
 data "aws_iam_policy_document" "ler_segredos" {
   statement {
     actions = ["secretsmanager:GetSecretValue"]
-    # Apenas estes dois segredos, e não `*`: a política gerenciada acima já dá
-    # o resto do que o agente precisa, e uma permissão de leitura irrestrita no
-    # Secrets Manager é exatamente o tipo de coisa que ninguém revisa depois.
-    resources = compact([aws_secretsmanager_secret.chave.arn, var.arn_do_segredo_do_banco])
+    # Apenas este segredo, e não `*`: a política gerenciada acima já dá o resto
+    # do que o agente precisa, e uma permissão de leitura irrestrita no Secrets
+    # Manager é exatamente o tipo de coisa que ninguém revisa depois. A senha do
+    # banco saiu daqui: quem a lê agora é a aplicação (role `task`, abaixo).
+    resources = [aws_secretsmanager_secret.chave.arn]
   }
 }
 
@@ -237,13 +238,31 @@ resource "aws_iam_role_policy" "execucao_segredos" {
   policy = data.aws_iam_policy_document.ler_segredos.json
 }
 
-# A role da **aplicação**. Fica vazia de propósito: o MapFace não chama nenhuma
-# API da AWS em tempo de execução — ele fala com o banco e mais nada. Existir
-# vazia é melhor que não existir: quando alguém precisar de S3 ou SES, o lugar
-# de conceder já está criado e separado do agente do ECS.
+# A role da **aplicação**. A única API da AWS que o MapFace chama em tempo de
+# execução é a leitura da senha do banco, a cada conexão nova.
+#
+# **Por que a aplicação lê a senha, e não o agente do ECS.** A AWS troca a senha
+# do RDS a cada 7 dias. O agente injeta segredos numa variável de ambiente uma
+# vez, quando a task nasce, e a partir da primeira rotação a variável guarda uma
+# senha morta: toda conexão nova falha com `password authentication failed`. Foi
+# o que aconteceu no ambiente publicado em 19/11/2026. Ver
+# `backend/app/senha_do_banco.py`.
 resource "aws_iam_role" "task" {
   name               = "${var.nome}-task"
   assume_role_policy = data.aws_iam_policy_document.assume_ecs.json
+}
+
+data "aws_iam_policy_document" "ler_senha_do_banco" {
+  statement {
+    actions   = ["secretsmanager:GetSecretValue"]
+    resources = [var.arn_do_segredo_do_banco]
+  }
+}
+
+resource "aws_iam_role_policy" "task_senha_do_banco" {
+  name   = "ler-senha-do-banco"
+  role   = aws_iam_role.task.id
+  policy = data.aws_iam_policy_document.ler_senha_do_banco.json
 }
 
 # --- Log -------------------------------------------------------------------
@@ -286,25 +305,26 @@ resource "aws_ecs_task_definition" "backend" {
       portMappings = [{ containerPort = var.porta, protocol = "tcp" }]
 
       # As peças do banco viajam separadas da senha, de propósito. Ver a nota
-      # em `backend/app/config.py`: o ECS injeta segredo numa variável, não no
-      # meio de uma URL, e montar a URL fora do processo colocaria a senha em
-      # texto claro no estado ou no log.
+      # em `backend/app/config.py`: montar a URL fora do processo colocaria a
+      # senha em texto claro no estado ou no log.
       environment = [
         { name = "DATABASE_HOST", value = var.endereco_do_banco },
         { name = "DATABASE_PORT", value = tostring(var.porta_do_banco) },
         { name = "DATABASE_NAME", value = var.nome_do_banco },
         { name = "DATABASE_USER", value = var.usuario_do_banco },
+        # Só o endereço do segredo, não a senha: a aplicação lê a senha atual a
+        # cada conexão nova, porque a AWS a troca a cada 7 dias.
+        { name = "DATABASE_PASSWORD_SECRET_ARN", value = var.arn_do_segredo_do_banco },
         # Vazia: o CloudFront serve o site e encaminha a API, então navegador e
         # API compartilham origem — e mesma origem não passa por CORS.
         { name = "ORIGENS_PERMITIDAS", value = "" },
       ]
 
+      # A `SECRET_KEY` pode ser injetada no boot porque ninguém a rotaciona. A
+      # senha do banco não está aqui: injetada, ela envelheceria na primeira
+      # rotação da AWS.
       secrets = [
         { name = "SECRET_KEY", valueFrom = aws_secretsmanager_secret.chave.arn },
-        # `:password::` extrai uma chave do JSON que o RDS guarda. Sem isso, a
-        # variável receberia o documento inteiro, e a aplicação tentaria usar
-        # `{"username":...}` como senha.
-        { name = "DATABASE_PASSWORD", valueFrom = "${var.arn_do_segredo_do_banco}:password::" },
       ]
 
       logConfiguration = {

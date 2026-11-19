@@ -6,6 +6,7 @@ from sqlalchemy import inspect, text
 from sqlalchemy.engine import Engine
 from sqlmodel import Session, SQLModel, create_engine
 
+from app import senha_do_banco
 from app.config import settings
 
 logger = logging.getLogger(__name__)
@@ -24,6 +25,13 @@ from app import models  # noqa: F401
 _url = settings.url_do_banco
 _connect_args = {"check_same_thread": False} if _url.startswith("sqlite") else {}
 engine = create_engine(_url, connect_args=_connect_args)
+
+# A senha que a URL não traz. Só em produção: sem host e sem ARN, o motor é o de
+# sempre e nenhum código da AWS é carregado.
+if settings.database_host and settings.database_password_secret_arn:
+    _arn = settings.database_password_secret_arn
+    senha_do_banco.regiao_do_arn(_arn)
+    senha_do_banco.senha_a_cada_conexao(engine, lambda: senha_do_banco.ler_senha(_arn))
 
 
 #: Identificador do cadeado consultivo do boot. Número arbitrário e estável — o

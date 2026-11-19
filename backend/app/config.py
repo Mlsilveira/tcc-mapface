@@ -30,6 +30,9 @@ class Settings(BaseSettings):
     # variável de ambiente do processo, e a URL é montada aqui dentro, já em
     # memória.
     #
+    # (Desde 19/11/2026 a senha de produção nem passa mais pela variável: ver
+    # `database_password_secret_arn`, abaixo.)
+    #
     # `DATABASE_URL` continua tendo precedência: quem escreve a URL inteira —
     # todo ambiente de desenvolvimento, e o SQLite — não muda nada.
     database_host: Optional[str] = None
@@ -37,6 +40,12 @@ class Settings(BaseSettings):
     database_name: str = "mapface"
     database_user: str = "mapface"
     database_password: Optional[str] = None
+
+    # Em produção, a senha **não** chega por `DATABASE_PASSWORD`: a AWS a troca
+    # a cada 7 dias, e uma variável lida no boot envelhece com a primeira
+    # rotação. Com este ARN definido, cada conexão nova lê a senha atual do
+    # Secrets Manager. Ver `app/senha_do_banco.py`.
+    database_password_secret_arn: Optional[str] = None
 
     # Origens que o navegador pode usar para chamar esta API.
     #
