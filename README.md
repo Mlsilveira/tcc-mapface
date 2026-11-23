@@ -6,6 +6,10 @@ O estudante inicia uma sessão, autoriza a webcam, e seus sinais visuais comport
 
 O sistema **não diagnostica, não avalia e não julga**. Ele mede proxies comportamentais visuais e devolve isso ao próprio estudante.
 
+- **Aplicação publicada:** https://d2qm0t6ecgabb2.cloudfront.net (versão final `f2b675e`, no ar desde 19/11/2026)
+- **Apresentação da defesa:** [`MapFace_Apresentacao.html`](./MapFace_Apresentacao.html) — abra no navegador; setas para navegar, F para tela cheia
+- **Evidências das medições:** [`mapface-evidencias/`](./mapface-evidencias) — sessões gravadas, latência, CPU, reinício e a avaliação das metas em [`metas.py`](./mapface-evidencias/metas.py)
+
 ## Privacidade por design
 
 Nenhuma imagem ou vídeo sai do navegador — apenas coordenadas numéricas trafegam para o backend, e o schema do banco não tem campo para dados brutos de imagem. Os dados de um estudante são visíveis apenas para ele: não existe papel de professor, coordenação ou administrador.
@@ -28,7 +32,7 @@ A avaliação de qualidade da captura (ticket 10) mede a luminância do quadro, 
 
 O visual segue o repertório das plataformas de estudo brasileiras — tela de acesso dividida entre um painel de marca e o formulário, uma cor primária forte, cards arredondados —, mas com o tom da proposta: o MapFace é um espelho, não um vendedor de curso. Nada de contagem de aprovados ou urgência; o que o painel de acesso promete é privacidade e calibração individual.
 
-O sistema de design mora inteiro em [`frontend/src/styles.css`](./frontend/src/styles.css): tokens de cor, tipografia, botões e campos. Índigo é a cor de ação e de marca; verde é reservado ao que está vivo (sessão em andamento, rosto detectado), para não virar decoração. As fontes vêm do Google Fonts, com fallback para a fonte do sistema quando não há rede.
+O sistema de design mora inteiro em [`frontend/src/styles.css`](./frontend/src/styles.css): tokens de cor, tipografia, botões e campos. Índigo é a cor de ação e de marca; verde é reservado ao que está vivo (sessão Concluído na versão final:, rosto detectado), para não virar decoração. As fontes vêm do Google Fonts, com fallback para a fonte do sistema quando não há rede.
 
 O layout responde em três faixas: abaixo de 960px a tela de acesso empilha o painel de marca sobre o formulário; abaixo de 860px a sessão passa a uma coluna só e o preview da webcam ganha um teto de altura, para que rosto e métricas continuem visíveis juntos; acima de 1600px o painel de marca ganha respiro em vez de esticar o texto.
 
@@ -151,18 +155,18 @@ Implementado:
 - **Ticket 6 — Canal de telemetria.** WebSocket autenticado pela primeira mensagem, agregação a 1 Hz no cliente, reconexão automática com backoff e log persistido em `log_engajamento`.
 - **Ticket 7 — Fórmula real do IEE.** `AnalistaEngajamento` calibra a baseline individual do aluno nos primeiros 60 s e passa a medir EAR e Head Pose contra ela, em vez de contra constantes iguais para todo mundo.
 - **Ticket 8 — Fator de fadiga.** `DetectorDeFadiga` penaliza o IEE por pálpebra pesada (PERCLOS), fechamento prolongado e bocejo, com os limiares relativos à baseline do aluno. O fator vem de regras, e não do Random Forest do DAiSEE — o porquê está em [`resultado_18_08.md`](./resultado_18_08.md).
-- **Classificador de sonolência.** Um segundo modelo, treinado nas 11.279 janelas do UTA-RLDD (60 participantes, três estados declarados), lê cada janela de 10 segundos da sessão ao vivo e devolve uma probabilidade. Ele **discrimina**: 0,6553 ± 0,0180 de acurácia balanceada em validação cruzada por participante, contra 0,50 de um chute fixo. A leitura é gravada e mostrada no relatório **ao lado** do índice, e não dentro dele — o IEE continua determinístico e auditável. Os números e as três correções que a medição exigiu estão em [`resultado_sonolencia.md`](./resultado_sonolencia.md).
+- **Classificador de sonolência.** Um segundo modelo, treinado nas 11.279 janelas do UTA-RLDD (60 participantes, três estados declarados), lê cada janela de 10 segundos da sessão ao vivo e devolve um escore de sonolência (não calibrado como probabilidade). Ele **discrimina**: 0,6553 ± 0,0180 de acurácia balanceada em validação cruzada por participante, contra 0,50 de um chute fixo. A leitura é gravada e mostrada no relatório **ao lado** do índice, e não dentro dele — o IEE, um índice heurístico, continua determinístico e auditável. Os números e as três correções que a medição exigiu estão em [`resultado_sonolencia.md`](./resultado_sonolencia.md).
 - **Ticket 10 — Incerteza de captura.** Em pouca luz, com reflexo nos óculos ou com o rosto parcialmente ocluso, o sistema se abstém de medir em vez de emitir um score enganoso: a interface diz o que ajustar e o banco grava o ponto com `score` nulo e o motivo em `alerta`.
 - **Ticket 11 — Relatório de autopercepção.** Encerrar leva ao relatório da sessão: curva do IEE, indicadores, alertas nomeados e recomendações de autorregulação. A duração exibida vem da presença real medida pela série, não do tempo de aba aberta, e sessão interrompida rende relatório parcial.
 - **Ticket 12 — Histórico de sessões.** Lista das sessões encerradas do aluno, com o resumo de cada uma e acesso ao relatório completo.
 - **Ticket 14 — Infraestrutura como código.** Toda a infraestrutura AWS em Terraform, em `infra/`: VPC própria, bucket S3 privado servido por CloudFront em HTTPS, repositório ECR e RDS PostgreSQL criptografado em repouso, com a senha gerada e guardada pela própria AWS. Um `terraform apply` levanta tudo, sem passo no console.
 - **Ticket 13 — Sumarização e retenção.** Os indicadores são congelados em `resumo_sessao` no encerramento; passadas 24 horas, os pontos por segundo são trocados por médias por minuto. `horario_registro` e `id_sessao` são indexados.
 
-Em andamento:
+Concluído na versão final::
 
-- **Ticket 17 — Ciclo de vida da sessão dirigido por presença e métodos de estudo.** Quem mantém a sessão viva passou a ser o rosto na câmera, com o limite de ausência vindo do método declarado. O catálogo de métodos, as colunas de contexto, a varredura por sessão, a renovação de credencial, a tabela `bloco_estudo` e a API de transições estão prontos; a tela inicial declara método, assunto e meta, a tela da sessão conduz o ciclo com cronômetro, aviso de pausa e transições gravadas, e o relatório lê a sessão por blocos. **A ticket está fechada** — falta só a revisão do Matheus.
-
-Falta o deploy — ticket 15, que containeriza o backend, publica as duas pontas na infraestrutura da ticket 14 e liga a aplicação ao RDS — e a ticket 16, que mede as metas do capítulo 8 contra o ambiente publicado e por isso depende dele.
+- **Ticket 17 — Ciclo de vida da sessão dirigido por presença e métodos de estudo.** O rosto na câmera mantém a sessão viva; a tela inicial declara método, assunto e meta; a sessão conduz os blocos e o relatório lê a sessão por blocos.
+- **Ticket 15 — Deploy.** Backend no ECS Fargate, RDS PostgreSQL e frontend no S3 atrás do CloudFront, tudo pelo Terraform de `infra/`. A versão final (`f2b675e`) inclui consentimento e revogação, objetivo de estudo, cobertura e lacunas no relatório e a leitura da senha do banco a cada conexão nova.
+- **Ticket 16 — Medição das metas.** Sessões reais e sintéticas no ambiente publicado, em [`mapface-evidencias/`](./mapface-evidencias), incluindo a sessão 28 na versão final (22/11/2026), com a CPU do cliente em 7,4% do processador. Os critérios, fixados em 17/11/2026 (tempos no percentil 95, taxa de quadros no percentil 5), são recalculados por `metas.py` e cobertos por testes.
 
 O plano completo, com as 16 fatias verticais e suas dependências, está em [`tickets.md`](./tickets.md). O problema, as histórias de usuário e as decisões de arquitetura estão em [`spec-poc-iee.md`](./spec-poc-iee.md). O desenho da arquitetura como ela ficou — e as quatro diferenças em relação ao que foi proposto — está em [`arquitetura.md`](./arquitetura.md).
 
@@ -234,6 +238,13 @@ Do npm 11 em diante, os scripts de instalação das dependências vêm bloqueado
 cd frontend && npx puppeteer browsers install chrome
 ```
 
+```bash
+cd ml && .venv/bin/python -m pytest
+cd mapface-evidencias && python -m pytest
+```
+
+Na execução de 22/11/2026, as quatro suítes somaram 1.145 testes, todos passando: 506 no backend, 350 no frontend, 272 na trilha de aprendizado de máquina e 17 nas ferramentas de medição.
+
 ## Infraestrutura
 
 A infraestrutura AWS vive em [`infra/`](./infra), em Terraform. Com credenciais da AWS no ambiente:
@@ -299,4 +310,12 @@ No frontend a divisão é a mesma: `core/visao/metricas.ts` e `core/visao/qualid
 
 ## Equipe
 
-Trabalho de Conclusão de Curso. Duas trilhas em paralelo: **ML** (extração de features do DAISEE e treino do Random Forest) e **App/Infra** (aplicação e provisionamento), convergindo na ticket 8.
+Trabalho de Conclusão de Curso — Ciência da Computação, Universidade Paulista (UNIP), 2026: *Uso de Inteligência Artificial e Visão Computacional Aplicados à Educação*.
+
+- Chrystian Natanael Magalhães Silva Nascimento
+- Matheus Luiz Ramos Silveira
+- Rian Gabriel dos Santos Abreu
+
+Orientadora: Prof. Ma. Stephany Oliveira.
+
+Duas trilhas em paralelo: **ML** (extração de features do DAiSEE e do UTA-RLDD e treino dos modelos) e **App/Infra** (aplicação e provisionamento), convergindo na ticket 8.
