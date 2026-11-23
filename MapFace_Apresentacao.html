@@ -779,6 +779,23 @@ a.link{font-family:var(--f-mono);font-size:18px;word-break:break-all}
   <p style="font-size:17px"><b>Causa provável da cauda:</b> na medição de 1 cliente, 22 de 24 respostas lentas caem a cada 10 s, quando o classificador fecha a janela no caminho da resposta. <b>Melhoria proposta, não implementada:</b> rodar o classificador fora desse caminho. Os critérios foram fixados pelo percentil, sem trocar para a mediana depois de ver os números.</p>
 </section>
 
+<!-- ============ 8.4 METAS NÃO ATENDIDAS: CAUSA E CORREÇÃO ============ -->
+<section class="slide" data-id="nao-atendidas" data-title="8.4 Metas não atendidas" data-crit="Métricas obtidas · Testes · Resultados">
+  <div class="head"><div class="eyebrow">Capítulo 8 · Métricas de desempenho · Quadro 2</div><h2>O que não foi atendido, por quê e como corrigir</h2></div>
+  <div style="overflow-x:auto">
+  <table style="font-size:15.5px">
+    <thead><tr><th>Meta</th><th>Resultado</th><th>Causa identificada</th><th>Correção proposta</th></tr></thead>
+    <tbody>
+      <tr><td><b>Latência do WebSocket</b><br><span class="mono" style="font-size:13px">p95 ≤ 200 ms</span></td><td><span class="pill no">não atendida</span><br>310 ms (sessão 10) · 336 ms (versão final)</td><td>Classificador de sonolência a cada 10 s no caminho da resposta; ida e volta até os EUA (us-east-1) com mediana de 138 ms</td><td>Classificador fora do caminho da resposta; backend em São Paulo (sa-east-1)</td></tr>
+      <tr><td><b>Resposta do backend</b><br><span class="mono" style="font-size:13px">p95 ≤ 100 ms</span></td><td><span class="pill no">não atendida</span><br>140 ms · 189 ms; mediana ≈ 10 ms</td><td>O mesmo cálculo do classificador, numa tarefa de 0,25 vCPU</td><td>Classificador fora do caminho da resposta; mais CPU para a tarefa</td></tr>
+      <tr><td><b>Classificador de sonolência</b><br><span class="mono" style="font-size:13px">AB &gt; 0,65</span></td><td><span class="pill mid">na média</span><br>0,6553; pior partição 0,6248</td><td>Uma das 5 partições abaixo do limite; sem conjunto de teste reservado</td><td>Avaliar em participantes reservados; dados com webcam de notebook</td></tr>
+      <tr><td><b>Incerteza informada</b></td><td><span class="pill mid">com ressalva</span><br>sessão 12</td><td>O aviso do relatório só disparava com 30% de incerteza; a sessão teve 16,3%</td><td>Aviso de cobertura a partir de 15% (feito após as medições; verificado por testes)</td></tr>
+      <tr><td><b>Histórias de usuário</b><br><span class="mono" style="font-size:13px">2 de 35</span></td><td><span class="pill mid">parcial</span></td><td>Reconexão sem reenvio das leituras da queda; uma réplica não assegura 99,9%</td><td>Reenviar leituras guardadas no navegador; linha de base no banco para várias réplicas</td></tr>
+    </tbody>
+  </table>
+  </div>
+</section>
+
 <!-- ============ 9 CONCLUSÃO ============ -->
 <section class="slide" data-id="conclusao" data-title="9 Resultados e conclusão" data-crit="Resultados esperados · Conclusão">
   <div class="head"><div class="eyebrow">Capítulos 8 e 9 · Resultados e considerações finais</div><h2>Viável como apoio à autorregulação, honesto sobre os limites</h2></div>
