@@ -32,7 +32,7 @@ A avaliação de qualidade da captura (ticket 10) mede a luminância do quadro, 
 
 O visual segue o repertório das plataformas de estudo brasileiras — tela de acesso dividida entre um painel de marca e o formulário, uma cor primária forte, cards arredondados —, mas com o tom da proposta: o MapFace é um espelho, não um vendedor de curso. Nada de contagem de aprovados ou urgência; o que o painel de acesso promete é privacidade e calibração individual.
 
-O sistema de design mora inteiro em [`frontend/src/styles.css`](./frontend/src/styles.css): tokens de cor, tipografia, botões e campos. Índigo é a cor de ação e de marca; verde é reservado ao que está vivo (sessão Concluído na versão final:, rosto detectado), para não virar decoração. As fontes vêm do Google Fonts, com fallback para a fonte do sistema quando não há rede.
+O sistema de design mora inteiro em [`frontend/src/styles.css`](./frontend/src/styles.css): tokens de cor, tipografia, botões e campos. Índigo é a cor de ação e de marca; verde é reservado ao que está vivo (sessão sessão em andamento, rosto detectado), para não virar decoração. As fontes vêm do Google Fonts, com fallback para a fonte do sistema quando não há rede.
 
 O layout responde em três faixas: abaixo de 960px a tela de acesso empilha o painel de marca sobre o formulário; abaixo de 860px a sessão passa a uma coluna só e o preview da webcam ganha um teto de altura, para que rosto e métricas continuem visíveis juntos; acima de 1600px o painel de marca ganha respiro em vez de esticar o texto.
 
@@ -162,7 +162,7 @@ Implementado:
 - **Ticket 14 — Infraestrutura como código.** Toda a infraestrutura AWS em Terraform, em `infra/`: VPC própria, bucket S3 privado servido por CloudFront em HTTPS, repositório ECR e RDS PostgreSQL criptografado em repouso, com a senha gerada e guardada pela própria AWS. Um `terraform apply` levanta tudo, sem passo no console.
 - **Ticket 13 — Sumarização e retenção.** Os indicadores são congelados em `resumo_sessao` no encerramento; passadas 24 horas, os pontos por segundo são trocados por médias por minuto. `horario_registro` e `id_sessao` são indexados.
 
-Concluído na versão final::
+Concluído na versão final:
 
 - **Ticket 17 — Ciclo de vida da sessão dirigido por presença e métodos de estudo.** O rosto na câmera mantém a sessão viva; a tela inicial declara método, assunto e meta; a sessão conduz os blocos e o relatório lê a sessão por blocos.
 - **Ticket 15 — Deploy.** Backend no ECS Fargate, RDS PostgreSQL e frontend no S3 atrás do CloudFront, tudo pelo Terraform de `infra/`. A versão final (`f2b675e`) inclui consentimento e revogação, objetivo de estudo, cobertura e lacunas no relatório e a leitura da senha do banco a cada conexão nova.
