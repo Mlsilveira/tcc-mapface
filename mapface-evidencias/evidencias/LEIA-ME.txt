@@ -3,9 +3,11 @@ Coloque aqui os JSON baixados pelo gravador e os relatórios .md gerados pelo sc
   sessao-real-1.json           -> gravação A (sessão real + FPS/CPU + bocejos)
   sessao-adversa.json          -> gravação B (sessão adversa)
   sessao-robustez-wifi.json    -> gravação C (Wi-Fi fora 20 s, duas vezes)
+  sessao-versao-final.json     -> sessão 28, versão final f2b675e (22/11), com a CPU em cpu-sessao-versao-final.md
 
 Na pasta acima desta (mapface-evidencias), rode no PowerShell:
 
   py analisar_sessao.py evidencias\sessao-real-1.json --rotulo "Sessão real 1" -o evidencias\sessao-real-1.md
   py analisar_sessao.py evidencias\sessao-adversa.json --rotulo "Sessão adversa" -o evidencias\sessao-adversa.md
   py analisar_sessao.py evidencias\sessao-robustez-wifi.json --rotulo "Robustez Wi-Fi" -o evidencias\sessao-robustez-wifi.md
+  py analisar_sessao.py evidencias\sessao-versao-final.json --rotulo "Sessão na versão final (sessão 28, build f2b675e)" -o evidencias\sessao-versao-final.md
