@@ -84,3 +84,31 @@ class TestTabela10:
         dados = json.loads((PASTA / "latencia-1cliente.json").read_text(encoding="utf-8"))["resumo"]
         assert (round(dados["rtt_ms"]["p50"]), round(dados["rtt_ms"]["p95"])) == (125, 257)
         assert (round(dados["processamento_ms"]["p50"], 1), round(dados["processamento_ms"]["p95"])) == (10.6, 142)
+
+
+class TestSessaoVersaoFinal:
+    """Sessão 28 (22/11/2026, build f2b675e): os valores da Tabela 10 para a versão final."""
+
+    @pytest.fixture(scope="class")
+    def sessao28(self):
+        caminho = PASTA / "evidencias" / "sessao-versao-final.json"
+        return metas.avaliar(json.loads(caminho.read_text(encoding="utf-8")))
+
+    def test_websocket(self, sessao28):
+        r = sessao28["websocket"]
+        assert (round(r["mediana"]), round(r["valor"]), round(1000 * r["proporcao_dentro"])) == (150, 336, 835)
+        assert r["atendida"] is False
+
+    def test_backend(self, sessao28):
+        r = sessao28["backend"]
+        assert (round(r["mediana"], 1), round(r["valor"]), round(1000 * r["proporcao_dentro"])) == (10.1, 189, 902)
+        assert r["atendida"] is False
+
+    def test_fps(self, sessao28):
+        r = sessao28["fps"]
+        assert (r["mediana"], r["valor"]) == (47, 40)
+        assert r["atendida"] is True
+
+    def test_ciclo_no_trecho_medido(self, sessao28):
+        assert round(sessao28["ciclo"]["valor"]) == 336
+        assert sessao28["ciclo"]["atendida"] is True
